@@ -99,6 +99,10 @@ import PdfBates from '@/components/tools/PdfBates.vue'
 import PdfFormFill from '@/components/tools/PdfFormFill.vue'
 import PdfPdfa from '@/components/tools/PdfPdfa.vue'
 import PdfSignImage from '@/components/tools/PdfSignImage.vue'
+import PdfAnnotate from '@/components/tools/PdfAnnotate.vue'
+import PdfSignDigital from '@/components/tools/PdfSignDigital.vue'
+import PdfScanOptimize from '@/components/tools/PdfScanOptimize.vue'
+import PdfBatch from '@/components/tools/PdfBatch.vue'
 import PdfOcr from '@/components/tools/PdfOcr.vue'
 import WordToPdf from '@/components/tools/WordToPdf.vue'
 import WordMerge from '@/components/tools/WordMerge.vue'
@@ -133,6 +137,10 @@ const toolComponents: Record<string, Component> = {
   formFill: markRaw(PdfFormFill),
   pdfa: markRaw(PdfPdfa),
   signImage: markRaw(PdfSignImage),
+  annotate: markRaw(PdfAnnotate),
+  signDigital: markRaw(PdfSignDigital),
+  scanOptimize: markRaw(PdfScanOptimize),
+  batch: markRaw(PdfBatch),
   ocr: markRaw(PdfOcr),
   wordToPdf: markRaw(WordToPdf),
   wordMerge: markRaw(WordMerge),
@@ -143,6 +151,7 @@ const toolComponents: Record<string, Component> = {
 
 const pdfTools = [
   { id: 'textEditor', label: 'Text bearbeiten', desc: 'WYSIWYG im Dokument', icon: '✏️', color: 'bg-purple-200 dark:bg-purple-900/50' },
+  { id: 'annotate', label: 'Anmerkungen', desc: 'Markieren, Stempel, Zeichnen', icon: '🖍️', color: 'bg-yellow-100 dark:bg-yellow-900/30' },
   { id: 'merge', label: 'Zusammenführen', desc: 'Mehrere PDFs verbinden', icon: '📎', color: 'bg-red-100 dark:bg-red-900/30' },
   { id: 'split', label: 'Teilen', desc: 'PDF aufteilen', icon: '✂️', color: 'bg-orange-100 dark:bg-orange-900/30' },
   { id: 'rotate', label: 'Rotieren', desc: 'Seiten drehen', icon: '🔄', color: 'bg-yellow-100 dark:bg-yellow-900/30' },
@@ -167,6 +176,9 @@ const pdfTools = [
   { id: 'signImage', label: 'Unterschrift', desc: 'Bild-Signatur einfügen', icon: '✍️', color: 'bg-indigo-100 dark:bg-indigo-900/30' },
   { id: 'pdfa', label: 'PDF/A', desc: 'Archivformat', icon: '🗄️', color: 'bg-teal-100 dark:bg-teal-900/30' },
   { id: 'flatten', label: 'Einbrennen', desc: 'Anmerkungen fixieren', icon: '🔥', color: 'bg-orange-100 dark:bg-orange-900/30' },
+  { id: 'signDigital', label: 'Digital signieren', desc: 'Mit Zertifikat (PAdES)', icon: '🔏', color: 'bg-blue-100 dark:bg-blue-900/30' },
+  { id: 'scanOptimize', label: 'Scan optimieren', desc: 'Geraderücken + OCR', icon: '🧹', color: 'bg-cyan-100 dark:bg-cyan-900/30' },
+  { id: 'batch', label: 'Batch', desc: 'Viele Dateien auf einmal', icon: '📦', color: 'bg-pink-100 dark:bg-pink-900/30' },
 ]
 
 const wordTools = [

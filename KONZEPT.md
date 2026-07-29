@@ -35,7 +35,7 @@ LibreOffice-Konvertierung (Word→PDF).
 
 | Bereich | Werkzeuge |
 |---|---|
-| PDF | Zusammenführen, Teilen, Rotieren, PDF→Bilder, Komprimieren, Wasserzeichen, Bilder→PDF, Seiten ordnen, Vergleich, OCR, Metadaten, Schützen/Entsperren (AES-256), PDF→Word, PDF→Excel, **Text bearbeiten (WYSIWYG, blockbasiert)**, **PDF→Text**, **Suchen & Ersetzen**, **Schwärzen (echte Redaction)**, **Seitenzahlen**, **Kopf-/Fußzeile**, **Bates-Nummerierung**, **Formulare ausfüllen (AcroForm)**, **Bild-Signatur**, **PDF/A (Ghostscript)**, **Einbrennen/Flatten** |
+| PDF | Zusammenführen, Teilen, Rotieren, PDF→Bilder, Komprimieren, Wasserzeichen, Bilder→PDF, Seiten ordnen, Vergleich, OCR, Metadaten, Schützen/Entsperren (AES-256), PDF→Word, PDF→Excel, **Text bearbeiten (WYSIWYG, blockbasiert)**, **PDF→Text**, **Suchen & Ersetzen**, **Schwärzen (echte Redaction)**, **Seitenzahlen**, **Kopf-/Fußzeile**, **Bates-Nummerierung**, **Formulare ausfüllen (AcroForm)**, **Bild-Signatur**, **PDF/A (Ghostscript)**, **Einbrennen/Flatten**, **Anmerkungen interaktiv (Markieren/Rechteck/Linie/Freitext/Kommentar/Stempel/Freihand/Schwärzen per Maus)**, **Digitale Signatur (PAdES via pyHanko, eigenes PKCS#12-Zertifikat)**, **Scan-Optimierung (OCRmyPDF: Geraderücken, Auto-Drehen, OCR-Ebene)**, **Batch-Verarbeitung (bis 50 Dateien → ZIP, Bates fortlaufend über Dateigrenzen)** |
 | Word | Word→PDF, Word verbinden, Word-Vergleich, Word-Metadaten |
 | Excel | Excel-Metadaten |
 | Auslieferung | Direkt-Download je Werkzeug, **ZIP-Download** aller Sitzungs-Ergebnisse (client-seitig via JSZip), **Mailversand** der Ergebnisse |
@@ -52,13 +52,20 @@ Original-Box geschrieben (Auto-Verkleinerung bei Überlauf, Latin-1-Sanitizing
 für die Basis-Fonts). Bewusste Grenze gegenüber Adobe Acrobat: kein
 seitenübergreifender Reflow — der Text bleibt in seiner Box.
 
-### Phase 2 — visueller Annotations-Editor
+### Annotations-Editor — umgesetzt
 
-Noch offen aus dem Editor-Komplex: interaktive Annotationen (Markieren,
-Kommentare, Zeichnen, Stempel per Maus platzieren) und TOC-Editor — Portierung
-von `PdfEditor.vue` nach Behebung der bekannten Defekte (Abschnitt 7) oder
-Weiterentwicklung der neuen WYSIWYG-Ansicht. Die Backend-Endpoints dafür sind
-vorhanden. Zusätzlich: asynchrones OCR/Compare für große Dateien.
+Interaktive Annotationen sind als eigene Neuentwicklung umgesetzt (nicht der
+defekte audit_designer-Editor): Werkzeugpalette + Maus-Zeichnen auf der
+Seitenansicht (Markieren, Rechteck, Linie, Freitext, Kommentar, Stempel,
+Freihand, Schwärzen), SVG-Vorschau der ausstehenden Anmerkungen,
+Arbeitskopie-Prinzip wie im Texteditor. Dabei behobener Vorlagen-Defekt:
+`add_ink_annot` verlangte in aktuellen PyMuPDF-Versionen Float-Paare statt
+`fitz.Point` (Regressionstest vorhanden).
+
+### Phase 2 — Rest
+
+Noch offen: TOC-/Lesezeichen-Editor-UI, asynchrones OCR/Compare für sehr
+große Dateien (aktuell synchron mit 5-Minuten-Timeout).
 
 ### Optionale Konten — vorgezogen und umgesetzt
 
@@ -196,6 +203,7 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | 1 | Scaffold: 16 Werkzeuge, Landing + Hinweis, ZIP-Download, Mailversand, Rate-Limiting, Docker, Impressum/Datenschutz-Gerüst | ✅ |
 | 1.5 | Schützen/Entsperren, PDF→Word/Excel, optionale Konten (Nutzer + Admin), gestufte Limits, Postgres | ✅ |
 | 1.6 | Adobe-Lücken: WYSIWYG-Textbearbeitung, Formulare, Schwärzen, Seitenzahlen/Kopf-Fußzeile, Bates, PDF/A, Bild-Signatur, PDF→Text, Suchen/Ersetzen, Flatten | ✅ |
+| 1.6b | Annotations-Editor (Maus), digitale Signatur (pyHanko), Scan-Optimierung (OCRmyPDF), Batch-Verarbeitung | ✅ |
 | 1.7 | Anbieterdaten eintragen, SMTP-Zugang konfigurieren, Tunnel anlegen, Erst-Deploy | offen |
 | 1.8 | Repo-Extraktion + CI (ghcr-Images, Smoke-Test-Gate) | offen |
 | 2 | Visueller PDF-Editor (nach Defekt-Behebung, siehe Abschnitt 7), asynchrones OCR/Compare | offen |

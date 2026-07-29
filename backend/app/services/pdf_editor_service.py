@@ -412,11 +412,11 @@ class PdfEditorService:
                     paths = ann.get("paths", [])
                     ink_list = []
                     for path in paths:
-                        points = []
-                        for pt in path:
-                            points.append(
-                                fitz.Point(pt.get("x", 0) * w, pt.get("y", 0) * h)
-                            )
+                        # add_ink_annot verlangt in aktuellen PyMuPDF-Versionen
+                        # reine (x, y)-Float-Paare, keine fitz.Point-Objekte
+                        points = [
+                            (pt.get("x", 0) * w, pt.get("y", 0) * h) for pt in path
+                        ]
                         if len(points) >= 2:
                             ink_list.append(points)
                     if ink_list:

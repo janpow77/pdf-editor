@@ -187,6 +187,106 @@ async def edit_text_blocks(
     )
 
 
+@router.post("/sign-digital")
+def sign_digital(
+    file: UploadFile = File(...),
+    certificate: UploadFile = File(..., description="PKCS#12-Zertifikat (.p12/.pfx)"),
+    passphrase: str = Form("", description="Zertifikats-Passwort"),
+    reason: str = Form(""),
+    location: str = Form(""),
+):
+    """Zertifikatsbasierte digitale Signatur (PAdES). Zertifikat nur transient.
+
+    Bewusst ein sync-Endpoint (Threadpool): pyhankos sign_pdf nutzt intern
+    asyncio.run und darf nicht im laufenden Event-Loop aufgerufen werden.
+    """
+    content = file.file.read()
+    _validate_pdf(file, content)
+    if not certificate.filename or not certificate.filename.lower().endswith(
+        (".p12", ".pfx")
+    ):
+        raise HTTPException(status_code=400, detail="Zertifikat muss .p12/.pfx sein")
+    p12 = certificate.file.read()
+    if len(p12) > 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Zertifikatsdatei zu groß")
+    result = get_pdf_extras().sign_digital(
+        content, p12, passphrase, reason=reason, location=location
+    )
+    if not result.success:
+        status = 503 if "nicht verfügbar" in (result.error or "") else 400
+        raise HTTPException(status_code=status, detail=result.error)
+    return _pdf_response(result.file_content, f"{_name(file)}_signiert.pdf")
+
+
+@router.post("/scan-optimize")
+async def scan_optimize(
+    file: UploadFile = File(...),
+    language: str = Form("deu"),
+    deskew: bool = Form(True),
+    rotate_pages: bool = Form(True),
+    force_ocr: bool = Form(False),
+):
+    content = await file.read()
+    _validate_pdf(file, content)
+    result = get_pdf_extras().scan_optimize(
+        content,
+        language=language,
+        deskew=deskew,
+        rotate_pages=rotate_pages,
+        force_ocr=force_ocr,
+    )
+    if not result.success:
+        status = 503 if "nicht verfügbar" in (result.error or "") else 500
+        raise HTTPException(status_code=status, detail=result.error)
+    return _pdf_response(result.file_content, f"{_name(file)}_optimiert.pdf")
+
+
+@router.post("/batch")
+async def batch_apply(
+    files: list[UploadFile] = File(...),
+    operation: str = Form(..., description="compress | rotate | protect | bates | pdfa"),
+    params: str = Form("{}", description="JSON-Objekt mit Operations-Parametern"),
+):
+    """Eine Operation auf viele Dateien anwenden — Ergebnis als ZIP."""
+    if len(files) < 1:
+        raise HTTPException(status_code=400, detail="Mindestens eine Datei erforderlich")
+    if len(files) > 50:
+        raise HTTPException(status_code=400, detail="Maximal 50 Dateien")
+    try:
+        params_dict = json.loads(params)
+        assert isinstance(params_dict, dict)
+    except (json.JSONDecodeError, AssertionError):
+        raise HTTPException(status_code=400, detail="params muss ein JSON-Objekt sein")
+
+    limits = current_limits()
+    total = 0
+    file_data: list[tuple[str, bytes]] = []
+    for f in files:
+        content = await f.read()
+        total += len(content)
+        if total > limits.max_total:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Gesamtgröße überschreitet {limits.max_total_mb} MB",
+            )
+        _validate_pdf(f, content)
+        file_data.append((f.filename or f"datei_{len(file_data)}.pdf", content))
+
+    result = get_pdf_extras().batch_apply(file_data, operation, params_dict)
+    if not result.success:
+        raise HTTPException(status_code=422, detail=result.error)
+    meta = result.metadata or {}
+    return StreamingResponse(
+        io.BytesIO(result.file_content),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="batch_ergebnisse.zip"',
+            "X-Batch-Ok": str(meta.get("ok", 0)),
+            "X-Batch-Failed": str(meta.get("failed", 0)),
+        },
+    )
+
+
 @router.post("/to-pdfa")
 async def to_pdfa(
     file: UploadFile = File(...),

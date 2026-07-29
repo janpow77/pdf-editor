@@ -28,6 +28,21 @@ except ImportError:
 
 GHOSTSCRIPT_BIN = shutil.which("gs")
 
+try:
+    from pyhanko.sign import signers as _pyhanko_signers
+
+    PYHANKO_AVAILABLE = True
+except ImportError:
+    PYHANKO_AVAILABLE = False
+
+try:
+    import ocrmypdf as _ocrmypdf
+
+    # OCRmyPDF braucht Ghostscript zur Laufzeit
+    OCRMYPDF_AVAILABLE = bool(GHOSTSCRIPT_BIN)
+except ImportError:
+    OCRMYPDF_AVAILABLE = False
+
 
 def _hex_to_rgb(hex_color: str) -> tuple[float, float, float]:
     h = (hex_color or "#000000").lstrip("#")
@@ -74,6 +89,9 @@ class PdfExtrasService:
             "sign_image": PYMUPDF_AVAILABLE,
             "text_edit_blocks": PYMUPDF_AVAILABLE,
             "pdfa": bool(GHOSTSCRIPT_BIN),
+            "sign_digital": PYHANKO_AVAILABLE,
+            "scan_optimize": OCRMYPDF_AVAILABLE,
+            "batch": PYMUPDF_AVAILABLE,
         }
 
     # ── Textextraktion ────────────────────────────────────────
@@ -368,6 +386,184 @@ class PdfExtrasService:
             )
         except Exception as e:
             return _fail(f"Textbearbeitung fehlgeschlagen: {e}")
+
+    # ── Digitale Signatur (pyHanko, PAdES) ────────────────────
+
+    def sign_digital(
+        self,
+        file_content: bytes,
+        p12_content: bytes,
+        passphrase: str,
+        reason: str = "",
+        location: str = "",
+    ) -> PdfToolResult:
+        """Zertifikatsbasierte Signatur mit einem PKCS#12-Zertifikat (.p12/.pfx).
+
+        Zertifikat und Passphrase werden ausschließlich transient verwendet —
+        weder persistiert noch geloggt (auch nicht in Fehlerpfaden).
+        """
+        if not PYHANKO_AVAILABLE:
+            return _fail("pyHanko nicht verfügbar — digitale Signatur deaktiviert")
+        try:
+            # load_pkcs12 erwartet einen Pfad — transiente Tempdatei,
+            # nach dem with-Block sofort gelöscht
+            with tempfile.TemporaryDirectory() as tmp:
+                p12_path = Path(tmp) / "cert.p12"
+                p12_path.write_bytes(p12_content)
+                signer = _pyhanko_signers.SimpleSigner.load_pkcs12(
+                    str(p12_path),
+                    passphrase=passphrase.encode() if passphrase else None,
+                )
+        except Exception:
+            # Bewusst ohne Detail: Fehlermeldungen könnten Zertifikatsdaten tragen
+            return _fail("Zertifikat konnte nicht geladen werden — Datei oder Passwort prüfen")
+        if signer is None:
+            return _fail("Zertifikat konnte nicht geladen werden — Datei oder Passwort prüfen")
+        try:
+            from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+
+            writer = IncrementalPdfFileWriter(io.BytesIO(file_content))
+            meta = _pyhanko_signers.PdfSignatureMetadata(
+                field_name="Signatur1",
+                reason=reason or None,
+                location=location or None,
+            )
+            out = _pyhanko_signers.sign_pdf(writer, meta, signer=signer)
+            return PdfToolResult(
+                success=True, output_format="pdf", file_content=out.getvalue()
+            )
+        except Exception as e:
+            logger.warning("Digitale Signatur fehlgeschlagen: %s", type(e).__name__)
+            return _fail("Signieren fehlgeschlagen — ist das PDF bereits abschließend signiert?")
+
+    # ── Scan-Optimierung (OCRmyPDF) ───────────────────────────
+
+    def scan_optimize(
+        self,
+        file_content: bytes,
+        language: str = "deu",
+        deskew: bool = True,
+        rotate_pages: bool = True,
+        force_ocr: bool = False,
+    ) -> PdfToolResult:
+        """Gescannte PDFs aufbereiten: geraderücken, Seiten drehen, OCR-Textebene."""
+        if not OCRMYPDF_AVAILABLE:
+            return _fail("OCRmyPDF/Ghostscript nicht verfügbar — Scan-Optimierung deaktiviert")
+        if language not in ("deu", "eng", "deu+eng"):
+            language = "deu"
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                src = Path(tmp) / "in.pdf"
+                dst = Path(tmp) / "out.pdf"
+                src.write_bytes(file_content)
+                _ocrmypdf.ocr(
+                    str(src),
+                    str(dst),
+                    language=language,
+                    deskew=deskew,
+                    rotate_pages=rotate_pages,
+                    force_ocr=force_ocr,
+                    skip_text=not force_ocr,
+                    output_type="pdf",
+                    progress_bar=False,
+                )
+                return PdfToolResult(
+                    success=True, output_format="pdf", file_content=dst.read_bytes()
+                )
+        except Exception as e:
+            return _fail(f"Scan-Optimierung fehlgeschlagen: {e}")
+
+    # ── Batch-Verarbeitung ────────────────────────────────────
+
+    BATCH_OPERATIONS = ("compress", "rotate", "protect", "bates", "pdfa")
+
+    def batch_apply(
+        self, files: list[tuple[str, bytes]], operation: str, params: dict
+    ) -> PdfToolResult:
+        """Eine Operation auf mehrere Dateien anwenden, Ergebnis als ZIP.
+
+        Fehler einzelner Dateien brechen den Batch nicht ab — sie landen als
+        fehler.txt im ZIP.
+        """
+        import zipfile
+
+        from app.services.pdf_tools_service import get_pdf_tools
+
+        if operation not in self.BATCH_OPERATIONS:
+            return _fail(f"Unbekannte Operation: {operation}", "zip")
+        tools = get_pdf_tools()
+        errors: list[str] = []
+        ok = 0
+        buf = io.BytesIO()
+        bates_counter = int(params.get("start", 1))
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for filename, content in files:
+                base = filename.rsplit(".", 1)[0]
+                try:
+                    if operation == "compress":
+                        result = tools.compress_pdf(
+                            content, quality=params.get("quality", "medium")
+                        )
+                        suffix = "_komprimiert"
+                    elif operation == "rotate":
+                        import fitz as _fitz
+
+                        angle = int(params.get("rotation", 90))
+                        with _fitz.open(stream=content, filetype="pdf") as d:
+                            rotations = {p: angle for p in range(1, d.page_count + 1)}
+                        result = tools.rotate_pages(content, rotations)
+                        suffix = "_rotiert"
+                    elif operation == "protect":
+                        result = self.protect_pdf_delegate(
+                            content, params.get("password", "")
+                        )
+                        suffix = "_geschuetzt"
+                    elif operation == "bates":
+                        result = self.add_bates_numbers(
+                            content,
+                            prefix=params.get("prefix", ""),
+                            start=bates_counter,
+                            digits=int(params.get("digits", 6)),
+                            position=params.get("position", "bottom-right"),
+                        )
+                        if result.success:
+                            # fortlaufend über alle Dateien hinweg
+                            import fitz as _fitz
+
+                            with _fitz.open(stream=content, filetype="pdf") as d:
+                                bates_counter += d.page_count
+                        suffix = "_bates"
+                    else:  # pdfa
+                        result = self.convert_pdfa(
+                            content, level=params.get("level", "2b")
+                        )
+                        suffix = "_pdfa"
+
+                    if result.success and result.file_content:
+                        zf.writestr(f"{base}{suffix}.pdf", result.file_content)
+                        ok += 1
+                    else:
+                        errors.append(f"{filename}: {result.error}")
+                except Exception as e:
+                    errors.append(f"{filename}: {e}")
+            if errors:
+                zf.writestr("fehler.txt", "\n".join(errors))
+        return PdfToolResult(
+            success=ok > 0,
+            output_format="zip",
+            file_content=buf.getvalue(),
+            metadata={"ok": ok, "failed": len(errors)},
+            warnings=errors,
+            error=None if ok > 0 else "Keine Datei konnte verarbeitet werden",
+        )
+
+    def protect_pdf_delegate(self, content: bytes, password: str) -> PdfToolResult:
+        """Batch-Helfer: Passwortschutz über den pdf_tools-Service."""
+        from app.services.pdf_tools_service import get_pdf_tools
+
+        if not password:
+            return _fail("Passwort erforderlich")
+        return get_pdf_tools().protect_pdf(content, password)
 
     # ── PDF/A (Ghostscript) ───────────────────────────────────
 

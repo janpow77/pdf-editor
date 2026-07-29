@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libreoffice-writer \
         default-jre-headless \
         ghostscript \
+        unpaper \
         fonts-dejavu \
         fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
