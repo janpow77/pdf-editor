@@ -189,3 +189,34 @@ def test_tiered_upload_limits(client, monkeypatch):
     # Angemeldet: Größen-Check passiert (kein 400 wegen Limit) — die Datei ist
     # kein valides PDF, daher Verarbeitungsfehler 500 statt Limit-Fehler.
     assert r.status_code != 400 or "zu groß" not in r.json().get("detail", "")
+
+
+def test_default_rate_limit_tiers(client, monkeypatch):
+    """Regressionstest: Default-Limits greifen auch auf include_router-Routen
+    (slowapi-Middleware tat das nicht — eigene Prüfung in RateTierMiddleware)."""
+    from app import ratelimit
+
+    monkeypatch.setattr(settings, "rate_limit_default", "3/minute")
+    monkeypatch.setattr(settings, "rate_limit_authed", "50/minute")
+    monkeypatch.setattr(ratelimit.limiter, "enabled", True)
+    # frische Zähler für diesen Test
+    monkeypatch.setattr(ratelimit, "_storage", ratelimit.MemoryStorage())
+    monkeypatch.setattr(
+        ratelimit, "_checker", ratelimit.MovingWindowRateLimiter(ratelimit._storage)
+    )
+
+    # Token holen, BEVOR das anonyme Kontingent aufgebraucht ist
+    token = _register(client, "ratelimit@beispiel-firma.de").json()["access_token"]
+
+    codes = [client.get("/api/pdf-tools/status").status_code for _ in range(5)]
+    assert codes.count(200) >= 2 and 429 in codes, codes
+
+    # Health bleibt exempt
+    assert client.get("/api/health").status_code == 200
+
+    # Angemeldet: eigener Key + höheres Limit → weiter 200 trotz anonymer Sperre
+    authed = [
+        client.get("/api/pdf-tools/status", headers=_auth_headers(token)).status_code
+        for _ in range(5)
+    ]
+    assert all(c == 200 for c in authed), authed

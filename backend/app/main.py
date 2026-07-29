@@ -11,7 +11,6 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.exc import OperationalError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -78,10 +77,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Default-Limits laufen in RateTierMiddleware (siehe app/ratelimit.py);
+# der slowapi-Limiter bedient nur die per-Route-Dekoratoren.
 app.state.limiter = limiter
-app.add_middleware(SlowAPIMiddleware)
-# Nach SlowAPIMiddleware hinzugefügt = läuft VOR ihr (zuletzt registrierte
-# Middleware ist die äußerste) — setzt das Rate-Tier für dynamic_limits.
 app.add_middleware(RateTierMiddleware)
 
 if settings.cors_origins:
