@@ -88,15 +88,20 @@ Browser (Vue 3 + Tailwind, deutsch)
   ├─ lib/zip.ts       ZIP-Bündelung client-seitig (JSZip)
   └─ fetch /api/*  ──────────────┐
                                  ▼
-nginx (static + Proxy /api, client_max_body_size 210m)
+nginx (static + Proxy /api, client_max_body_size 410m)
                                  ▼
-FastAPI-Backend (zustandslos, keine DB)
-  ├─ api/pdf_tools.py   Kopie + Auth-Strip (20 Endpoints)
-  ├─ api/pdf_editor.py  Kopie + Auth-Strip (12 Endpoints)
-  ├─ api/mail.py        Mailversand (aiosmtplib, transient)
-  ├─ ratelimit.py       slowapi pro IP (CF-Connecting-IP)
-  └─ services/          1:1-Kopien (PyMuPDF, Pillow, python-docx,
-                        openpyxl, pytesseract, LibreOffice headless)
+FastAPI-Backend (Datei-Verarbeitung zustandslos; Konten optional in Postgres)
+  ├─ api/pdf_tools.py    Kopie + Auth-Strip + Protect/Unlock (22 Endpoints)
+  ├─ api/pdf_editor.py   Kopie + Auth-Strip (12 Endpoints)
+  ├─ api/pdf_converter.py Kopie + Auth-Strip (PDF→Word/Excel, 7 Endpoints)
+  ├─ api/{auth,me,admin}.py  optionale Konten (JWT, Preferences, Verwaltung)
+  ├─ api/mail.py         Mailversand (aiosmtplib, transient)
+  ├─ ratelimit.py        gestufte Default-Limits in eigener ASGI-Middleware
+  │                      (limits-Bibliothek); slowapi nur für per-Route-Limits
+  └─ services/           1:1-Kopien (PyMuPDF, pikepdf, Pillow, python-docx,
+                         openpyxl, pytesseract, tabula/Java, LibreOffice)
+                                 ▼
+PostgreSQL 16 (nur users-Tabelle; bei Ausfall läuft die App anonym weiter)
 ```
 
 **Kopie-Strategie**: Code wird kopiert, nicht importiert. Die beiden Service-Dateien
@@ -118,15 +123,16 @@ eigenes Repo ist ein `git mv`.
 
 Rechtliches: Impressum (§ 5 DDG) und Datenschutzerklärung sind als Seiten angelegt;
 die Anbieterdaten sind vor Veröffentlichung einzutragen (TODO-Marker in
-`ImpressumView.vue` / `DatenschutzView.vue`). Formulierungen für den optionalen
-Account (Phase 3) sind bereits differenziert vorbereitet.
+`ImpressumView.vue` / `DatenschutzView.vue`). Der Konto-Abschnitt der
+Datenschutzerklärung ist umgesetzt (Datenminimierung, Art. 6 Abs. 1 lit. b,
+Selbstlöschung nach Art. 17).
 
 ## 6. Missbrauchsschutz
 
 | Maßnahme | Umsetzung |
 |---|---|
-| Rate-Limiting pro IP | slowapi global: `30/minute; 500/day` (env-konfigurierbar); Mail separat `5/hour`. IP aus `CF-Connecting-IP`, Fallback `request.client.host` |
-| Dateigrößen | 50 MB/Datei, 200 MB/Operation (bewusst unter den internen 100/500 MB) |
+| Rate-Limiting gestuft | Eigene ASGI-Middleware (limits-Bibliothek): anonym pro IP `30/minute;500/day`, angemeldet pro Nutzer-ID `60/minute;2000/day` (env-konfigurierbar). IP aus `CF-Connecting-IP`, Fallback `request.client.host`; `/api/health` exempt. Zusätzlich strengere per-Route-Limits via slowapi: Login `10/15minutes`, Registrierung `10/hour`, Mail `5/hour` |
+| Dateigrößen | anonym 50 MB/Datei + 200 MB/Operation; angemeldet 100/400 MB |
 | Mail-Anhänge | 20 MB gesamt, sonst Verweis auf ZIP-Download |
 | Timeouts | 5-Minuten-Timeout client-seitig; nginx `proxy_read_timeout 300s` |
 | Eskalation (bei Bedarf) | Cloudflare-WAF/Bot-Fight-Mode; Phase 3: Turnstile vor Mailversand |
