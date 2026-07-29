@@ -160,21 +160,21 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | F4 | Admin-Seed idempotent (kein Duplikat bei Neustart) | `test_auth.py` + `compose restart` | ✅ automatisiert |
 | F5 | Admin: listen/deaktivieren/entsperren/löschen; letzter Admin geschützt (400) | `test_auth.py` + `/admin` | ✅ automatisiert |
 | F6 | Rollentrennung: `/api/admin/*` ohne Login 401, als USER 403 | `test_auth.py` | ✅ automatisiert |
-| F7 | Gestufte Limits: anonym 50/200 MB + 30/min, angemeldet 100/400 MB + 60/min | `test_auth.py` (Größe) + manuell 31 Requests → 429 | ✅ Größe automatisiert |
+| F7 | Gestufte Limits: anonym 50/200 MB + 30/min, angemeldet 100/400 MB + 60/min | `test_auth.py` (Größe + Rate-Regression) + Live-Test | ✅ automatisiert + live geprüft |
 | F8 | Preferences je Konto, Tools übernehmen Defaults, >16 KB → 413 | `test_auth.py` + manuell OCR-Default | ✅ automatisiert |
 | F9 | `DELETE /me` mit Passwort → 204, Login danach 401 | `test_auth.py` | ✅ automatisiert |
 | F10 | Schützen: fitz `needs_pass=True`; Entsperren korrekt; falsches Passwort 400 | `test_pdf_protect.py` | ✅ automatisiert |
 | F11 | PDF→Word valides DOCX; `/api/pdf-convert/status` im Container `tabula: true` | `test_pdf_converter.py` + Container-curl | ✅ automatisiert |
-| D1 | Keine Datei-Persistenz nach Verarbeitung | Dateisystem-Diff vor/nach Upload-Serie | manuell |
+| D1 | Keine Datei-Persistenz nach Verarbeitung | Dateisystem-Diff vor/nach 7-Operationen-Serie | ✅ live geprüft (0 neue Dateien) |
 | D2 | users-Tabelle nur E-Mail/Hash/Rolle/Flags/Prefs/Zeitstempel — keine IP | `\d users` + Code-Review models.py | ✅ per Modell |
-| D3 | Mail-Adresse nie in Logs (Erfolg + Fehlerpfade) | `docker compose logs \| grep "@"` nach Testversand | manuell |
-| D4 | Anonym ohne DB-Zugriff; App läuft bei gestopptem Postgres weiter | `compose stop db` → Tools ok, health `accounts: false` | ✅ per Lifespan-Fallback |
+| D3 | Mail-Adresse nie in Logs (Erfolg + Fehlerpfade) | Log-Grep nach Testversand gegen Debug-SMTP | ✅ live geprüft (0 Treffer, SMTP-Gegenprobe positiv) |
+| D4 | Anonym ohne DB-Zugriff; App läuft bei gestopptem Postgres weiter | Live-Test mit nicht erreichbarer DB | ✅ live geprüft (accounts:false, Register 503, Merge 200) |
 | D5 | Registrierung nur mit Pflicht-Checkbox + Datenschutz-Link | Browser-Prüfung RegisterView | ✅ umgesetzt |
 | D6 | Hinweis konsistent (Banner/Badge/Footer + Konto-Absatz) | Review der vier Hinweis-Stellen | ✅ umgesetzt |
 | S1 | Anonyme Regression: Tools ohne Login byte-identisch | Smoke-Tests unverändert grün | ✅ automatisiert |
-| S2 | Alle neuen Endpoints mit mindestens einem Test, Suite grün | `pytest tests/ -q` → 0 failed | ✅ (20 Tests) |
-| S3 | `npm run type-check` + `build` fehlerfrei | CI-Befehle | ✅ |
-| S4 | Compose healthy; Konten überleben Neustart (pgdata) | `compose ps` + Konto → restart → Login | manuell |
+| S2 | Alle neuen Endpoints mit mindestens einem Test, Suite grün | `pytest tests/ -q` → 0 failed | ✅ (21 Tests) |
+| S3 | `npm run type-check` + `build` fehlerfrei; keine Konsolen-Fehler | CI-Befehle + Playwright-Browserdurchlauf | ✅ live geprüft |
+| S4 | Compose healthy; Konten überleben Neustart (pgdata) | `compose ps` + Konto → restart → Login | offen — beim Erst-Deploy prüfen (kein Docker-Daemon in der Dev-Sandbox) |
 | SEC1 | SECRET_KEY + DB-Passwort Pflicht (`:?`), keine Secrets im Repo | `docker compose config` ohne .env → Fehler | ✅ umgesetzt |
 | SEC2 | Ungültiger Token → 401, kein stilles Anonym-Downgrade | `test_auth.py` | ✅ automatisiert |
 | SEC3 | Identische Login-Fehlertexte (keine User-Enumeration) | `test_auth.py` | ✅ automatisiert |
