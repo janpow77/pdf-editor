@@ -201,6 +201,7 @@ def sign_digital(
     passphrase: str = Form("", description="Zertifikats-Passwort"),
     reason: str = Form(""),
     location: str = Form(""),
+    tsa_url: str = Form("", description="Optionale Zeitstempel-URL (RFC 3161 TSA)"),
 ):
     """Zertifikatsbasierte digitale Signatur (PAdES). Zertifikat nur transient.
 
@@ -216,8 +217,10 @@ def sign_digital(
     p12 = certificate.file.read()
     if len(p12) > 1024 * 1024:
         raise HTTPException(status_code=400, detail="Zertifikatsdatei zu groß")
+    if tsa_url and not tsa_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="TSA-URL muss mit http(s):// beginnen")
     result = get_pdf_extras().sign_digital(
-        content, p12, passphrase, reason=reason, location=location
+        content, p12, passphrase, reason=reason, location=location, tsa_url=tsa_url
     )
     if not result.success:
         status = 503 if "nicht verfügbar" in (result.error or "") else 400
@@ -232,6 +235,7 @@ def scan_optimize(
     deskew: bool = Form(True),
     rotate_pages: bool = Form(True),
     force_ocr: bool = Form(False),
+    clean: bool = Form(False, description="Seiten vor OCR entrauschen (unpaper)"),
 ):
     """Sync-Endpoint (Threadpool): OCRmyPDF darf den Event-Loop nicht blockieren."""
     content = file.file.read()
@@ -242,6 +246,7 @@ def scan_optimize(
         deskew=deskew,
         rotate_pages=rotate_pages,
         force_ocr=force_ocr,
+        clean=clean,
     )
     if not result.success:
         status = 503 if "nicht verfügbar" in (result.error or "") else 500
@@ -252,7 +257,9 @@ def scan_optimize(
 @router.post("/batch")
 def batch_apply(
     files: list[UploadFile] = File(...),
-    operation: str = Form(..., description="compress | rotate | protect | bates | pdfa"),
+    operation: str = Form(
+        ..., description="compress | rotate | protect | bates | pdfa | watermark | clean"
+    ),
     params: str = Form("{}", description="JSON-Objekt mit Operations-Parametern"),
 ):
     """Eine Operation auf viele Dateien anwenden — Ergebnis als ZIP."""
@@ -346,9 +353,16 @@ def _job_compare(content_a: bytes, content_b: bytes, include_visual: bool):
     return _json.dumps(result.metadata or {}).encode(), {}
 
 
-def _job_scan(content: bytes, language: str, deskew: bool, rotate: bool, force: bool):
+def _job_scan(
+    content: bytes, language: str, deskew: bool, rotate: bool, force: bool, clean: bool
+):
     result = get_pdf_extras().scan_optimize(
-        content, language=language, deskew=deskew, rotate_pages=rotate, force_ocr=force
+        content,
+        language=language,
+        deskew=deskew,
+        rotate_pages=rotate,
+        force_ocr=force,
+        clean=clean,
     )
     if not result.success:
         raise RuntimeError(result.error or "Scan-Optimierung fehlgeschlagen")
@@ -411,6 +425,7 @@ async def start_scan_job(
     deskew: bool = Form(True),
     rotate_pages: bool = Form(True),
     force_ocr: bool = Form(False),
+    clean: bool = Form(False),
 ):
     content = await file.read()
     _validate_pdf(file, content)
@@ -425,6 +440,7 @@ async def start_scan_job(
             deskew,
             rotate_pages,
             force_ocr,
+            clean,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=429, detail=str(e))

@@ -396,6 +396,7 @@ class PdfExtrasService:
         passphrase: str,
         reason: str = "",
         location: str = "",
+        tsa_url: str = "",
     ) -> PdfToolResult:
         """Zertifikatsbasierte Signatur mit einem PKCS#12-Zertifikat (.p12/.pfx).
 
@@ -428,7 +429,14 @@ class PdfExtrasService:
                 reason=reason or None,
                 location=location or None,
             )
-            out = _pyhanko_signers.sign_pdf(writer, meta, signer=signer)
+            timestamper = None
+            if tsa_url:
+                from pyhanko.sign.timestamps import HTTPTimeStamper
+
+                timestamper = HTTPTimeStamper(tsa_url)
+            out = _pyhanko_signers.sign_pdf(
+                writer, meta, signer=signer, timestamper=timestamper
+            )
             return PdfToolResult(
                 success=True, output_format="pdf", file_content=out.getvalue()
             )
@@ -445,12 +453,14 @@ class PdfExtrasService:
         deskew: bool = True,
         rotate_pages: bool = True,
         force_ocr: bool = False,
+        clean: bool = False,
     ) -> PdfToolResult:
         """Gescannte PDFs aufbereiten: geraderücken, Seiten drehen, OCR-Textebene."""
         if not OCRMYPDF_AVAILABLE:
             return _fail("OCRmyPDF/Ghostscript nicht verfügbar — Scan-Optimierung deaktiviert")
-        if language not in ("deu", "eng", "deu+eng"):
-            language = "deu"
+        allowed_langs = {"deu", "eng", "fra", "ita", "spa", "nld", "pol"}
+        parts = [p for p in language.split("+") if p in allowed_langs]
+        language = "+".join(parts) if parts else "deu"
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 src = Path(tmp) / "in.pdf"
@@ -463,6 +473,7 @@ class PdfExtrasService:
                     deskew=deskew,
                     rotate_pages=rotate_pages,
                     force_ocr=force_ocr,
+                    clean=clean,
                     skip_text=not force_ocr,
                     output_type="pdf",
                     progress_bar=False,
@@ -476,7 +487,15 @@ class PdfExtrasService:
 
     # ── Batch-Verarbeitung ────────────────────────────────────
 
-    BATCH_OPERATIONS = ("compress", "rotate", "protect", "bates", "pdfa")
+    BATCH_OPERATIONS = (
+        "compress",
+        "rotate",
+        "protect",
+        "bates",
+        "pdfa",
+        "watermark",
+        "clean",
+    )
 
     def batch_apply(
         self, files: list[tuple[str, bytes]], operation: str, params: dict
@@ -534,6 +553,20 @@ class PdfExtrasService:
                             with _fitz.open(stream=content, filetype="pdf") as d:
                                 bates_counter += d.page_count
                         suffix = "_bates"
+                    elif operation == "watermark":
+                        result = tools.add_watermark(
+                            content,
+                            text=params.get("text", "ENTWURF"),
+                            opacity=float(params.get("opacity", 0.3)),
+                            rotation=int(params.get("rotation", -45)),
+                            font_size=int(params.get("font_size", 60)),
+                        )
+                        suffix = "_wasserzeichen"
+                    elif operation == "clean":
+                        from app.services.pdf_more_service import get_pdf_more
+
+                        result = get_pdf_more().clean_pdf(content)
+                        suffix = "_bereinigt"
                     else:  # pdfa
                         result = self.convert_pdfa(
                             content, level=params.get("level", "2b")

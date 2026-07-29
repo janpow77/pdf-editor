@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     turnstile_site_key: str = ""
     turnstile_secret: str = ""
 
+    # Lokale LLM-Anbindung (eigener ai-router, OpenAI-kompatible /chat/completions)
+    # — leer = KI-Funktionen deaktiviert. Keine Cloud: nur eigene Infrastruktur.
+    llm_url: str = ""
+    llm_model: str = "qwen3.5:35b"
+
     # CF-Connecting-IP nur verwenden, wenn das Backend ausschließlich hinter
     # Cloudflare erreichbar ist (Tunnel-Deploy) — sonst ist der Header spoofbar
     # und hebelt Rate-Limits und Job-Ownership aus

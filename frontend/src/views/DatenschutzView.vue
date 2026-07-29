@@ -27,6 +27,18 @@
       </section>
 
       <section>
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">KI-Funktionen (optional)</h2>
+        <p>
+          Sofern der Betreiber die KI-Funktionen (Zusammenfassen, Fragen zum Dokument)
+          aktiviert hat, wird der Textinhalt des Dokuments zur Beantwortung an ein
+          Sprachmodell auf <strong>eigener Infrastruktur des Betreibers</strong> übertragen —
+          nicht an externe Cloud- oder KI-Anbieter. Auch dort erfolgt die Verarbeitung nur
+          transient im Arbeitsspeicher; weder Dokumentinhalte noch Fragen oder Antworten
+          werden gespeichert.
+        </p>
+      </section>
+
+      <section>
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Mailversand</h2>
         <p>
           Wenn Sie Ergebnisse per E-Mail versenden, wird die angegebene Empfängeradresse

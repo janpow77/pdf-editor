@@ -29,6 +29,11 @@
           <input v-model="location" type="text" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
         </div>
       </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Zeitstempel-Dienst (optional, RFC 3161)</label>
+        <input v-model="tsaUrl" type="url" placeholder="https://freetsa.org/tsr" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+        <p class="mt-1 text-xs text-gray-400">Fügt der Signatur einen qualifizierten Zeitstempel eines TSA-Servers hinzu.</p>
+      </div>
     </div>
 
     <div v-if="done" class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-700 dark:text-green-300">
@@ -60,6 +65,7 @@ const cert = ref<File | null>(null)
 const passphrase = ref('')
 const reason = ref('')
 const location = ref('')
+const tsaUrl = ref('')
 
 async function apply() {
   if (!file.value || !cert.value) return
@@ -69,6 +75,7 @@ async function apply() {
   fd.append('passphrase', passphrase.value)
   fd.append('reason', reason.value)
   fd.append('location', location.value)
+  fd.append('tsa_url', tsaUrl.value.trim())
   await run('/api/pdf-extras/sign-digital', fd, file.value.name.replace(/\.pdf$/i, '_signiert.pdf'))
 }
 </script>

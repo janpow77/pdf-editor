@@ -1,12 +1,19 @@
 FROM python:3.12-slim
 
-# Tesseract für OCR, LibreOffice Writer für Word→PDF, Fonts für die Konvertierung
+# Tesseract für OCR (7 Sprachen), LibreOffice für Office→PDF, Fonts für die Konvertierung
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         tesseract-ocr \
         tesseract-ocr-deu \
         tesseract-ocr-eng \
+        tesseract-ocr-fra \
+        tesseract-ocr-ita \
+        tesseract-ocr-spa \
+        tesseract-ocr-nld \
+        tesseract-ocr-pol \
         libreoffice-writer \
+        libreoffice-calc \
+        libreoffice-impress \
         default-jre-headless \
         ghostscript \
         unpaper \

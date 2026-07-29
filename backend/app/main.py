@@ -23,6 +23,7 @@ from app.api import (
     pdf_converter,
     pdf_editor,
     pdf_extras,
+    pdf_more,
     pdf_tools,
 )
 from app.api.deps import attach_upload_limits
@@ -154,6 +155,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 @app.get("/api/health")
 async def health(request: Request):
     from app.services.pdf_extras_service import get_pdf_extras
+    from app.services.pdf_more_service import get_pdf_more
     from app.services.pdf_tools_service import get_pdf_tools
 
     return {
@@ -164,6 +166,7 @@ async def health(request: Request):
         "features": {
             **get_pdf_tools().check_features(),
             **get_pdf_extras().check_features(),
+            **get_pdf_more().check_features(),
         },
     }
 
@@ -174,6 +177,7 @@ app.include_router(pdf_tools.router, prefix="/api", dependencies=_limit_deps)
 app.include_router(pdf_editor.router, prefix="/api", dependencies=_limit_deps)
 app.include_router(pdf_converter.router, prefix="/api", dependencies=_limit_deps)
 app.include_router(pdf_extras.router, prefix="/api", dependencies=_limit_deps)
+app.include_router(pdf_more.router, prefix="/api", dependencies=_limit_deps)
 app.include_router(mail.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(me.router, prefix="/api")

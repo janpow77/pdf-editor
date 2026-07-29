@@ -172,6 +172,11 @@ const languages = [
   { value: 'deu', label: 'Deutsch' },
   { value: 'eng', label: 'Englisch' },
   { value: 'deu+eng', label: 'Deutsch + Englisch' },
+  { value: 'fra', label: 'Französisch' },
+  { value: 'ita', label: 'Italienisch' },
+  { value: 'spa', label: 'Spanisch' },
+  { value: 'nld', label: 'Niederländisch' },
+  { value: 'pol', label: 'Polnisch' },
 ]
 
 // --- State ---

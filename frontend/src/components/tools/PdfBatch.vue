@@ -37,6 +37,8 @@
           <option value="protect">Passwortschutz</option>
           <option value="bates">Bates-Nummerierung (fortlaufend über alle Dateien)</option>
           <option value="pdfa">PDF/A</option>
+          <option value="watermark">Wasserzeichen</option>
+          <option value="clean">Bereinigen (Metadaten entfernen)</option>
         </select>
       </div>
 
@@ -73,6 +75,14 @@
           <option value="3b">PDF/A-3b</option>
         </select>
       </div>
+      <div v-else-if="operation === 'watermark'" class="grid grid-cols-3 gap-3">
+        <input v-model="params.text" type="text" placeholder="Text" class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+        <input v-model.number="params.opacity" type="number" min="0.05" max="1" step="0.05" placeholder="Deckkraft" class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+        <input v-model.number="params.font_size" type="number" min="8" max="200" placeholder="Schriftgröße" class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+      </div>
+      <p v-else-if="operation === 'clean'" class="text-sm text-gray-500 dark:text-gray-400">
+        Entfernt Metadaten, JavaScript, eingebettete Dateien und versteckte Inhalte aus allen Dateien.
+      </p>
     </div>
 
     <div v-if="summary" class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-700 dark:text-green-300">
@@ -109,6 +119,9 @@ const params = reactive<Record<string, unknown>>({
   start: 1,
   digits: 6,
   level: '2b',
+  text: 'ENTWURF',
+  opacity: 0.3,
+  font_size: 60,
 })
 const summary = ref('')
 

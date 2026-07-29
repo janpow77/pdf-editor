@@ -19,6 +19,11 @@
           <option value="deu">Deutsch</option>
           <option value="eng">Englisch</option>
           <option value="deu+eng">Deutsch + Englisch</option>
+          <option value="fra">Französisch</option>
+          <option value="ita">Italienisch</option>
+          <option value="spa">Spanisch</option>
+          <option value="nld">Niederländisch</option>
+          <option value="pol">Polnisch</option>
         </select>
       </div>
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -29,6 +34,9 @@
       </label>
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
         <input v-model="forceOcr" type="checkbox" class="rounded" /> OCR erzwingen (auch bei vorhandenem Text)
+      </label>
+      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <input v-model="clean" type="checkbox" class="rounded" /> Seiten entrauschen (Flecken/Ränder entfernen)
       </label>
     </div>
 
@@ -64,6 +72,7 @@ const language = ref(prefDefault('ocr_language', 'deu'))
 const deskew = ref(true)
 const rotate = ref(true)
 const forceOcr = ref(false)
+const clean = ref(false)
 
 async function apply() {
   if (!file.value) return
@@ -77,6 +86,7 @@ async function apply() {
     fd.append('deskew', String(deskew.value))
     fd.append('rotate_pages', String(rotate.value))
     fd.append('force_ocr', String(forceOcr.value))
+    fd.append('clean', String(clean.value))
     // Async-Job statt Direktaufruf — Scan-Optimierung kann Minuten dauern
     const resp = await runJob('/api/pdf-extras/jobs/scan-optimize', fd)
     await downloadBlob(resp, file.value.name.replace(/\.pdf$/i, '_optimiert.pdf'))

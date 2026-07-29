@@ -28,9 +28,10 @@ npm install
 npm run dev                         # http://localhost:3010 (Proxy /api → :8000)
 ```
 
-Für OCR und Word→PDF müssen lokal `tesseract-ocr` (mit `-deu`/`-eng`) und
-`libreoffice-writer` installiert sein — ohne sie degradieren die betroffenen
-Werkzeuge sichtbar (Feature-Flags in `/api/health`).
+Für OCR und Office→PDF müssen lokal `tesseract-ocr` (Sprachpakete `-deu`, `-eng`,
+optional `-fra/-ita/-spa/-nld/-pol`) und `libreoffice-writer`/`-calc`/`-impress`
+installiert sein — ohne sie degradieren die betroffenen Werkzeuge sichtbar
+(Feature-Flags in `/api/health`).
 
 ## Docker (Gesamtstack)
 
@@ -57,6 +58,8 @@ Alle Einstellungen über Umgebungsvariablen mit Präfix `PDFAPP_` — siehe
 | `PDFAPP_RATE_LIMIT_AUTHED` | `60/minute;2000/day` | Rate-Limit pro Nutzer (angemeldet) |
 | `PDFAPP_RATE_LIMIT_MAIL` | `5/hour` | Rate-Limit Mailversand |
 | `PDFAPP_SMTP_HOST` | *(leer)* | leer = Mailversand deaktiviert (503) |
+| `PDFAPP_LLM_URL` | *(leer)* | OpenAI-kompatibler Endpoint der EIGENEN Infrastruktur (z.B. ai-router) — leer = KI-Funktionen deaktiviert, keine Cloud |
+| `PDFAPP_LLM_MODEL` | `qwen3.5:35b` | Modellname für die KI-Funktionen |
 
 ## Datenbank-Migrationen (Alembic)
 

@@ -74,6 +74,39 @@ Arbeitskopie-Prinzip wie im Texteditor. Dabei behobener Vorlagen-Defekt:
   prozesslokal; bei mehreren Backend-Replikas braucht es Sticky-Sessions
   oder einen externen Store.
 
+### Modulkatalog-Ausbau (2026-07-29) — umgesetzt
+
+Alle im Modulkatalog 2026 identifizierten Lücken, die ohne Datenspeicherung
+und ohne Cloud machbar sind (Details: MODULKATALOG_2026.md):
+
+- **Office → PDF**: Excel, PowerPoint, ODF, RTF, HTML, Text via LibreOffice
+  (Dockerfile um libreoffice-calc/-impress erweitert).
+- **PDF exportieren**: Markdown (Überschriften-Heuristik über Schriftgrößen),
+  HTML (XHTML je Seite), JSON (Textblöcke mit Bounding-Boxes), CSV
+  (Tabellenerkennung via PyMuPDF `find_tables`, kein Java nötig).
+- **Bereinigen**: `doc.scrub()` — Metadaten, XMP, JavaScript, eingebettete
+  Dateien, versteckte Inhalte; auch als Batch-Operation.
+- **Rechteverwaltung**: pikepdf-Encryption ohne Öffnen-Passwort mit
+  Besitzer-Passwort + Drucken/Kopieren/Ändern/Kommentieren-Flags.
+- **Signaturprüfung mit Bericht**: pyHanko-Validation je Signaturfeld
+  (Integrität, CMS-Gültigkeit, Unterzeichner, Signierzeitpunkt, Abdeckung);
+  ehrlicher Hinweis, dass ohne Vertrauensanker kein Vertrauensurteil möglich ist.
+- **TSA-Zeitstempel**: optionale RFC-3161-URL bei der digitalen Signatur
+  (`HTTPTimeStamper`).
+- **Leere Seiten einfügen**, **Prüfakte** (Merge + Lesezeichen pro Dokument +
+  durchgehende Bates-Nummerierung), **Qualitätsprüfung** (leere Seiten, Scans
+  ohne Textebene, Duplikat-Erkennung über Pixmap-Hashes).
+- **OCR-Ausbau**: 7 Sprachen (deu/eng/fra/ita/spa/nld/pol) + Entrauschen
+  (`clean`/unpaper) in OCR und Scan-Optimierung.
+- **Batch-Ausbau**: Wasserzeichen und Bereinigen als weitere Operationen.
+- **Lokale KI** (Zusammenfassen, Frage zum Dokument): ausschließlich über
+  einen OpenAI-kompatiblen Endpoint der eigenen Infrastruktur
+  (`PDFAPP_LLM_URL`, z.B. ai-router) — keine Cloud. Kachel und Endpoint sind
+  ohne Konfiguration deaktiviert; Datenschutzerklärung weist die transiente
+  Übertragung an das lokale LLM aus; Antworten sind als KI-Entwurf markiert.
+- **Rolodex-Ansicht**: umschaltbare Dashboard-Ansicht (Raster ⇄ 3D-Karten-
+  Karussell mit Tastatur-/Mausrad-Navigation), Wahl in localStorage persistiert.
+
 ### Optionale Konten — vorgezogen und umgesetzt
 
 Ursprünglich Phase 3, auf Nutzerwunsch vorgezogen. Grundsätze (alle eingehalten):
@@ -246,7 +279,8 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | 1.5 | Schützen/Entsperren, PDF→Word/Excel, optionale Konten (Nutzer + Admin), gestufte Limits, Postgres | ✅ |
 | 1.6 | Adobe-Lücken: WYSIWYG-Textbearbeitung, Formulare, Schwärzen, Seitenzahlen/Kopf-Fußzeile, Bates, PDF/A, Bild-Signatur, PDF→Text, Suchen/Ersetzen, Flatten | ✅ |
 | 1.6b | Annotations-Editor (Maus), digitale Signatur (pyHanko), Scan-Optimierung (OCRmyPDF), Batch-Verarbeitung | ✅ |
+| 1.6c | Restpunkte: TOC-Editor, Async-Jobs, E-Mail-Verifikation, Passwort-Reset, Turnstile, Alembic | ✅ |
+| 1.6d | Modulkatalog-Ausbau: Office→PDF, Exporte (MD/HTML/JSON/CSV), Bereinigen, Rechte, Signaturprüfung, TSA, Prüfakte, Qualitätsprüfung, lokale KI, Rolodex-Dashboard | ✅ |
 | 1.7 | Anbieterdaten eintragen, SMTP-Zugang konfigurieren, Tunnel anlegen, Erst-Deploy | offen |
 | 1.8 | Repo-Extraktion + CI (ghcr-Images, Smoke-Test-Gate) | offen |
-| 2 | Visueller PDF-Editor (nach Defekt-Behebung, siehe Abschnitt 7), asynchrones OCR/Compare | offen |
-| 3 | Hardening-Backlog (Alembic, E-Mail-Verifikation, Passwort-Reset, Turnstile) | offen |
+| 2 | Verbleibende Katalog-Lücken ohne Speicher-Konflikt: Formular-Designer + CSV-Export, Batch-Signierung, KI-Übersetzung/Schlagwörter, Vertrauensanker für Signaturprüfung | offen |
