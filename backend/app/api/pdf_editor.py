@@ -20,16 +20,17 @@ from app.services.pdf_editor_service import get_pdf_editor
 
 router = APIRouter(prefix="/pdf-editor", tags=["PDF Editor"])
 
-from app.config import settings
-
-MAX_FILE_SIZE = settings.max_file_size_mb * 1024 * 1024
+from app.api.deps import current_limits
 
 
 def _validate_pdf(file: UploadFile, content: bytes):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Nur PDF-Dateien erlaubt")
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail=f"Datei zu gross (max {settings.max_file_size_mb} MB)")
+    limits = current_limits()
+    if len(content) > limits.max_file:
+        raise HTTPException(
+            status_code=400, detail=f"Datei zu gross (max {limits.max_file_mb} MB)"
+        )
 
 
 def _pdf_response(data: bytes, filename: str) -> StreamingResponse:

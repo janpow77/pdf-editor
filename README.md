@@ -1,11 +1,16 @@
 # PDF-Editor-App
 
 Eigenständige, öffentlich nutzbare Web-App mit PDF-, Word- und Excel-Werkzeugen —
-**kostenlos, ohne Registrierung, ohne Datenspeicherung**. Alle Verarbeitungen laufen
-vollständig im Arbeitsspeicher des Servers; es gibt keine Datenbank und keine
-persistente Ablage von Nutzerdateien.
+**kostenlos, ohne Registrierungszwang, ohne Datenspeicherung**. Alle Datei-Verarbeitungen
+laufen vollständig im Arbeitsspeicher des Servers; Nutzerdateien werden nie persistiert.
 
-Konzept, Phasenplan und Datenschutz-Details: [KONZEPT.md](./KONZEPT.md)
+Optional gibt es **Benutzerkonten** (offene Registrierung): angemeldete Nutzer bekommen
+höhere Limits (100 MB/Datei statt 50) und gespeicherte Werkzeug-Einstellungen. Der erste
+Admin wird per Env-Variablen (`PDFAPP_ADMIN_EMAIL`/`PDFAPP_ADMIN_PASSWORD`) beim Start
+angelegt; Admin-Bereich unter `/admin`. Konten liegen in PostgreSQL — ohne erreichbare
+Datenbank läuft die App automatisch im rein anonymen Modus weiter.
+
+Konzept, Phasenplan, Soll-Kriterien und Datenschutz-Details: [KONZEPT.md](./KONZEPT.md)
 
 ## Quickstart (lokal)
 
@@ -41,9 +46,15 @@ Alle Einstellungen über Umgebungsvariablen mit Präfix `PDFAPP_` — siehe
 
 | Variable | Default | Zweck |
 |---|---|---|
-| `PDFAPP_MAX_FILE_SIZE_MB` | 50 | Limit pro Datei |
-| `PDFAPP_MAX_TOTAL_SIZE_MB` | 200 | Limit pro Multi-Datei-Operation |
-| `PDFAPP_RATE_LIMIT_DEFAULT` | `30/minute;500/day` | Rate-Limit pro IP (alle Endpoints) |
+| `PDFAPP_SECRET_KEY` | — | Pflicht (JWT-Signatur), `openssl rand -hex 32` |
+| `PDFAPP_DB_PASSWORD` | — | Pflicht (Postgres-Passwort im Compose) |
+| `PDFAPP_ADMIN_EMAIL` / `_PASSWORD` | *(leer)* | Admin-Seed beim ersten Start (idempotent) |
+| `PDFAPP_MAX_FILE_SIZE_MB` | 50 | Limit pro Datei (anonym) |
+| `PDFAPP_MAX_TOTAL_SIZE_MB` | 200 | Limit pro Multi-Datei-Operation (anonym) |
+| `PDFAPP_MAX_FILE_SIZE_MB_AUTHED` | 100 | Limit pro Datei (angemeldet) |
+| `PDFAPP_MAX_TOTAL_SIZE_MB_AUTHED` | 400 | Limit pro Operation (angemeldet) |
+| `PDFAPP_RATE_LIMIT_DEFAULT` | `30/minute;500/day` | Rate-Limit pro IP (anonym) |
+| `PDFAPP_RATE_LIMIT_AUTHED` | `60/minute;2000/day` | Rate-Limit pro Nutzer (angemeldet) |
 | `PDFAPP_RATE_LIMIT_MAIL` | `5/hour` | Rate-Limit Mailversand |
 | `PDFAPP_SMTP_HOST` | *(leer)* | leer = Mailversand deaktiviert (503) |
 

@@ -21,6 +21,22 @@ class Settings(BaseSettings):
     # CORS (leer = gleiche Origin über nginx-Proxy, kein CORS nötig)
     cors_origins: str = ""
 
+    # Datenbank + Auth (Konten sind optional — ohne erreichbare DB läuft die
+    # App anonym weiter, Auth-Endpoints antworten dann 503)
+    database_url: str = "postgresql+psycopg2://pdfapp:pdfapp@db:5432/pdfapp"
+    secret_key: str = "dev-only-nicht-fuer-produktion"
+    access_token_expire_minutes: int = 720
+    admin_email: str = ""
+    admin_password: str = ""
+
+    # Limits für angemeldete Nutzer (höher als anonym)
+    max_file_size_mb_authed: int = 100
+    max_total_size_mb_authed: int = 400
+    rate_limit_authed: str = "60/minute;2000/day"
+
+    # Konto-Einstellungen (JSON-Blob)
+    preferences_max_bytes: int = 16384
+
     # Mailversand — nur aktiv, wenn smtp_host gesetzt ist
     smtp_host: str = ""
     smtp_port: int = 587

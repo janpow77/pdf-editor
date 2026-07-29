@@ -5,12 +5,37 @@
 #             TUNNEL_TOKEN in .env bzw. /etc/pdf-editor/env setzen)
 
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=pdfapp
+      - POSTGRES_USER=pdfapp
+      - POSTGRES_PASSWORD=${PDFAPP_DB_PASSWORD:?PDFAPP_DB_PASSWORD muss gesetzt sein}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pdfapp -d pdfapp"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   backend:
     build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
+      - PDFAPP_DATABASE_URL=postgresql+psycopg2://pdfapp:${PDFAPP_DB_PASSWORD:?}@db:5432/pdfapp
+      - PDFAPP_SECRET_KEY=${PDFAPP_SECRET_KEY:?PDFAPP_SECRET_KEY muss gesetzt sein}
+      - PDFAPP_ADMIN_EMAIL=${PDFAPP_ADMIN_EMAIL:-}
+      - PDFAPP_ADMIN_PASSWORD=${PDFAPP_ADMIN_PASSWORD:-}
       - PDFAPP_MAX_FILE_SIZE_MB=${PDFAPP_MAX_FILE_SIZE_MB:-50}
       - PDFAPP_MAX_TOTAL_SIZE_MB=${PDFAPP_MAX_TOTAL_SIZE_MB:-200}
+      - PDFAPP_MAX_FILE_SIZE_MB_AUTHED=${PDFAPP_MAX_FILE_SIZE_MB_AUTHED:-100}
+      - PDFAPP_MAX_TOTAL_SIZE_MB_AUTHED=${PDFAPP_MAX_TOTAL_SIZE_MB_AUTHED:-400}
       - PDFAPP_RATE_LIMIT_DEFAULT=${PDFAPP_RATE_LIMIT_DEFAULT:-30/minute;500/day}
+      - PDFAPP_RATE_LIMIT_AUTHED=${PDFAPP_RATE_LIMIT_AUTHED:-60/minute;2000/day}
       - PDFAPP_SMTP_HOST=${PDFAPP_SMTP_HOST:-}
       - PDFAPP_SMTP_PORT=${PDFAPP_SMTP_PORT:-587}
       - PDFAPP_SMTP_USER=${PDFAPP_SMTP_USER:-}
@@ -35,3 +60,6 @@ services:
     depends_on:
       - frontend
     restart: unless-stopped
+
+volumes:
+  pgdata:

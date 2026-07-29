@@ -146,6 +146,9 @@ class PdfToolsService:
             "word_diff": DOCX_AVAILABLE,
             "word_metadata": DOCX_AVAILABLE,
             "excel_metadata": OPENPYXL_AVAILABLE,
+            "pikepdf": PIKEPDF_AVAILABLE,
+            "pdf_protect": PIKEPDF_AVAILABLE,
+            "pdf_unlock": PIKEPDF_AVAILABLE,
         }
 
     def get_thumbnails(
@@ -1416,6 +1419,66 @@ class PdfToolsService:
         except Exception as e:
             return PdfToolResult(
                 success=False, output_format="xlsx", error=f"Fehler: {e}"
+            )
+
+    # === PDF Passwortschutz (pikepdf) ===
+
+    def protect_pdf(
+        self,
+        file_content: bytes,
+        user_password: str,
+        owner_password: str | None = None,
+    ) -> PdfToolResult:
+        """Encrypt a PDF with a user password (AES-256, R=6)."""
+        if not PIKEPDF_AVAILABLE:
+            return PdfToolResult(
+                success=False, output_format="pdf", error="pikepdf nicht verfügbar"
+            )
+        try:
+            with pikepdf.open(io.BytesIO(file_content)) as pdf:
+                buf = io.BytesIO()
+                pdf.save(
+                    buf,
+                    encryption=pikepdf.Encryption(
+                        user=user_password,
+                        owner=owner_password or user_password,
+                        R=6,
+                    ),
+                )
+            return PdfToolResult(
+                success=True, output_format="pdf", file_content=buf.getvalue()
+            )
+        except pikepdf.PasswordError:
+            return PdfToolResult(
+                success=False,
+                output_format="pdf",
+                error="PDF ist bereits passwortgeschützt — bitte zuerst entsperren",
+            )
+        except Exception as e:
+            return PdfToolResult(
+                success=False, output_format="pdf", error=f"Fehler: {e}"
+            )
+
+    def unlock_pdf(self, file_content: bytes, password: str) -> PdfToolResult:
+        """Remove encryption from a PDF using the known password."""
+        if not PIKEPDF_AVAILABLE:
+            return PdfToolResult(
+                success=False, output_format="pdf", error="pikepdf nicht verfügbar"
+            )
+        try:
+            with pikepdf.open(io.BytesIO(file_content), password=password) as pdf:
+                buf = io.BytesIO()
+                pdf.save(buf)
+            return PdfToolResult(
+                success=True, output_format="pdf", file_content=buf.getvalue()
+            )
+        except pikepdf.PasswordError:
+            return PdfToolResult(
+                success=False, output_format="pdf", error="Falsches Passwort"
+            )
+        except Exception as e:
+            return PdfToolResult(
+                success=False, output_format="pdf", error=f"Fehler: {e}"
             )
 
 

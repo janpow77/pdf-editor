@@ -159,6 +159,7 @@
 <script setup lang="ts">
 import { ref, onUnmounted } from 'vue'
 import { apiPost } from '@/lib/api'
+import { prefDefault } from '@/lib/auth'
 
 defineEmits<{ (e: 'back'): void }>()
 
@@ -176,7 +177,7 @@ const languages = [
 // --- State ---
 
 const file = ref<File | null>(null)
-const language = ref('deu')
+const language = ref(prefDefault('ocr_language', 'deu'))
 const loading = ref(false)
 const error = ref<string | null>(null)
 const dragOver = ref(false)

@@ -17,14 +17,10 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.api.deps import current_limits
 from app.services.pdf_tools_service import get_pdf_tools
 
 router = APIRouter(prefix="/pdf-tools", tags=["PDF & Dokument Tools"])
-
-from app.config import settings
-
-MAX_FILE_SIZE = settings.max_file_size_mb * 1024 * 1024
-MAX_TOTAL_SIZE = settings.max_total_size_mb * 1024 * 1024
 
 
 # === Schemas ===
@@ -49,6 +45,9 @@ class FeaturesResponse(BaseModel):
     word_diff: bool
     word_metadata: bool
     excel_metadata: bool
+    pikepdf: bool
+    pdf_protect: bool
+    pdf_unlock: bool
 
 
 class MetadataResponse(BaseModel):
@@ -107,8 +106,9 @@ class ExcelMetadataResponse(BaseModel):
 # === Helpers ===
 
 
-def _validate_pdf(file: UploadFile, content: bytes, max_size: int = MAX_FILE_SIZE):
+def _validate_pdf(file: UploadFile, content: bytes, max_size: int | None = None):
     """Validate a PDF upload."""
+    max_size = max_size if max_size is not None else current_limits().max_file
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=400, detail="Nur PDF-Dateien werden unterstützt"
@@ -120,8 +120,9 @@ def _validate_pdf(file: UploadFile, content: bytes, max_size: int = MAX_FILE_SIZ
         )
 
 
-def _validate_docx(file: UploadFile, content: bytes, max_size: int = MAX_FILE_SIZE):
+def _validate_docx(file: UploadFile, content: bytes, max_size: int | None = None):
     """Validate a Word upload."""
+    max_size = max_size if max_size is not None else current_limits().max_file
     if not file.filename or not file.filename.lower().endswith((".docx", ".doc")):
         raise HTTPException(
             status_code=400, detail="Nur Word-Dateien (.docx) werden unterstützt"
@@ -152,8 +153,9 @@ def _zip_response(data: bytes, filename: str) -> StreamingResponse:
     )
 
 
-def _validate_xlsx(file: UploadFile, content: bytes, max_size: int = MAX_FILE_SIZE):
+def _validate_xlsx(file: UploadFile, content: bytes, max_size: int | None = None):
     """Validate an Excel upload."""
+    max_size = max_size if max_size is not None else current_limits().max_file
     if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
         raise HTTPException(
             status_code=400, detail="Nur Excel-Dateien (.xlsx) werden unterstützt"
@@ -246,9 +248,9 @@ async def merge_pdfs(
     for f in files:
         content = await f.read()
         total_size += len(content)
-        if total_size > MAX_TOTAL_SIZE:
+        if total_size > current_limits().max_total:
             raise HTTPException(
-                status_code=400, detail="Gesamtgröße überschreitet 500 MB"
+                status_code=400, detail=f"Gesamtgröße überschreitet {current_limits().max_total_mb} MB"
             )
         _validate_pdf(f, content)
         file_data.append((f.filename or f"file_{len(file_data)}.pdf", content))
@@ -352,6 +354,49 @@ async def pdf_to_images(
 
     original_name = (file.filename or "document").rsplit(".", 1)[0]
     return _zip_response(result.file_content, f"{original_name}_bilder.zip")
+
+
+@router.post("/protect")
+async def protect_pdf(
+    file: UploadFile = File(...),
+    password: str = Form(..., min_length=1, description="Öffnen-Passwort"),
+    owner_password: str | None = Form(
+        None, description="Optionales Besitzer-Passwort (Default: wie Öffnen-Passwort)"
+    ),
+):
+    """Encrypt a PDF with a password (AES-256)."""
+    content = await file.read()
+    _validate_pdf(file, content)
+
+    service = get_pdf_tools()
+    result = service.protect_pdf(content, password, owner_password)
+
+    if not result.success:
+        status = 400 if "passwortgeschützt" in (result.error or "") else 500
+        raise HTTPException(status_code=status, detail=result.error)
+
+    original_name = (file.filename or "document").rsplit(".", 1)[0]
+    return _pdf_response(result.file_content, f"{original_name}_geschuetzt.pdf")
+
+
+@router.post("/unlock")
+async def unlock_pdf(
+    file: UploadFile = File(...),
+    password: str = Form(..., description="Bekanntes Passwort des PDFs"),
+):
+    """Remove password protection from a PDF using the known password."""
+    content = await file.read()
+    _validate_pdf(file, content)
+
+    service = get_pdf_tools()
+    result = service.unlock_pdf(content, password)
+
+    if not result.success:
+        status = 400 if result.error == "Falsches Passwort" else 500
+        raise HTTPException(status_code=status, detail=result.error)
+
+    original_name = (file.filename or "document").rsplit(".", 1)[0]
+    return _pdf_response(result.file_content, f"{original_name}_entsperrt.pdf")
 
 
 @router.post("/compress")
@@ -465,9 +510,10 @@ async def images_to_pdf(
             )
         content = await f.read()
         total_size += len(content)
-        if total_size > 200 * 1024 * 1024:
+        if total_size > current_limits().max_total:
             raise HTTPException(
-                status_code=400, detail="Gesamtgröße überschreitet 200 MB"
+                status_code=400,
+                detail=f"Gesamtgröße überschreitet {current_limits().max_total_mb} MB",
             )
         file_data.append((f.filename, content))
 
@@ -607,9 +653,10 @@ async def word_merge(
     for f in files:
         content = await f.read()
         total_size += len(content)
-        if total_size > 200 * 1024 * 1024:
+        if total_size > current_limits().max_total:
             raise HTTPException(
-                status_code=400, detail="Gesamtgröße überschreitet 200 MB"
+                status_code=400,
+                detail=f"Gesamtgröße überschreitet {current_limits().max_total_mb} MB",
             )
         _validate_docx(f, content)
         file_data.append((f.filename or f"doc_{len(file_data)}.docx", content))

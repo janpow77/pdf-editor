@@ -7,7 +7,9 @@
     <p>
       <strong>Kostenlos &amp; ohne Datenspeicherung</strong> — Ihre Dateien werden
       ausschließlich für die Dauer der Verarbeitung im Arbeitsspeicher gehalten und
-      danach sofort verworfen. Keine Registrierung erforderlich.
+      danach sofort verworfen. Keine Registrierung erforderlich. Mit einem optionalen
+      Gratis-Konto gelten höhere Limits (100 MB) und gespeicherte Einstellungen —
+      Ihre Dateien werden auch damit nie gespeichert.
       <RouterLink to="/datenschutz" class="underline hover:no-underline">Mehr erfahren</RouterLink>
     </p>
   </div>

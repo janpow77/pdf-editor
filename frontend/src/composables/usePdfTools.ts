@@ -284,11 +284,62 @@ export function usePdfTools() {
     await downloadBlob(resp, file.name.replace(/\.xlsx?$/i, '_meta.xlsx'))
   }
 
+  async function pdfToWord(
+    file: File,
+    options?: { pages?: string; useOcr?: boolean; ocrLanguage?: string },
+  ) {
+    const fd = new FormData()
+    fd.append('file', file)
+    const params = new URLSearchParams()
+    if (options?.pages) params.set('pages', options.pages)
+    if (options?.useOcr) params.set('use_ocr', 'true')
+    if (options?.ocrLanguage) params.set('ocr_language', options.ocrLanguage)
+    const qs = params.toString()
+    const resp = await apiPost(`/api/pdf-convert/to-word${qs ? `?${qs}` : ''}`, fd)
+    await downloadBlob(resp, file.name.replace(/\.pdf$/i, '.docx'))
+    return true
+  }
+
+  async function pdfToExcel(file: File, options?: { pages?: string; consolidate?: boolean }) {
+    const fd = new FormData()
+    fd.append('file', file)
+    const params = new URLSearchParams()
+    if (options?.pages) params.set('pages', options.pages)
+    if (options?.consolidate === false) params.set('consolidate', 'false')
+    const qs = params.toString()
+    const resp = await apiPost(`/api/pdf-convert/to-excel${qs ? `?${qs}` : ''}`, fd)
+    await downloadBlob(resp, file.name.replace(/\.pdf$/i, '.xlsx'))
+    return true
+  }
+
+  async function protectPdf(file: File, password: string, ownerPassword?: string) {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('password', password)
+    if (ownerPassword) fd.append('owner_password', ownerPassword)
+    const resp = await apiRequest('/protect', fd)
+    await downloadBlob(resp, file.name.replace(/\.pdf$/i, '_geschuetzt.pdf'))
+    return true
+  }
+
+  async function unlockPdf(file: File, password: string) {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('password', password)
+    const resp = await apiRequest('/unlock', fd)
+    await downloadBlob(resp, file.name.replace(/\.pdf$/i, '_entsperrt.pdf'))
+    return true
+  }
+
   return {
     loading,
     error,
     withLoading,
     getStatus,
+    protectPdf,
+    unlockPdf,
+    pdfToWord,
+    pdfToExcel,
     getThumbnails,
     mergePdfs,
     splitPdf,

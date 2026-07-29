@@ -6,28 +6,83 @@ Missbrauch über Rate-Limiting pro IP und Dateigrößen-Limits (app/config.py).
 """
 
 import logging
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from sqlalchemy.exc import OperationalError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.api import mail, pdf_editor, pdf_tools
+from app.api import admin, auth, mail, me, pdf_converter, pdf_editor, pdf_tools
+from app.api.deps import attach_upload_limits
 from app.config import settings
-from app.ratelimit import limiter
+from app.ratelimit import RateTierMiddleware, limiter
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def seed_admin() -> None:
+    """Ersten Admin aus Env anlegen — idempotent."""
+    from app.db import SessionLocal
+    from app.models import User, UserRole
+    from app.security import get_password_hash
+
+    if not settings.admin_email or not settings.admin_password:
+        return
+    email = settings.admin_email.strip().lower()
+    db = SessionLocal()
+    try:
+        if db.query(User).filter(User.email == email).first():
+            return
+        db.add(
+            User(
+                email=email,
+                hashed_password=get_password_hash(settings.admin_password),
+                role=UserRole.ADMIN,
+                is_active=True,
+                preferences={},
+            )
+        )
+        db.commit()
+        logger.info("Admin-Konto angelegt")
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Konten sind optional: ohne erreichbare DB läuft die App anonym weiter.
+    from app import db as app_db
+    from app import models  # noqa: F401  — registriert Tabellen an Base
+
+    try:
+        app_db.Base.metadata.create_all(bind=app_db.engine)
+        seed_admin()
+        app.state.db_available = True
+    except OperationalError:
+        logger.warning(
+            "Datenbank nicht erreichbar — Benutzerkonten deaktiviert, anonyme Nutzung läuft weiter"
+        )
+        app.state.db_available = False
+    yield
+
 
 app = FastAPI(
     title="PDF-Editor",
     description="Kostenlose PDF-, Word- und Excel-Werkzeuge — ohne Datenspeicherung.",
-    version="0.1.0",
+    version="0.2.0",
+    lifespan=lifespan,
 )
 
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
+# Nach SlowAPIMiddleware hinzugefügt = läuft VOR ihr (zuletzt registrierte
+# Middleware ist die äußerste) — setzt das Rate-Tier für dynamic_limits.
+app.add_middleware(RateTierMiddleware)
 
 if settings.cors_origins:
     app.add_middleware(
@@ -52,12 +107,22 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 
 @app.get("/api/health")
-async def health():
+async def health(request: Request):
     from app.services.pdf_tools_service import get_pdf_tools
 
-    return {"status": "ok", "features": get_pdf_tools().check_features()}
+    return {
+        "status": "ok",
+        "accounts": bool(getattr(request.app.state, "db_available", False)),
+        "features": get_pdf_tools().check_features(),
+    }
 
 
-app.include_router(pdf_tools.router, prefix="/api")
-app.include_router(pdf_editor.router, prefix="/api")
+# Datei-Router bekommen die gestuften Upload-Limits (anonym vs. angemeldet)
+_limit_deps = [Depends(attach_upload_limits)]
+app.include_router(pdf_tools.router, prefix="/api", dependencies=_limit_deps)
+app.include_router(pdf_editor.router, prefix="/api", dependencies=_limit_deps)
+app.include_router(pdf_converter.router, prefix="/api", dependencies=_limit_deps)
 app.include_router(mail.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+app.include_router(me.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")

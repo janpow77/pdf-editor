@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr-deu \
         tesseract-ocr-eng \
         libreoffice-writer \
+        default-jre-headless \
         fonts-dejavu \
         fonts-liberation \
     && rm -rf /var/lib/apt/lists/*

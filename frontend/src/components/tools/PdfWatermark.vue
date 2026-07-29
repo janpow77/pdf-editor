@@ -116,13 +116,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { usePdfTools } from '@/composables/usePdfTools'
+import { prefDefault } from '@/lib/auth'
 
 defineEmits<{ (e: 'back'): void }>()
 
 const { loading, error, withLoading, addWatermark } = usePdfTools()
 const file = ref<File | null>(null)
 const mode = ref('text')
-const text = ref('ENTWURF')
+const text = ref(prefDefault('watermark_text', 'ENTWURF'))
 const watermarkImage = ref<File | null>(null)
 const position = ref('center')
 const opacity = ref(0.3)

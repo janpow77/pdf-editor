@@ -95,6 +95,9 @@ import ImagesToPdf from '@/components/tools/ImagesToPdf.vue'
 import PdfPageEditor from '@/components/tools/PdfPageEditor.vue'
 import PdfMetadata from '@/components/tools/PdfMetadata.vue'
 import PdfCompare from '@/components/tools/PdfCompare.vue'
+import PdfProtect from '@/components/tools/PdfProtect.vue'
+import PdfToWord from '@/components/tools/PdfToWord.vue'
+import PdfToExcel from '@/components/tools/PdfToExcel.vue'
 import PdfOcr from '@/components/tools/PdfOcr.vue'
 import WordToPdf from '@/components/tools/WordToPdf.vue'
 import WordMerge from '@/components/tools/WordMerge.vue'
@@ -115,6 +118,9 @@ const toolComponents: Record<string, Component> = {
   pageEditor: markRaw(PdfPageEditor),
   metadata: markRaw(PdfMetadata),
   pdfCompare: markRaw(PdfCompare),
+  protect: markRaw(PdfProtect),
+  pdfToWord: markRaw(PdfToWord),
+  pdfToExcel: markRaw(PdfToExcel),
   ocr: markRaw(PdfOcr),
   wordToPdf: markRaw(WordToPdf),
   wordMerge: markRaw(WordMerge),
@@ -134,6 +140,9 @@ const pdfTools = [
   { id: 'pageEditor', label: 'Seiten ordnen', desc: 'Umsortieren & löschen', icon: '📑', color: 'bg-pink-100 dark:bg-pink-900/30' },
   { id: 'pdfCompare', label: 'PDF Vergleich', desc: 'Zwei PDFs vergleichen', icon: '⚖️', color: 'bg-amber-100 dark:bg-amber-900/30' },
   { id: 'ocr', label: 'OCR', desc: 'Texterkennung', icon: '🔍', color: 'bg-cyan-100 dark:bg-cyan-900/30' },
+  { id: 'protect', label: 'Schützen / Entsperren', desc: 'Passwortschutz', icon: '🔒', color: 'bg-emerald-100 dark:bg-emerald-900/30' },
+  { id: 'pdfToWord', label: 'PDF → Word', desc: 'Als DOCX exportieren', icon: '📝', color: 'bg-sky-100 dark:bg-sky-900/30' },
+  { id: 'pdfToExcel', label: 'PDF → Excel', desc: 'Tabellen extrahieren', icon: '📊', color: 'bg-lime-100 dark:bg-lime-900/30' },
   { id: 'metadata', label: 'Metadaten', desc: 'Titel, Autor, Datum etc.', icon: 'ℹ️', color: 'bg-gray-100 dark:bg-gray-700' },
 ]
 

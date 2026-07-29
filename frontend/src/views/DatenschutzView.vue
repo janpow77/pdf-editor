@@ -46,11 +46,27 @@
       </section>
 
       <section>
-        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Optionale Benutzerkonten (geplant)</h2>
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Benutzerkonten (optional)</h2>
+        <p class="mb-2">
+          Die Werkzeuge sind vollständig ohne Konto nutzbar. Wer sich freiwillig
+          registriert, erhält höhere Limits und kann Werkzeug-Voreinstellungen speichern.
+          In diesem Fall speichern wir ausschließlich:
+        </p>
+        <ul class="list-disc pl-5 space-y-1 mb-2">
+          <li>Ihre E-Mail-Adresse (als Anmeldename),</li>
+          <li>Ihr Passwort als bcrypt-Hash (niemals im Klartext),</li>
+          <li>Ihre Werkzeug-Voreinstellungen (z.&nbsp;B. Standard-OCR-Sprache),</li>
+          <li>Zeitstempel der Kontoerstellung und der letzten Anmeldung.</li>
+        </ul>
+        <p class="mb-2">
+          Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Bereitstellung der von Ihnen
+          gewünschten Konto-Funktionen). Die Einwilligung erfolgt ausdrücklich bei der
+          Registrierung. <strong>Auch mit Konto werden Ihre verarbeiteten Dateien
+          niemals gespeichert.</strong>
+        </p>
         <p>
-          Künftig kann ein optionales Benutzerkonto für Komfortfunktionen angeboten werden.
-          Sollte dies eingeführt werden, gilt dafür eine gesonderte, ausdrückliche
-          Einwilligung — die anonyme Nutzung ohne Speicherung bleibt unverändert möglich.
+          Sie können Ihr Konto jederzeit selbst auf der Konto-Seite endgültig löschen
+          (Art. 17 DSGVO); dabei werden alle Kontodaten unwiderruflich entfernt.
         </p>
       </section>
 
