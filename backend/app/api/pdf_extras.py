@@ -92,6 +92,60 @@ async def form_fill(
     )
 
 
+@router.post("/form/create")
+async def form_create(
+    file: UploadFile = File(...),
+    fields: str = Form(
+        ...,
+        description=(
+            'JSON-Liste [{"page":1,"type":"text","name":"vorname",'
+            '"x0":0.1,"y0":0.2,"x1":0.5,"y1":0.24,"font_size":11,'
+            '"required":false,"options":[],"value":""}] — Koordinaten 0–1'
+        ),
+    ),
+    dry_run: bool = Form(
+        False, description="Nur prüfen: JSON mit Hinweisen statt PDF zurückgeben"
+    ),
+):
+    """Formularfelder aus einem Designer-Layout anlegen (AcroForm).
+
+    `dry_run=true` liefert das Prüfergebnis als JSON (inkl. Hinweistexte), weil
+    Hinweise sich nicht verlustfrei in HTTP-Headern transportieren lassen.
+    """
+    content = await file.read()
+    _validate_pdf(file, content)
+    try:
+        fields_list = json.loads(fields)
+        assert isinstance(fields_list, list)
+        assert all(isinstance(f, dict) for f in fields_list)
+    except (json.JSONDecodeError, AssertionError):
+        raise HTTPException(
+            status_code=400, detail="fields muss eine JSON-Liste aus Objekten sein"
+        )
+    result = get_pdf_extras().create_form_fields(content, fields_list)
+    if dry_run:
+        meta = result.metadata or {}
+        return {
+            "ok": result.success,
+            "created": meta.get("created", 0),
+            "skipped": meta.get("skipped", len(fields_list)),
+            "warnings": result.warnings or [],
+            "error": result.error,
+        }
+    if not result.success:
+        raise HTTPException(status_code=422, detail=result.error)
+    meta = result.metadata or {}
+    return _pdf_response(
+        result.file_content,
+        f"{_name(file)}_formular.pdf",
+        headers={
+            "X-Fields-Created": str(meta.get("created", 0)),
+            "X-Fields-Skipped": str(meta.get("skipped", 0)),
+            "X-Warnings": str(len(result.warnings or [])),
+        },
+    )
+
+
 @router.post("/bates")
 async def bates_numbers(
     file: UploadFile = File(...),

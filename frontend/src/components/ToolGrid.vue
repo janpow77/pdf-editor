@@ -146,6 +146,7 @@ import PdfFlatten from '@/components/tools/PdfFlatten.vue'
 import PdfToText from '@/components/tools/PdfToText.vue'
 import PdfBates from '@/components/tools/PdfBates.vue'
 import PdfFormFill from '@/components/tools/PdfFormFill.vue'
+import PdfFormDesigner from '@/components/tools/PdfFormDesigner.vue'
 import PdfPdfa from '@/components/tools/PdfPdfa.vue'
 import PdfSignImage from '@/components/tools/PdfSignImage.vue'
 import PdfAnnotate from '@/components/tools/PdfAnnotate.vue'
@@ -203,6 +204,7 @@ const toolComponents: Record<string, Component> = {
   toText: markRaw(PdfToText),
   bates: markRaw(PdfBates),
   formFill: markRaw(PdfFormFill),
+  formDesigner: markRaw(PdfFormDesigner),
   pdfa: markRaw(PdfPdfa),
   signImage: markRaw(PdfSignImage),
   annotate: markRaw(PdfAnnotate),
@@ -257,6 +259,7 @@ const pdfTools = computed<Tool[]>(() => [
   { id: 'headerFooter', label: 'Kopf-/Fußzeile', desc: 'Text oben/unten', icon: '📰', color: TILE },
   { id: 'bates', label: 'Bates-Nummern', desc: 'Akten-Kennzeichnung', icon: '🏷️', color: TILE },
   { id: 'pruefakte', label: 'Prüfakte', desc: 'Akte mit Lesezeichen + Bates', icon: '🗂️', color: TILE },
+  { id: 'formDesigner', label: 'Formular-Designer', desc: 'Felder anlegen, Layout lokal speichern', icon: '🧩', color: TILE },
   { id: 'formFill', label: 'Formular ausfüllen', desc: 'AcroForm-Felder', icon: '📋', color: TILE },
   { id: 'signImage', label: 'Unterschrift', desc: 'Bild-Signatur einfügen', icon: '✍️', color: TILE },
   { id: 'pdfa', label: 'PDF/A', desc: 'Archivformat', icon: '🗄️', color: TILE },

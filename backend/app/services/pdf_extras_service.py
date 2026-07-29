@@ -79,11 +79,41 @@ def _latin1_safe(text: str) -> str:
     return text.translate(_LATIN1_MAP).encode("latin-1", "replace").decode("latin-1")
 
 
+# ── Formular-Designer: Feldtypen ──────────────────────────────
+# Radio-Gruppen fehlen bewusst: PyMuPDF 1.28 kann mehrere Radio-Widgets
+# derselben Gruppe nicht anlegen ("bad xref" beim ersten Widget) und liefert
+# keine getrennten On-States. Ersatz im UI: Dropdown bzw. Checkboxen.
+FORM_FIELD_TYPES = ("text", "textarea", "checkbox", "dropdown", "listbox", "signature")
+
+_WIDGET_TO_DESIGNER: dict[int, str] = (
+    {
+        fitz.PDF_WIDGET_TYPE_TEXT: "text",
+        fitz.PDF_WIDGET_TYPE_CHECKBOX: "checkbox",
+        fitz.PDF_WIDGET_TYPE_COMBOBOX: "dropdown",
+        fitz.PDF_WIDGET_TYPE_LISTBOX: "listbox",
+        fitz.PDF_WIDGET_TYPE_SIGNATURE: "signature",
+    }
+    if PYMUPDF_AVAILABLE
+    else {}
+)
+
+# Feldnamen landen im PDF-AcroForm — Punkt (Hierarchie), Klammern und
+# Steuerzeichen führen zu unbrauchbaren oder mehrdeutigen Namen.
+_FIELD_NAME_FORBIDDEN = str.maketrans({c: "_" for c in '.[]()/<>{}"\r\n\t'})
+
+
+def _field_name_safe(name: str, fallback: str) -> str:
+    cleaned = (name or "").strip().translate(_FIELD_NAME_FORBIDDEN)
+    cleaned = "".join(ch for ch in cleaned if ch.isprintable()).strip()
+    return (cleaned or fallback)[:120]
+
+
 class PdfExtrasService:
     def check_features(self) -> dict[str, bool]:
         return {
             "pdf_to_text": PYMUPDF_AVAILABLE,
             "form_fill": PYMUPDF_AVAILABLE,
+            "form_design": PYMUPDF_AVAILABLE,
             "bates": PYMUPDF_AVAILABLE,
             "redact_search": PYMUPDF_AVAILABLE,
             "sign_image": PYMUPDF_AVAILABLE,
@@ -126,7 +156,12 @@ class PdfExtrasService:
             doc = fitz.open(stream=file_content, filetype="pdf")
             fields = []
             for page_idx in range(doc.page_count):
-                for widget in doc[page_idx].widgets() or []:
+                page = doc[page_idx]
+                prect = page.rect
+                for widget in page.widgets() or []:
+                    flags = int(widget.field_flags or 0)
+                    multiline = bool(flags & fitz.PDF_TX_FIELD_IS_MULTILINE)
+                    r = widget.rect
                     fields.append(
                         {
                             "name": widget.field_name or f"feld_{len(fields)}",
@@ -134,6 +169,21 @@ class PdfExtrasService:
                             "value": widget.field_value or "",
                             "options": widget.choice_values or [],
                             "page": page_idx + 1,
+                            # Designer-Daten: normierte Geometrie + Eigenschaften,
+                            # damit vorhandene Formulare importiert werden können
+                            "designer_type": _WIDGET_TO_DESIGNER.get(
+                                widget.field_type, "text"
+                            )
+                            if not multiline
+                            else "textarea",
+                            "x0": round(r.x0 / prect.width, 5) if prect.width else 0,
+                            "y0": round(r.y0 / prect.height, 5) if prect.height else 0,
+                            "x1": round(r.x1 / prect.width, 5) if prect.width else 0,
+                            "y1": round(r.y1 / prect.height, 5) if prect.height else 0,
+                            "font_size": float(widget.text_fontsize or 0) or 11.0,
+                            "required": bool(flags & fitz.PDF_FIELD_IS_REQUIRED),
+                            "readonly": bool(flags & fitz.PDF_FIELD_IS_READ_ONLY),
+                            "tooltip": widget.field_label or "",
                         }
                     )
             doc.close()
@@ -184,6 +234,141 @@ class PdfExtrasService:
             )
         except Exception as e:
             return _fail(f"Formular ausfüllen fehlgeschlagen: {e}")
+
+    # ── Formular-Designer: Felder anlegen ─────────────────────
+
+    def create_form_fields(
+        self, file_content: bytes, fields: list[dict]
+    ) -> PdfToolResult:
+        """AcroForm-Felder aus einem Designer-Layout in das PDF schreiben.
+
+        Koordinaten sind auf 0–1 normiert (wie im Annotations-Editor), damit
+        das Layout unabhängig von der Vorschau-Auflösung gilt. Fehlerhafte
+        Einzelfelder brechen den Vorgang nicht ab — sie landen in `warnings`.
+        """
+        if not PYMUPDF_AVAILABLE:
+            return _fail("PyMuPDF nicht verfügbar")
+        if not fields:
+            return _fail("Keine Felder übergeben")
+        if len(fields) > 200:
+            return _fail("Maximal 200 Felder pro Aufruf")
+        try:
+            doc = fitz.open(stream=file_content, filetype="pdf")
+            warnings: list[str] = []
+            used_names: set[str] = {
+                w.field_name
+                for i in range(doc.page_count)
+                for w in (doc[i].widgets() or [])
+                if w.field_name
+            }
+            created = 0
+
+            for idx, spec in enumerate(fields):
+                label = f"Feld {idx + 1}"
+                try:
+                    ftype = str(spec.get("type", "text")).lower()
+                    if ftype not in FORM_FIELD_TYPES:
+                        warnings.append(f"{label}: unbekannter Typ '{ftype}' übersprungen")
+                        continue
+                    page_no = int(spec.get("page", 1))
+                    if not 1 <= page_no <= doc.page_count:
+                        warnings.append(f"{label}: Seite {page_no} existiert nicht")
+                        continue
+                    page = doc[page_no - 1]
+                    prect = page.rect
+
+                    # normierte Geometrie → Seitenkoordinaten, mit Mindestgröße
+                    x0, x1 = sorted((float(spec.get("x0", 0)), float(spec.get("x1", 0))))
+                    y0, y1 = sorted((float(spec.get("y0", 0)), float(spec.get("y1", 0))))
+                    rect = fitz.Rect(
+                        prect.x0 + max(0.0, min(1.0, x0)) * prect.width,
+                        prect.y0 + max(0.0, min(1.0, y0)) * prect.height,
+                        prect.x0 + max(0.0, min(1.0, x1)) * prect.width,
+                        prect.y0 + max(0.0, min(1.0, y1)) * prect.height,
+                    )
+                    if rect.width < 8 or rect.height < 8:
+                        warnings.append(f"{label}: zu klein (mindestens 8 × 8 Punkte)")
+                        continue
+
+                    name = _field_name_safe(str(spec.get("name", "")), f"feld_{idx + 1}")
+                    if name in used_names:
+                        suffix = 2
+                        while f"{name}_{suffix}" in used_names:
+                            suffix += 1
+                        warnings.append(
+                            f"{label}: Name '{name}' bereits vergeben → '{name}_{suffix}'"
+                        )
+                        name = f"{name}_{suffix}"
+                    used_names.add(name)
+
+                    widget = fitz.Widget()
+                    widget.field_name = name
+                    widget.rect = rect
+                    widget.text_fontsize = max(4.0, min(72.0, float(spec.get("font_size", 11))))
+                    tooltip = str(spec.get("tooltip", "")).strip()
+                    if tooltip:
+                        widget.field_label = _latin1_safe(tooltip[:200])
+
+                    flags = 0
+                    if spec.get("required"):
+                        flags |= fitz.PDF_FIELD_IS_REQUIRED
+                    if spec.get("readonly"):
+                        flags |= fitz.PDF_FIELD_IS_READ_ONLY
+
+                    if ftype in ("text", "textarea"):
+                        widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+                        if ftype == "textarea":
+                            flags |= fitz.PDF_TX_FIELD_IS_MULTILINE
+                        widget.field_value = _latin1_safe(str(spec.get("value", "")))
+                    elif ftype == "checkbox":
+                        widget.field_type = fitz.PDF_WIDGET_TYPE_CHECKBOX
+                        widget.field_value = bool(spec.get("value")) and str(
+                            spec.get("value")
+                        ).lower() not in ("false", "off", "0", "")
+                    elif ftype in ("dropdown", "listbox"):
+                        options = [
+                            _latin1_safe(str(o)) for o in (spec.get("options") or []) if str(o).strip()
+                        ]
+                        if not options:
+                            warnings.append(f"{label}: ohne Auswahlwerte übersprungen")
+                            continue
+                        widget.field_type = (
+                            fitz.PDF_WIDGET_TYPE_COMBOBOX
+                            if ftype == "dropdown"
+                            else fitz.PDF_WIDGET_TYPE_LISTBOX
+                        )
+                        widget.choice_values = options
+                        value = _latin1_safe(str(spec.get("value", "")))
+                        widget.field_value = value if value in options else options[0]
+                    else:  # signature
+                        widget.field_type = fitz.PDF_WIDGET_TYPE_SIGNATURE
+
+                    if flags:
+                        widget.field_flags = flags
+                    page.add_widget(widget)
+                    created += 1
+                except Exception as e:  # einzelnes Feld darf den Rest nicht kippen
+                    warnings.append(f"{label}: {e}")
+
+            if created == 0:
+                doc.close()
+                return PdfToolResult(
+                    success=False,
+                    output_format="pdf",
+                    error="Kein Feld konnte angelegt werden",
+                    warnings=warnings,
+                )
+            out = doc.tobytes(garbage=3, deflate=True)
+            doc.close()
+            return PdfToolResult(
+                success=True,
+                output_format="pdf",
+                file_content=out,
+                metadata={"created": created, "skipped": len(fields) - created},
+                warnings=warnings,
+            )
+        except Exception as e:
+            return _fail(f"Formularfelder anlegen fehlgeschlagen: {e}")
 
     # ── Bates-Nummerierung ────────────────────────────────────
 

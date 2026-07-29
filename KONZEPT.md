@@ -107,6 +107,35 @@ und ohne Cloud machbar sind (Details: MODULKATALOG_2026.md):
 - **Rolodex-Ansicht**: umschaltbare Dashboard-Ansicht (Raster ⇄ 3D-Karten-
   Karussell mit Tastatur-/Mausrad-Navigation), Wahl in localStorage persistiert.
 
+### Formular-Designer — umgesetzt
+
+Felder werden per Maus auf der Seitenvorschau aufgezogen (Klick = Standardgröße
+des Feldtyps), Eigenschaften rechts bearbeitet: Name, Hilfetext, Vorbelegung,
+Auswahlwerte, Schriftgröße, Pflichtfeld, Nur-lesbar; dazu Duplizieren, Löschen,
+Feldliste über alle Seiten. Feldtypen: Textfeld, mehrzeilig, Kontrollkästchen,
+Dropdown, Liste, Signaturfeld.
+
+- **Koordinaten**: normiert auf 0–1 wie im Annotations-Editor, damit das Layout
+  unabhängig von der Vorschauauflösung und auf andere Dokumente übertragbar ist.
+- **Lokales Speichern ohne Server**: Autosave des Layouts in `localStorage`
+  (Wiederherstellung beim nächsten Öffnen, mit Verwerfen-Option) plus Export als
+  JSON-Datei (`<name>_formular-layout.json`, Schema `{version, document, fields}`).
+- **Import**: Layout-JSON einlesen (akzeptiert Objekt oder bloße Feldliste, mit
+  Normalisierung/Clamping und Feldzahl-Obergrenze) sowie Übernahme **vorhandener
+  AcroForm-Felder aus dem PDF** — `form/fields` liefert dafür normierte Geometrie
+  und Designer-Typen, sodass fremde Formulare weiterbearbeitet werden können.
+- **Prüflauf** (`dry_run=true`) zeigt vor dem Erzeugen alle Hinweise im Klartext
+  (falsche Seite, zu kleines Feld, fehlende Auswahlwerte, doppelter Name →
+  automatische Nummerierung). Hinweise gehen bewusst nicht über HTTP-Header,
+  weil deutsche Texte dort nicht verlustfrei transportierbar sind.
+- **Robustheit**: Feldnamen werden für AcroForm saniert (Punkt/Klammern/
+  Steuerzeichen → `_`), Namenskollisionen erhalten Suffixe, fehlerhafte
+  Einzelfelder brechen den Vorgang nicht ab (Ergebnis + `warnings`).
+- **Grenze (dokumentiert)**: Optionsfelder/Radio-Gruppen fehlen — PyMuPDF 1.28
+  kann mehrere Radio-Widgets derselben Gruppe nicht anlegen („bad xref") und
+  liefert keine getrennten On-States; das UI verweist auf Dropdown bzw.
+  Kontrollkästchen. Offen bleibt der CSV-Export der Felddaten.
+
 ### Optionale Konten — vorgezogen und umgesetzt
 
 Ursprünglich Phase 3, auf Nutzerwunsch vorgezogen. Grundsätze (alle eingehalten):
@@ -257,6 +286,8 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | F9 | `DELETE /me` mit Passwort → 204, Login danach 401 | `test_auth.py` | ✅ automatisiert |
 | F10 | Schützen: fitz `needs_pass=True`; Entsperren korrekt; falsches Passwort 400 | `test_pdf_protect.py` | ✅ automatisiert |
 | F11 | PDF→Word valides DOCX; `/api/pdf-convert/status` im Container `tabula: true` | `test_pdf_converter.py` + Container-curl | ✅ automatisiert |
+| F12 | Formular-Designer: alle 6 Feldtypen landen als AcroForm im PDF (Typ, Auswahlwerte, Flags, Position maßstabsgetreu), erzeugte Felder sind mit „Formular ausfüllen" befüllbar | `test_form_designer.py` (10 Fälle) + Browser-E2E mit Feld-Prüfung im erzeugten PDF | ✅ automatisiert + live geprüft |
+| F13 | Layout lokal: Autosave in localStorage, JSON-Datei-Export, Import von JSON und von vorhandenen PDF-Feldern — ohne jede Server-Speicherung | Browser-E2E (11 Schritte: ziehen → autosave → prüfen → JSON speichern → erzeugen → leeren → importieren → PDF-Felder übernehmen) | ✅ live geprüft |
 | D1 | Keine Datei-Persistenz nach Verarbeitung | Dateisystem-Diff vor/nach 7-Operationen-Serie | ✅ live geprüft (0 neue Dateien) |
 | D2 | users-Tabelle nur E-Mail/Hash/Rolle/Flags/Prefs/Zeitstempel — keine IP | `\d users` + Code-Review models.py | ✅ per Modell |
 | D3 | Mail-Adresse nie in Logs (Erfolg + Fehlerpfade) | Log-Grep nach Testversand gegen Debug-SMTP | ✅ live geprüft (0 Treffer, SMTP-Gegenprobe positiv) |
@@ -281,6 +312,7 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | 1.6b | Annotations-Editor (Maus), digitale Signatur (pyHanko), Scan-Optimierung (OCRmyPDF), Batch-Verarbeitung | ✅ |
 | 1.6c | Restpunkte: TOC-Editor, Async-Jobs, E-Mail-Verifikation, Passwort-Reset, Turnstile, Alembic | ✅ |
 | 1.6d | Modulkatalog-Ausbau: Office→PDF, Exporte (MD/HTML/JSON/CSV), Bereinigen, Rechte, Signaturprüfung, TSA, Prüfakte, Qualitätsprüfung, lokale KI, Rolodex-Dashboard | ✅ |
+| 1.6e | Formular-Designer (Felder aufziehen, Prüflauf, Layout lokal speichern + importieren, Übernahme vorhandener Felder) | ✅ |
 | 1.7 | Anbieterdaten eintragen, SMTP-Zugang konfigurieren, Tunnel anlegen, Erst-Deploy | offen |
 | 1.8 | Repo-Extraktion + CI (ghcr-Images, Smoke-Test-Gate) | offen |
-| 2 | Verbleibende Katalog-Lücken ohne Speicher-Konflikt: Formular-Designer + CSV-Export, Batch-Signierung, KI-Übersetzung/Schlagwörter, Vertrauensanker für Signaturprüfung | offen |
+| 2 | Verbleibende Katalog-Lücken ohne Speicher-Konflikt: Formular-CSV-Export, Batch-Signierung, KI-Übersetzung/Schlagwörter, Vertrauensanker für Signaturprüfung | offen |

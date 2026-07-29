@@ -40,10 +40,20 @@ Prüfakte, Qualitätsprüfung, lokale KI, Rolodex-Dashboard).
 ✅ Dokumentenvergleich Text + visuell (async), Word-Vergleich
 ❌ Tabellen-/Layout-spezifischer Vergleich, Versionsverwaltung mit Änderungsprotokoll (⛔ bräuchte Dokumentspeicherung).
 
-## 6. Formulare — 🟡
+## 6. Formulare — ✅ bis auf Berechnungen
 
 ✅ Erkennen + Ausfüllen + Einbrennen (AcroForm: Text, Checkbox, Auswahl)
-❌ Felder erzeugen (Formular-Designer), Berechnungen/Validierung, CSV-Export der Felddaten (klein, lohnt), XFA (bewusst nie — auch Adobe deprecates XFA).
+✅ **Formular-Designer**: Felder per Maus auf der Seitenvorschau aufziehen
+(Textfeld, mehrzeilig, Kontrollkästchen, Dropdown, Liste, Signaturfeld) mit
+Eigenschaften (Name, Hilfetext, Vorbelegung, Auswahlwerte, Schriftgröße,
+Pflichtfeld, Nur-lesbar), Prüflauf vor dem Erzeugen, Layout lokal speichern
+(localStorage-Autosave + JSON-Datei) und importieren — inkl. Übernahme
+vorhandener Formularfelder aus einem PDF zur Weiterbearbeitung.
+🟡 Optionsfelder (Radio-Gruppen): nicht unterstützt — PyMuPDF 1.28 kann
+mehrere Radio-Widgets einer Gruppe nicht anlegen; UI verweist auf Dropdown
+bzw. Kontrollkästchen.
+❌ Berechnungen/Validierung (JavaScript-Aktionen), CSV-Export der Felddaten
+(klein, lohnt), XFA (bewusst nie — auch Adobe deprecates XFA).
 
 ## 7. Digitale Signaturen — ✅ bis auf QES
 
@@ -116,10 +126,10 @@ aus Audit Designer heraus nutzen (Vorverarbeitung: OCR, PDF/A, Split).
 
 ## Fazit & empfohlene Reihenfolge
 
-**Abdeckung heute**: Module 1, 2, 3, 4, 7 (bis QES), 8, 9, 11, 17, 18 (Kern) praktisch vollständig; 5, 6, 12, 15 im Kern vorhanden; 16 bewusst im Ökosystem; 10, 13, 14 stehen bewusst im Konflikt mit „keine Datenspeicherung".
+**Abdeckung heute**: Module 1, 2, 3, 4, 6, 7 (bis QES), 8, 9, 11, 17, 18 (Kern) praktisch vollständig; 5, 12, 15 im Kern vorhanden; 16 bewusst im Ökosystem; 10, 13, 14 stehen bewusst im Konflikt mit „keine Datenspeicherung".
 
 **Verbleibende Ausbaustufen mit bestem Aufwand/Nutzen:**
-1. **Formular-CSV-Export + Felder erzeugen** (Modul 6) — kleiner Aufwand, Behörden-Mehrwert.
+1. **Formular-CSV-Export** der Felddaten (Modul 6-Rest) — kleiner Aufwand, Behörden-Mehrwert.
 2. **KI-Ausbau lokal**: Übersetzung, Schlagwörter, KI-Gliederung über denselben `PDFAPP_LLM_URL`-Pfad.
 3. **Batch-Signierung** und Batch-Umbenennung (Modul 11-Rest).
 4. **Vertrauensanker-Konfiguration** für die Signaturprüfung (EU-Trusted-Lists), damit auch ein Vertrauensurteil möglich wird.
