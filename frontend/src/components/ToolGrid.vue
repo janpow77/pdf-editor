@@ -29,16 +29,6 @@
             <span class="text-sm font-medium text-gray-900 dark:text-white text-center">{{ tool.label }}</span>
             <span class="text-xs text-gray-400 text-center">{{ tool.desc }}</span>
           </button>
-          <!-- Visueller Editor folgt in Phase 2 -->
-          <div
-            class="flex flex-col items-center gap-2 p-4 bg-gray-50 dark:bg-gray-800/50 border border-dashed border-gray-300 dark:border-gray-600
-                   rounded-xl opacity-60 cursor-not-allowed"
-            title="Der visuelle PDF-Editor folgt in einer späteren Version"
-          >
-            <div class="w-10 h-10 rounded-lg flex items-center justify-center text-xl bg-purple-200 dark:bg-purple-900/50">✏️</div>
-            <span class="text-sm font-medium text-gray-900 dark:text-white text-center">PDF Editor</span>
-            <span class="text-xs text-gray-400 text-center">Demnächst</span>
-          </div>
         </div>
       </div>
 
@@ -98,6 +88,17 @@ import PdfCompare from '@/components/tools/PdfCompare.vue'
 import PdfProtect from '@/components/tools/PdfProtect.vue'
 import PdfToWord from '@/components/tools/PdfToWord.vue'
 import PdfToExcel from '@/components/tools/PdfToExcel.vue'
+import PdfTextEditor from '@/components/tools/PdfTextEditor.vue'
+import PdfPageNumbers from '@/components/tools/PdfPageNumbers.vue'
+import PdfHeaderFooter from '@/components/tools/PdfHeaderFooter.vue'
+import PdfSearchReplace from '@/components/tools/PdfSearchReplace.vue'
+import PdfRedact from '@/components/tools/PdfRedact.vue'
+import PdfFlatten from '@/components/tools/PdfFlatten.vue'
+import PdfToText from '@/components/tools/PdfToText.vue'
+import PdfBates from '@/components/tools/PdfBates.vue'
+import PdfFormFill from '@/components/tools/PdfFormFill.vue'
+import PdfPdfa from '@/components/tools/PdfPdfa.vue'
+import PdfSignImage from '@/components/tools/PdfSignImage.vue'
 import PdfOcr from '@/components/tools/PdfOcr.vue'
 import WordToPdf from '@/components/tools/WordToPdf.vue'
 import WordMerge from '@/components/tools/WordMerge.vue'
@@ -121,6 +122,17 @@ const toolComponents: Record<string, Component> = {
   protect: markRaw(PdfProtect),
   pdfToWord: markRaw(PdfToWord),
   pdfToExcel: markRaw(PdfToExcel),
+  textEditor: markRaw(PdfTextEditor),
+  pageNumbers: markRaw(PdfPageNumbers),
+  headerFooter: markRaw(PdfHeaderFooter),
+  searchReplace: markRaw(PdfSearchReplace),
+  redact: markRaw(PdfRedact),
+  flatten: markRaw(PdfFlatten),
+  toText: markRaw(PdfToText),
+  bates: markRaw(PdfBates),
+  formFill: markRaw(PdfFormFill),
+  pdfa: markRaw(PdfPdfa),
+  signImage: markRaw(PdfSignImage),
   ocr: markRaw(PdfOcr),
   wordToPdf: markRaw(WordToPdf),
   wordMerge: markRaw(WordMerge),
@@ -130,6 +142,7 @@ const toolComponents: Record<string, Component> = {
 }
 
 const pdfTools = [
+  { id: 'textEditor', label: 'Text bearbeiten', desc: 'WYSIWYG im Dokument', icon: '✏️', color: 'bg-purple-200 dark:bg-purple-900/50' },
   { id: 'merge', label: 'Zusammenführen', desc: 'Mehrere PDFs verbinden', icon: '📎', color: 'bg-red-100 dark:bg-red-900/30' },
   { id: 'split', label: 'Teilen', desc: 'PDF aufteilen', icon: '✂️', color: 'bg-orange-100 dark:bg-orange-900/30' },
   { id: 'rotate', label: 'Rotieren', desc: 'Seiten drehen', icon: '🔄', color: 'bg-yellow-100 dark:bg-yellow-900/30' },
@@ -144,6 +157,16 @@ const pdfTools = [
   { id: 'pdfToWord', label: 'PDF → Word', desc: 'Als DOCX exportieren', icon: '📝', color: 'bg-sky-100 dark:bg-sky-900/30' },
   { id: 'pdfToExcel', label: 'PDF → Excel', desc: 'Tabellen extrahieren', icon: '📊', color: 'bg-lime-100 dark:bg-lime-900/30' },
   { id: 'metadata', label: 'Metadaten', desc: 'Titel, Autor, Datum etc.', icon: 'ℹ️', color: 'bg-gray-100 dark:bg-gray-700' },
+  { id: 'toText', label: 'PDF → Text', desc: 'Reinen Text extrahieren', icon: '📃', color: 'bg-stone-100 dark:bg-stone-700/50' },
+  { id: 'searchReplace', label: 'Suchen & Ersetzen', desc: 'Text austauschen', icon: '🔁', color: 'bg-fuchsia-100 dark:bg-fuchsia-900/30' },
+  { id: 'redact', label: 'Schwärzen', desc: 'Text unwiderruflich entfernen', icon: '⬛', color: 'bg-gray-200 dark:bg-gray-700' },
+  { id: 'pageNumbers', label: 'Seitenzahlen', desc: 'Nummerierung einfügen', icon: '🔢', color: 'bg-violet-100 dark:bg-violet-900/30' },
+  { id: 'headerFooter', label: 'Kopf-/Fußzeile', desc: 'Text oben/unten', icon: '📰', color: 'bg-rose-100 dark:bg-rose-900/30' },
+  { id: 'bates', label: 'Bates-Nummern', desc: 'Akten-Kennzeichnung', icon: '🏷️', color: 'bg-amber-100 dark:bg-amber-900/30' },
+  { id: 'formFill', label: 'Formular ausfüllen', desc: 'AcroForm-Felder', icon: '📋', color: 'bg-emerald-100 dark:bg-emerald-900/30' },
+  { id: 'signImage', label: 'Unterschrift', desc: 'Bild-Signatur einfügen', icon: '✍️', color: 'bg-indigo-100 dark:bg-indigo-900/30' },
+  { id: 'pdfa', label: 'PDF/A', desc: 'Archivformat', icon: '🗄️', color: 'bg-teal-100 dark:bg-teal-900/30' },
+  { id: 'flatten', label: 'Einbrennen', desc: 'Anmerkungen fixieren', icon: '🔥', color: 'bg-orange-100 dark:bg-orange-900/30' },
 ]
 
 const wordTools = [

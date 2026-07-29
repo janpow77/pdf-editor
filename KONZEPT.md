@@ -35,7 +35,7 @@ LibreOffice-Konvertierung (Word→PDF).
 
 | Bereich | Werkzeuge |
 |---|---|
-| PDF | Zusammenführen, Teilen, Rotieren, PDF→Bilder, Komprimieren, Wasserzeichen, Bilder→PDF, Seiten ordnen, Vergleich, OCR, Metadaten, **Schützen/Entsperren (AES-256, pikepdf)**, **PDF→Word**, **PDF→Excel (tabula, Java im Image)** |
+| PDF | Zusammenführen, Teilen, Rotieren, PDF→Bilder, Komprimieren, Wasserzeichen, Bilder→PDF, Seiten ordnen, Vergleich, OCR, Metadaten, Schützen/Entsperren (AES-256), PDF→Word, PDF→Excel, **Text bearbeiten (WYSIWYG, blockbasiert)**, **PDF→Text**, **Suchen & Ersetzen**, **Schwärzen (echte Redaction)**, **Seitenzahlen**, **Kopf-/Fußzeile**, **Bates-Nummerierung**, **Formulare ausfüllen (AcroForm)**, **Bild-Signatur**, **PDF/A (Ghostscript)**, **Einbrennen/Flatten** |
 | Word | Word→PDF, Word verbinden, Word-Vergleich, Word-Metadaten |
 | Excel | Excel-Metadaten |
 | Auslieferung | Direkt-Download je Werkzeug, **ZIP-Download** aller Sitzungs-Ergebnisse (client-seitig via JSZip), **Mailversand** der Ergebnisse |
@@ -45,16 +45,20 @@ Die Ergebnisliste („Ergebnisse dieser Sitzung") existiert ausschließlich im B
 jede heruntergeladene Datei wird dort vorgemerkt und kann gebündelt als ZIP geladen
 oder per Mail versendet werden. Ein Reload leert die Liste.
 
-Das Backend stellt darüber hinaus bereits **alle** Editor-Endpoints bereit
-(TOC, Annotationen, Schwärzung, Seitenzahlen, Kopf-/Fußzeile, Text-Suche/-Ersetzung,
-Flatten) — nur die visuelle Oberfläche dafür fehlt noch (Phase 2).
+**WYSIWYG-Textbearbeitung**: eigene, neu gebaute Ansicht (nicht der defekte
+audit_designer-Editor): Seitenansicht mit klickbarem Textblock-Overlay,
+Änderungen werden serverseitig per weißer Redaction + `insert_textbox` in die
+Original-Box geschrieben (Auto-Verkleinerung bei Überlauf, Latin-1-Sanitizing
+für die Basis-Fonts). Bewusste Grenze gegenüber Adobe Acrobat: kein
+seitenübergreifender Reflow — der Text bleibt in seiner Box.
 
-### Phase 2 — visueller PDF-Editor
+### Phase 2 — visueller Annotations-Editor
 
-Portierung von `PdfEditor.vue` (+ Toolbar, AnnotationPanel, TocEditor) aus
-audit_designer. Vorher sind die bekannten Defekte der Vorlage zu beheben (siehe
-Abschnitt 7). Zusätzlich: pdf.js-Rendering (`pdfjs-dist` explizit als Dependency),
-asynchrones OCR/Compare für große Dateien.
+Noch offen aus dem Editor-Komplex: interaktive Annotationen (Markieren,
+Kommentare, Zeichnen, Stempel per Maus platzieren) und TOC-Editor — Portierung
+von `PdfEditor.vue` nach Behebung der bekannten Defekte (Abschnitt 7) oder
+Weiterentwicklung der neuen WYSIWYG-Ansicht. Die Backend-Endpoints dafür sind
+vorhanden. Zusätzlich: asynchrones OCR/Compare für große Dateien.
 
 ### Optionale Konten — vorgezogen und umgesetzt
 
@@ -191,7 +195,8 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 |---|---|---|
 | 1 | Scaffold: 16 Werkzeuge, Landing + Hinweis, ZIP-Download, Mailversand, Rate-Limiting, Docker, Impressum/Datenschutz-Gerüst | ✅ |
 | 1.5 | Schützen/Entsperren, PDF→Word/Excel, optionale Konten (Nutzer + Admin), gestufte Limits, Postgres | ✅ |
-| 1.6 | Anbieterdaten eintragen, SMTP-Zugang konfigurieren, Tunnel anlegen, Erst-Deploy | offen |
-| 1.7 | Repo-Extraktion + CI (ghcr-Images, Smoke-Test-Gate) | offen |
+| 1.6 | Adobe-Lücken: WYSIWYG-Textbearbeitung, Formulare, Schwärzen, Seitenzahlen/Kopf-Fußzeile, Bates, PDF/A, Bild-Signatur, PDF→Text, Suchen/Ersetzen, Flatten | ✅ |
+| 1.7 | Anbieterdaten eintragen, SMTP-Zugang konfigurieren, Tunnel anlegen, Erst-Deploy | offen |
+| 1.8 | Repo-Extraktion + CI (ghcr-Images, Smoke-Test-Gate) | offen |
 | 2 | Visueller PDF-Editor (nach Defekt-Behebung, siehe Abschnitt 7), asynchrones OCR/Compare | offen |
 | 3 | Hardening-Backlog (Alembic, E-Mail-Verifikation, Passwort-Reset, Turnstile) | offen |
