@@ -466,6 +466,7 @@ class PdfExtrasService:
                     skip_text=not force_ocr,
                     output_type="pdf",
                     progress_bar=False,
+                    tesseract_timeout=120,  # pro Seite — begrenzt CPU-Bindung
                 )
                 return PdfToolResult(
                     success=True, output_format="pdf", file_content=dst.read_bytes()

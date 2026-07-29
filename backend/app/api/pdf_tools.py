@@ -134,11 +134,18 @@ def _validate_docx(file: UploadFile, content: bytes, max_size: int | None = None
         )
 
 
+def _safe_name(name: str) -> str:
+    """Anführungszeichen/Steuerzeichen aus Dateinamen entfernen (Header-Injection)."""
+    import re as _re
+
+    return _re.sub(r'[\r\n"\\;]+', "_", name)[:150] or "datei"
+
+
 def _pdf_response(
     data: bytes, filename: str, headers: dict | None = None
 ) -> StreamingResponse:
     """Create a PDF download response."""
-    h = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    h = {"Content-Disposition": f'attachment; filename="{_safe_name(filename)}"'}
     if headers:
         h.update(headers)
     return StreamingResponse(io.BytesIO(data), media_type="application/pdf", headers=h)
@@ -149,7 +156,7 @@ def _zip_response(data: bytes, filename: str) -> StreamingResponse:
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{_safe_name(filename)}"'},
     )
 
 
@@ -172,7 +179,7 @@ def _docx_response(data: bytes, filename: str) -> StreamingResponse:
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{_safe_name(filename)}"'},
     )
 
 
@@ -181,7 +188,7 @@ def _xlsx_response(data: bytes, filename: str) -> StreamingResponse:
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{_safe_name(filename)}"'},
     )
 
 
@@ -201,26 +208,31 @@ async def get_thumbnails(
     pages: str | None = Query(
         None, description="Seitennummern (z.B. '1,2,3' oder '1-5')"
     ),
-    max_width: int = Query(200, description="Max Thumbnail-Breite in Pixel"),
+    max_width: int = Query(200, ge=32, le=1400, description="Max Thumbnail-Breite in Pixel"),
 ):
     """Generate thumbnail previews for PDF pages."""
     content = await file.read()
     _validate_pdf(file, content)
 
     try:
+        import fitz
+
+        from app.services.pdf_tools_service import _parse_page_range
+
         service = get_pdf_tools()
-        thumbnails = service.get_thumbnails(content, None, max_width)
 
-        # Filter by pages if specified
-        if pages:
-            import fitz
+        # Seiten VOR dem Rendern bestimmen (sonst rendert der Service alles)
+        doc = fitz.open(stream=content, filetype="pdf")
+        total = doc.page_count
+        doc.close()
+        page_list = _parse_page_range(pages, total) if pages else list(range(1, total + 1))
+        if len(page_list) > 50:
+            raise HTTPException(
+                status_code=400, detail="Maximal 50 Thumbnails pro Anfrage"
+            )
 
-            from app.services.pdf_tools_service import _parse_page_range
-
-            doc = fitz.open(stream=content, filetype="pdf")
-            page_list = _parse_page_range(pages, doc.page_count)
-            doc.close()
-            thumbnails = {k: v for k, v in thumbnails.items() if int(k) in page_list}
+        thumbnails = service.get_thumbnails(content, page_list, max_width)
+        thumbnails = {k: v for k, v in thumbnails.items() if int(k) in page_list}
 
         return {"thumbnails": thumbnails, "count": len(thumbnails)}
 

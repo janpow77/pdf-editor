@@ -25,7 +25,7 @@
       </div>
       <div v-if="error" class="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-sm text-red-700 dark:text-red-300">{{ error }}</div>
 
-      <button type="submit" :disabled="loading || done" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+      <button type="submit" :disabled="loading || done" class="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">
         {{ loading ? 'Speichere…' : 'Passwort ändern' }}
       </button>
     </form>

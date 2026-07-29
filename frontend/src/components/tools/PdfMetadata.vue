@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-4">
     <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-purple-600 flex items-center gap-1" @click="$emit('back')">
+      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600 flex items-center gap-1" @click="$emit('back')">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
         Zurück
       </button>
@@ -11,14 +11,14 @@
     <!-- Upload -->
     <div
       class="border-2 border-dashed rounded-xl p-6 text-center transition-colors"
-      :class="file ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-300 dark:border-gray-600 hover:border-purple-400'"
+      :class="file ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-300 dark:border-gray-600 hover:border-primary-400'"
       @dragover.prevent
       @drop.prevent="onDrop"
     >
       <input ref="fileInput" type="file" accept=".pdf" class="hidden" @change="onFileSelect" />
       <div v-if="!file">
         <p class="text-gray-500 dark:text-gray-400 mb-2">PDF hierher ziehen oder</p>
-        <button class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm" @click="($refs.fileInput as HTMLInputElement).click()">Datei auswählen</button>
+        <button class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm" @click="($refs.fileInput as HTMLInputElement).click()">Datei auswählen</button>
       </div>
       <div v-else class="flex items-center justify-center gap-3">
         <span class="text-2xl">📄</span>
@@ -32,7 +32,7 @@
 
     <!-- Loading -->
     <div v-if="loadingRead" class="text-center py-6">
-      <div class="animate-spin w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full mx-auto"></div>
+      <div class="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full mx-auto"></div>
       <p class="text-sm text-gray-500 mt-2">Metadaten werden gelesen...</p>
     </div>
 
@@ -76,7 +76,7 @@
     <button
       v-if="meta && !loadingRead"
       :disabled="saving"
-      class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
       @click="doSave"
     >
       <svg v-if="saving" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">

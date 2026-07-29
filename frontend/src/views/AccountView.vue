@@ -54,7 +54,7 @@
       <div class="flex items-center gap-3">
         <button
           :disabled="saving"
-          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+          class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 text-sm"
           @click="save"
         >
           {{ saving ? 'Speichere…' : 'Einstellungen speichern' }}

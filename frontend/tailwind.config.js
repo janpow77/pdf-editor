@@ -5,13 +5,15 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Alias für aus audit_designer übernommene Komponenten
+        // Eine systemweite Akzentfarbe (Apple-nahes Blau)
         primary: {
-          50: '#eef2ff',
-          100: '#e0e7ff',
-          600: '#4f46e5',
-          700: '#4338ca',
-          900: '#312e81',
+          50: '#f0f7ff',
+          100: '#dcecfd',
+          400: '#4b9bf5',
+          500: '#1e85ec',
+          600: '#0071e3',
+          700: '#0066cc',
+          900: '#0a3f75',
         },
       },
     },

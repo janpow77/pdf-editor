@@ -35,9 +35,10 @@ EXEMPT_PATHS = {"/api/health"}
 
 
 def client_ip(request: Request) -> str:
-    cf_ip = request.headers.get("CF-Connecting-IP")
-    if cf_ip:
-        return cf_ip
+    if settings.trust_cf_header:
+        cf_ip = request.headers.get("CF-Connecting-IP")
+        if cf_ip:
+            return cf_ip
     return request.client.host if request.client else "unknown"
 
 
@@ -92,7 +93,7 @@ class RateTierMiddleware:
         for name, value in scope.get("headers", []):
             if name == b"authorization":
                 auth = value.decode("latin-1")
-            elif name == b"cf-connecting-ip":
+            elif name == b"cf-connecting-ip" and settings.trust_cf_header:
                 cf_ip = value.decode("latin-1")
 
         sub = _sub_from_auth_header(auth)

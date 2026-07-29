@@ -229,3 +229,28 @@ def test_alembic_upgrade_head_on_fresh_db(tmp_path, monkeypatch):
     cols = {c["name"] for c in inspect(engine).get_columns("users")}
     assert {"email", "is_verified", "reset_token_hash", "verify_token_hash"} <= cols
     engine.dispose()
+
+
+def test_lifespan_upgrades_legacy_users_table(tmp_path):
+    """Bestands-DB ohne Verifikations-Spalten darf Konten nicht deaktivieren."""
+    from sqlalchemy import create_engine, inspect, text
+
+    db_path = tmp_path / "legacy.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE users (id INTEGER PRIMARY KEY, email VARCHAR(255), "
+                "hashed_password VARCHAR(255), role VARCHAR(10), is_active BOOLEAN, "
+                "preferences JSON, created_at TIMESTAMP, last_login TIMESTAMP, "
+                "failed_login_attempts INTEGER, locked_until TIMESTAMP)"
+            )
+        )
+
+    from app.main import _ensure_user_columns
+
+    _ensure_user_columns(engine)
+    cols = {c["name"] for c in inspect(engine).get_columns("users")}
+    assert {"is_verified", "verify_token_hash", "reset_token_hash"} <= cols
+    _ensure_user_columns(engine)  # idempotent
+    engine.dispose()

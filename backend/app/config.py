@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     turnstile_site_key: str = ""
     turnstile_secret: str = ""
 
+    # CF-Connecting-IP nur verwenden, wenn das Backend ausschließlich hinter
+    # Cloudflare erreichbar ist (Tunnel-Deploy) — sonst ist der Header spoofbar
+    # und hebelt Rate-Limits und Job-Ownership aus
+    trust_cf_header: bool = False
+
     # Mailversand — nur aktiv, wenn smtp_host gesetzt ist
     smtp_host: str = ""
     smtp_port: int = 587

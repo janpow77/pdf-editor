@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-4">
     <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-purple-600 flex items-center gap-1" @click="$emit('back')">
+      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600 flex items-center gap-1" @click="$emit('back')">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
         Zurück
       </button>
@@ -11,14 +11,14 @@
     <!-- Drop zone -->
     <div
       class="border-2 border-dashed rounded-xl p-6 text-center transition-colors"
-      :class="isDragging ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20' : 'border-gray-300 dark:border-gray-600'"
+      :class="isDragging ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 dark:border-gray-600'"
       @dragover.prevent="isDragging = true"
       @dragleave="isDragging = false"
       @drop.prevent="onDrop"
     >
       <input ref="fileInput" type="file" accept=".docx,.doc" multiple class="hidden" @change="onFileSelect" />
       <p class="text-gray-500 dark:text-gray-400 mb-2">Word-Dateien (.docx) hierher ziehen oder</p>
-      <button class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm" @click="($refs.fileInput as HTMLInputElement).click()">Dateien auswählen</button>
+      <button class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm" @click="($refs.fileInput as HTMLInputElement).click()">Dateien auswählen</button>
     </div>
 
     <!-- File list -->
@@ -51,7 +51,7 @@
     <!-- Options -->
     <div v-if="files.length >= 2" class="flex items-center gap-2">
       <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-        <input v-model="addPageBreak" type="checkbox" class="text-purple-600 rounded" />
+        <input v-model="addPageBreak" type="checkbox" class="text-primary-600 rounded" />
         Seitenumbruch zwischen Dokumenten
       </label>
     </div>
@@ -59,7 +59,7 @@
     <div class="flex items-center gap-3">
       <button
         :disabled="files.length < 2 || loading"
-        class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+        class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         @click="doMerge"
       >
         <svg v-if="loading" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">

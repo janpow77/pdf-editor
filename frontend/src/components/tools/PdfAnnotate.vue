@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-4">
     <div class="flex items-center gap-3 flex-wrap">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-purple-600" @click="$emit('back')">← Zurück</button>
+      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Anmerkungen (interaktiv)</h2>
     </div>
 
@@ -21,8 +21,8 @@
           :key="t.id"
           class="px-2.5 py-1.5 text-sm rounded-lg border transition-colors"
           :class="tool === t.id
-            ? 'border-purple-600 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
-            : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-purple-300'"
+            ? 'border-primary-600 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400'
+            : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-500'"
           :title="t.label"
           @click="tool = t.id"
         >
@@ -47,14 +47,14 @@
         <button v-if="pending.length" class="text-sm text-red-500 hover:text-red-700" @click="undoLast">Letzte rückgängig</button>
         <span class="flex-1"></span>
         <button
-          class="px-3 py-1.5 text-sm rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+          class="px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
           :disabled="applying || pending.length === 0"
           @click="applyAnnotations"
         >
           {{ applying ? 'Wende an…' : 'Anwenden' }}
         </button>
         <button
-          class="px-3 py-1.5 text-sm rounded-lg border border-purple-600 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 disabled:opacity-50"
+          class="px-3 py-1.5 text-sm rounded-lg border border-primary-600 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 disabled:opacity-50"
           :disabled="pending.length > 0"
           :title="pending.length > 0 ? 'Erst Anmerkungen anwenden' : ''"
           @click="download"
@@ -115,7 +115,7 @@
           <textarea v-model="textPrompt.text" rows="3" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white" autofocus></textarea>
           <div class="flex justify-end gap-2">
             <button class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300" @click="textPrompt = null">Abbrechen</button>
-            <button class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700" :disabled="!textPrompt.text.trim()" @click="confirmText">Übernehmen</button>
+            <button class="px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700" :disabled="!textPrompt.text.trim()" @click="confirmText">Übernehmen</button>
           </div>
         </div>
       </div>

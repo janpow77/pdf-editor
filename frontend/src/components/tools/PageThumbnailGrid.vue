@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-3">
     <div v-if="loading" class="flex items-center justify-center py-8">
-      <svg class="animate-spin w-6 h-6 text-purple-500" fill="none" viewBox="0 0 24 24">
+      <svg class="animate-spin w-6 h-6 text-primary-500" fill="none" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
       </svg>
@@ -19,8 +19,8 @@
         class="relative group cursor-pointer border-2 rounded-lg overflow-hidden transition-all"
         :class="[
           isSelected(pageNum)
-            ? 'border-purple-500 ring-2 ring-purple-300 dark:ring-purple-600'
-            : 'border-gray-200 dark:border-gray-600 hover:border-purple-300',
+            ? 'border-primary-500 ring-2 ring-primary-400 dark:ring-primary-600'
+            : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500',
           rotationClass(pageNum)
         ]"
         :draggable="draggable"
@@ -39,7 +39,7 @@
           <div
             class="w-5 h-5 rounded border-2 flex items-center justify-center transition-colors"
             :class="isSelected(pageNum)
-              ? 'bg-purple-500 border-purple-500 text-white'
+              ? 'bg-primary-500 border-primary-500 text-white'
               : 'bg-white/80 border-gray-300 dark:bg-gray-700/80 dark:border-gray-500'"
           >
             <svg v-if="isSelected(pageNum)" class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">

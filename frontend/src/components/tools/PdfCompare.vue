@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="flex items-center gap-3">
       <button
-        class="text-sm text-gray-500 dark:text-gray-400 hover:text-purple-600 flex items-center gap-1"
+        class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600 flex items-center gap-1"
         @click="$emit('back')"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -35,7 +35,7 @@
           <div v-if="!fileA">
             <p class="text-gray-500 dark:text-gray-400 mb-2 text-sm">PDF hierher ziehen oder</p>
             <button
-              class="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700"
+              class="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700"
               @click="($refs.fileInputA as HTMLInputElement).click()"
             >
               Auswaehlen
@@ -68,7 +68,7 @@
           <div v-if="!fileB">
             <p class="text-gray-500 dark:text-gray-400 mb-2 text-sm">PDF hierher ziehen oder</p>
             <button
-              class="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700"
+              class="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700"
               @click="($refs.fileInputB as HTMLInputElement).click()"
             >
               Auswaehlen
@@ -90,7 +90,7 @@
           <input
             v-model="includeVisual"
             type="checkbox"
-            class="rounded border-gray-300 dark:border-gray-600 text-purple-600 focus:ring-purple-500"
+            class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
           />
           Visuellen Vergleich einschliessen
         </label>
@@ -99,7 +99,7 @@
       <div class="text-center">
         <button
           :disabled="!fileA || !fileB || loading"
-          class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700
+          class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700
                  disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
           @click="doCompare"
         >
@@ -146,7 +146,7 @@
           <p class="text-xs text-gray-500">Geaendert</p>
         </div>
         <button
-          class="ml-auto text-sm text-gray-500 hover:text-purple-600 flex items-center gap-1"
+          class="ml-auto text-sm text-gray-500 hover:text-primary-600 flex items-center gap-1"
           @click="resetAll"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -166,7 +166,7 @@
           :key="t.id"
           class="px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px"
           :class="activeTab === t.id
-            ? 'border-purple-500 text-purple-600 dark:text-purple-400'
+            ? 'border-primary-500 text-primary-600 dark:text-primary-400'
             : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'"
           @click="activeTab = t.id"
         >
@@ -266,7 +266,7 @@
               <input
                 v-model="showDiffOverlay"
                 type="checkbox"
-                class="rounded border-gray-300 dark:border-gray-600 text-purple-600 focus:ring-purple-500"
+                class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
               />
               Diff-Overlay
             </label>

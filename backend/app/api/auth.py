@@ -37,6 +37,9 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 LOGIN_ERROR = "E-Mail-Adresse oder Passwort ist falsch"
 
+# Dummy-Hash für konstante Login-Dauer bei unbekannter Adresse (Timing-Kanal)
+_DUMMY_HASH = get_password_hash("timing-dummy-passwort")
+
 
 def _require_db(request: Request) -> None:
     if not getattr(request.app.state, "db_available", False):
@@ -102,7 +105,12 @@ def login(
             detail="Konto ist temporär gesperrt — bitte in 30 Minuten erneut versuchen",
         )
 
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    if user:
+        password_ok = verify_password(form_data.password, user.hashed_password)
+    else:
+        verify_password(form_data.password, _DUMMY_HASH)  # konstante Dauer
+        password_ok = False
+    if not password_ok:
         if user:
             user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
             if user.failed_login_attempts >= 10:

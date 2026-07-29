@@ -9,7 +9,7 @@
     <div v-if="!modelValue">
       <p class="text-gray-500 dark:text-gray-400 mb-2">{{ label }} hierher ziehen oder</p>
       <button
-        class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
+        class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm"
         @click="input?.click()"
       >
         Datei auswählen

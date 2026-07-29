@@ -33,11 +33,18 @@ def _validate_pdf(file: UploadFile, content: bytes):
         )
 
 
+def _safe_name(name: str) -> str:
+    """Anführungszeichen/Steuerzeichen aus Dateinamen entfernen (Header-Injection)."""
+    import re as _re
+
+    return _re.sub(r'[\r\n"\\;]+', "_", name)[:150] or "datei"
+
+
 def _pdf_response(data: bytes, filename: str) -> StreamingResponse:
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{_safe_name(filename)}"'},
     )
 
 

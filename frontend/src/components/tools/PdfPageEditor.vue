@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-4">
     <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-purple-600 flex items-center gap-1" @click="$emit('back')">
+      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600 flex items-center gap-1" @click="$emit('back')">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
         Zurück
       </button>
@@ -18,7 +18,7 @@
       <input ref="fileInput" type="file" accept=".pdf" class="hidden" @change="onFileSelect" />
       <div v-if="!file">
         <p class="text-gray-500 dark:text-gray-400 mb-2">PDF hierher ziehen oder</p>
-        <button class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm" @click="($refs.fileInput as HTMLInputElement).click()">Datei auswählen</button>
+        <button class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm" @click="($refs.fileInput as HTMLInputElement).click()">Datei auswählen</button>
       </div>
       <div v-else>
         <p class="font-medium text-gray-900 dark:text-white">{{ file.name }}</p>
@@ -31,7 +31,7 @@
       <p class="text-sm text-gray-500 dark:text-gray-400">
         Seiten per Drag & Drop umsortieren. Klicken um zu löschen/wiederherstellen.
       </p>
-      <span class="text-sm font-medium text-purple-600">
+      <span class="text-sm font-medium text-primary-600">
         {{ pageOrder.filter(p => !deletedPages.has(p)).length }} / {{ pageOrder.length }} Seiten
       </span>
       <button v-if="deletedPages.size > 0" class="text-sm text-blue-500 hover:text-blue-700" @click="deletedPages.clear()">Alle wiederherstellen</button>
@@ -43,7 +43,7 @@
         v-for="(pageNum, idx) in pageOrder"
         :key="pageNum + '-' + idx"
         class="relative group cursor-pointer border-2 rounded-lg overflow-hidden transition-all"
-        :class="deletedPages.has(pageNum) ? 'border-red-300 opacity-40' : 'border-gray-200 dark:border-gray-600 hover:border-purple-300'"
+        :class="deletedPages.has(pageNum) ? 'border-red-300 opacity-40' : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'"
         draggable="true"
         @dragstart="dragIdx = idx"
         @dragover.prevent
@@ -66,7 +66,7 @@
     </div>
 
     <div v-if="loadingThumbs" class="flex items-center justify-center py-8">
-      <svg class="animate-spin w-6 h-6 text-purple-500" fill="none" viewBox="0 0 24 24">
+      <svg class="animate-spin w-6 h-6 text-primary-500" fill="none" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
       </svg>
@@ -76,7 +76,7 @@
     <button
       v-if="file && pageOrder.length > 0"
       :disabled="loading || activePages.length === 0"
-      class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
       @click="doApply"
     >
       <svg v-if="loading" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">

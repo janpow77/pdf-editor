@@ -44,6 +44,8 @@ services:
       - PDFAPP_PUBLIC_BASE_URL=${PDFAPP_PUBLIC_BASE_URL:-}
       - PDFAPP_TURNSTILE_SITE_KEY=${PDFAPP_TURNSTILE_SITE_KEY:-}
       - PDFAPP_TURNSTILE_SECRET=${PDFAPP_TURNSTILE_SECRET:-}
+      # Nur true setzen, wenn ausschließlich der Cloudflare-Tunnel Zugang hat
+      - PDFAPP_TRUST_CF_HEADER=${PDFAPP_TRUST_CF_HEADER:-false}
     restart: unless-stopped
 
   frontend:

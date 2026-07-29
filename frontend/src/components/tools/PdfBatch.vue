@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-4">
     <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-purple-600" @click="$emit('back')">← Zurück</button>
+      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Batch-Verarbeitung</h2>
     </div>
 
@@ -19,7 +19,7 @@
     >
       <input ref="input" type="file" accept=".pdf" multiple class="hidden" @change="onSelect" />
       <p class="text-gray-500 dark:text-gray-400 mb-2">PDFs hierher ziehen oder</p>
-      <button class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm" @click="input?.click()">Dateien auswählen</button>
+      <button class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm" @click="input?.click()">Dateien auswählen</button>
       <ul v-if="files.length" class="mt-3 text-sm text-left max-w-md mx-auto divide-y divide-gray-100 dark:divide-gray-700">
         <li v-for="(f, i) in files" :key="i" class="py-1 flex justify-between gap-2">
           <span class="truncate text-gray-700 dark:text-gray-300">{{ f.name }}</span>
@@ -82,7 +82,7 @@
     <button
       v-if="files.length"
       :disabled="loading || (operation === 'protect' && !params.password)"
-      class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
       @click="apply"
     >
       {{ loading ? `Verarbeite ${files.length} Datei(en)…` : `${files.length} Datei(en) verarbeiten` }}

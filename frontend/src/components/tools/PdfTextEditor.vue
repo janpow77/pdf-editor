@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-4">
     <div class="flex items-center gap-3 flex-wrap">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-purple-600" @click="$emit('back')">← Zurück</button>
+      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Text bearbeiten (WYSIWYG)</h2>
     </div>
 
@@ -25,14 +25,14 @@
 
         <span class="flex-1"></span>
         <button
-          class="px-3 py-1.5 text-sm rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+          class="px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
           :disabled="applying || editCount === 0"
           @click="applyEdits"
         >
           {{ applying ? 'Wende an…' : 'Änderungen anwenden' }}
         </button>
         <button
-          class="px-3 py-1.5 text-sm rounded-lg border border-purple-600 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 disabled:opacity-50"
+          class="px-3 py-1.5 text-sm rounded-lg border border-primary-600 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 disabled:opacity-50"
           :disabled="editCount > 0"
           :title="editCount > 0 ? 'Erst Änderungen anwenden' : ''"
           @click="download"
@@ -85,7 +85,7 @@
             </div>
             <p class="text-xs text-gray-400">Leerer Text entfernt den Block.</p>
             <div class="flex gap-2 flex-wrap">
-              <button class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700" @click="saveDraft">
+              <button class="px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700" @click="saveDraft">
                 Änderung vormerken
               </button>
               <button
@@ -219,7 +219,7 @@ function blockStyle(b: Block) {
 function blockClass(i: number) {
   if (edits.value.has(editKey(i)))
     return 'border-green-500 bg-green-400/20 hover:bg-green-400/30'
-  if (selected.value === i) return 'border-purple-600 bg-purple-400/25'
+  if (selected.value === i) return 'border-primary-600 bg-primary-400/25'
   return 'border-blue-400/70 bg-transparent hover:bg-blue-300/20'
 }
 

@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-4">
     <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-purple-600" @click="$emit('back')">← Zurück</button>
+      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Lesezeichen / Inhaltsverzeichnis</h2>
     </div>
 
@@ -12,10 +12,10 @@
         <span class="text-sm text-gray-700 dark:text-gray-300 truncate">{{ file.name }}</span>
         <span class="text-xs text-gray-400">{{ entries.length }} Einträge</span>
         <span class="flex-1"></span>
-        <button class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-purple-300" :disabled="busy" @click="autoDetect">
+        <button class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-500" :disabled="busy" @click="autoDetect">
           Automatisch erkennen
         </button>
-        <button class="px-3 py-1.5 text-sm rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50" :disabled="busy" @click="write">
+        <button class="px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50" :disabled="busy" @click="write">
           {{ busy ? 'Arbeite…' : 'Speichern & herunterladen' }}
         </button>
         <button class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300" @click="reset">
@@ -60,7 +60,7 @@
             </tr>
           </tbody>
         </table>
-        <button class="m-3 px-3 py-1.5 text-sm rounded-lg border border-dashed border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-purple-300" @click="addEntry">
+        <button class="m-3 px-3 py-1.5 text-sm rounded-lg border border-dashed border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-500" @click="addEntry">
           + Eintrag hinzufügen
         </button>
       </div>

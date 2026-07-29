@@ -107,6 +107,31 @@ Ursprünglich Phase 3, auf Nutzerwunsch vorgezogen. Grundsätze (alle eingehalte
 - Offen: Refresh-Tokens / kürzere Access-Token-Laufzeit (bewusst zurückgestellt,
   24-h-JWT für dieses Angebot akzeptiert).
 
+### 360°-Security-Review (2026-07-29) — alle 10 Befunde behoben
+
+Thumbnail-DoS (Auflösung ungedeckelt + Rendern aller Seiten → clamp 32–1400 px,
+Seiten-Vorfilter, Cap 50), Event-Loop-Blocking der schweren Endpoints
+(scan-optimize/to-pdfa/batch → Threadpool), spoofbarer CF-Connecting-IP-Header
+(→ nur bei `PDFAPP_TRUST_CF_HEADER=true`), fehlendes globales Job-/RAM-Limit
+(→ 20 aktive Jobs, 512 MB Ergebnis-Budget), Login-Timing-Seitenkanal
+(→ Dummy-bcrypt), Default-SECRET_KEY (→ Konten deaktiviert + kritisches Log),
+Header-Injection über Dateinamen (→ Sanitizing in allen Response-Helfern),
+OCRmyPDF ohne Timeout (→ tesseract_timeout 120 s/Seite), SMTP-Header-Injection
+über Betreff (→ CR/LF-Filter), blockierender Turnstile-Call (→ Threadpool).
+Zusätzlich behoben: Bestands-DB ohne neue Spalten deaktivierte Konten
+(→ idempotente Spalten-Nachziehung im Lifespan, Regressionstest).
+
+### Design-Leitlinie (nach 360°-Review, 2026-07-29)
+
+Apple-orientierte Reduktion umgesetzt: EINE Akzentfarbe (`primary`, Apple-nahes
+Blau #0071e3) statt Purple/Blue/Green-Mix; neutrale Werkzeug-Kacheln
+(Farbe nur im Icon) statt 16 Pastelltöne; kurze Headline mit `tracking-tight`;
+Kernbotschaft nur noch im Banner + Footer statt vierfach; Sticky-Header mit
+`backdrop-blur`; Kachel-Hover mit Schatten/Lift; Fokus-Ringe und angehobene
+Kontraste im Grid; doppelte Zurück-Navigation entfernt. Offen (bewusst):
+Emoji-Icons durch ein SVG-Icon-Set ersetzen, Werkzeug-Suche/Gruppierung im
+Grid, Tool-Routing mit Deep-Links (`/werkzeug/:id`), Komponentenklassen-System.
+
 ## 4. Architektur
 
 ```

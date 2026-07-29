@@ -36,11 +36,18 @@ async def send_results(
     turnstile_token: str | None = Form(None),
 ):
     """Sendet die übergebenen Ergebnis-Dateien als Anhang an die angegebene Adresse."""
+    from fastapi.concurrency import run_in_threadpool
+
     from app.api.auth import verify_turnstile_or_403
 
-    verify_turnstile_or_403(
-        turnstile_token, request.client.host if request.client else None
+    # Turnstile-HTTP-Aufruf blockiert sonst den Event-Loop (sync httpx)
+    await run_in_threadpool(
+        verify_turnstile_or_403,
+        turnstile_token,
+        request.client.host if request.client else None,
     )
+    # Header-Injection über das Betreff-Feld verhindern
+    subject = subject.replace("\r", " ").replace("\n", " ").strip()[:200] or "Ihre Dateien"
     if not settings.smtp_host:
         raise HTTPException(
             status_code=503, detail="Mailversand ist auf diesem Server nicht konfiguriert"

@@ -61,14 +61,52 @@ def seed_admin() -> None:
         db.close()
 
 
+def _ensure_user_columns(engine) -> None:
+    """Fehlende users-Spalten auf Bestands-DBs nachziehen (idempotent).
+
+    create_all legt nur fehlende Tabellen an, keine Spalten — ohne diesen
+    Schritt würde eine vor der Verifikations-Erweiterung angelegte DB die
+    Konten deaktivieren. Entspricht Alembic-Migration 0001.
+    """
+    import sqlalchemy as sa
+
+    inspector = sa.inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+    existing = {c["name"] for c in inspector.get_columns("users")}
+    wanted = {
+        "is_verified": "BOOLEAN",
+        "verify_token_hash": "VARCHAR(64)",
+        "verify_token_expires": "TIMESTAMP",
+        "reset_token_hash": "VARCHAR(64)",
+        "reset_token_expires": "TIMESTAMP",
+    }
+    with engine.begin() as conn:
+        for name, ddl_type in wanted.items():
+            if name not in existing:
+                conn.execute(sa.text(f"ALTER TABLE users ADD COLUMN {name} {ddl_type}"))
+        if "is_verified" not in existing:
+            conn.execute(sa.text("UPDATE users SET is_verified = false WHERE is_verified IS NULL"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Konten sind optional: ohne erreichbare DB läuft die App anonym weiter.
     from app import db as app_db
     from app import models  # noqa: F401  — registriert Tabellen an Base
 
+    if settings.secret_key == "dev-only-nicht-fuer-produktion":
+        logger.critical(
+            "PDFAPP_SECRET_KEY ist nicht gesetzt — Benutzerkonten sind deaktiviert "
+            "(JWT wäre fälschbar). Anonyme Nutzung läuft weiter."
+        )
+        app.state.db_available = False
+        yield
+        return
+
     try:
         app_db.Base.metadata.create_all(bind=app_db.engine)
+        _ensure_user_columns(app_db.engine)
         seed_admin()
         app.state.db_available = True
     except OperationalError:

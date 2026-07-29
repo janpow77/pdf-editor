@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-4">
     <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-purple-600" @click="$emit('back')">← Zurück</button>
+      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Formular ausfüllen</h2>
     </div>
 
@@ -55,7 +55,7 @@
     <button
       v-if="fields.length"
       :disabled="loading"
-      class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
       @click="apply"
     >
       {{ loading ? 'Fülle aus…' : 'Ausfüllen & herunterladen' }}

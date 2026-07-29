@@ -15,7 +15,7 @@
           type="email"
           required
           autocomplete="email"
-          class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
       </div>
       <div>
@@ -26,7 +26,7 @@
           type="password"
           required
           autocomplete="new-password"
-          class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
         <p class="mt-1 text-xs text-gray-400">
           Mindestens 12 Zeichen mit Groß-/Kleinbuchstaben, Zahl und Sonderzeichen.
@@ -37,7 +37,7 @@
         <input v-model="consent" type="checkbox" required class="mt-0.5 rounded" />
         <span>
           Ich habe die
-          <RouterLink to="/datenschutz" class="text-blue-600 dark:text-blue-400 hover:underline">Datenschutzerklärung</RouterLink>
+          <RouterLink to="/datenschutz" class="text-primary-600 dark:text-primary-400 hover:underline">Datenschutzerklärung</RouterLink>
           gelesen und bin mit der Speicherung meiner E-Mail-Adresse und
           Konto-Einstellungen einverstanden.
         </span>
@@ -52,7 +52,7 @@
       <button
         type="submit"
         :disabled="loading || !consent"
-        class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        class="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
       >
         {{ loading ? 'Registrieren…' : 'Konto erstellen' }}
       </button>
@@ -60,7 +60,7 @@
 
     <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">
       Bereits ein Konto?
-      <RouterLink to="/login" class="text-blue-600 dark:text-blue-400 hover:underline">Anmelden</RouterLink>
+      <RouterLink to="/login" class="text-primary-600 dark:text-primary-400 hover:underline">Anmelden</RouterLink>
     </p>
   </div>
 </template>

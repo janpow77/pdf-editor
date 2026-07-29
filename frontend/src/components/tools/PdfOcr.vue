@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="flex items-center gap-3">
       <button
-        class="text-sm text-gray-500 dark:text-gray-400 hover:text-purple-600 flex items-center gap-1"
+        class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600 flex items-center gap-1"
         @click="$emit('back')"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -27,8 +27,8 @@
         file
           ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
           : dragOver
-            ? 'border-purple-400 bg-purple-50 dark:bg-purple-900/10'
-            : 'border-gray-300 dark:border-gray-600 hover:border-purple-300',
+            ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/10'
+            : 'border-gray-300 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500',
       ]"
       @dragover.prevent="dragOver = true"
       @dragleave="dragOver = false"
@@ -66,7 +66,7 @@
             v-model="language"
             type="radio"
             :value="lang.value"
-            class="w-4 h-4 text-purple-600 focus:ring-purple-500 border-gray-300 dark:border-gray-600"
+            class="w-4 h-4 text-primary-600 focus:ring-primary-500 border-gray-300 dark:border-gray-600"
           />
           <span class="text-sm text-gray-700 dark:text-gray-300">{{ lang.label }}</span>
         </label>
@@ -76,7 +76,7 @@
     <!-- Start button -->
     <button
       v-if="file && !loading && !result"
-      class="w-full py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors"
+      class="w-full py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium transition-colors"
       @click="runOcr"
     >
       OCR starten
@@ -84,7 +84,7 @@
 
     <!-- Loading -->
     <div v-if="loading" class="text-center py-8 space-y-3">
-      <svg class="animate-spin w-10 h-10 mx-auto text-purple-500" fill="none" viewBox="0 0 24 24">
+      <svg class="animate-spin w-10 h-10 mx-auto text-primary-500" fill="none" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
         <path
           class="opacity-75"

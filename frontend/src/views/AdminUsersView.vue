@@ -22,7 +22,7 @@
             <tr v-for="u in users" :key="u.id" class="border-b border-gray-100 dark:border-gray-700/50">
               <td class="py-2 pr-4 text-gray-900 dark:text-white">{{ u.email }}</td>
               <td class="py-2 pr-4">
-                <span :class="u.role === 'ADMIN' ? 'text-purple-600 dark:text-purple-400 font-medium' : 'text-gray-500'">{{ u.role }}</span>
+                <span :class="u.role === 'ADMIN' ? 'text-primary-600 dark:text-primary-400 font-medium' : 'text-gray-500'">{{ u.role }}</span>
               </td>
               <td class="py-2 pr-4">
                 <span v-if="u.locked" class="text-amber-600 dark:text-amber-400">gesperrt</span>
@@ -32,7 +32,7 @@
               <td class="py-2 pr-4 text-gray-500">{{ u.last_login ? new Date(u.last_login).toLocaleString('de-DE') : '—' }}</td>
               <td class="py-2 space-x-2 whitespace-nowrap">
                 <button
-                  class="text-blue-600 dark:text-blue-400 hover:underline"
+                  class="text-primary-600 dark:text-primary-400 hover:underline"
                   @click="toggleActive(u)"
                 >
                   {{ u.is_active ? 'Deaktivieren' : 'Aktivieren' }}

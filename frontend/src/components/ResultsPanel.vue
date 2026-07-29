@@ -9,7 +9,7 @@
       </h3>
       <div class="flex gap-2">
         <button
-          class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+          class="px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
           :disabled="zipping"
           @click="zipAll"
         >
@@ -17,7 +17,7 @@
         </button>
         <button
           v-if="mailAvailable"
-          class="px-3 py-1.5 text-sm rounded-lg border border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+          class="px-3 py-1.5 text-sm rounded-lg border border-primary-600 text-primary-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
           @click="showMailDialog = true"
         >
           Per E-Mail senden

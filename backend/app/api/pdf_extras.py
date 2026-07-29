@@ -22,8 +22,15 @@ def _validate_pdf(file: UploadFile, content: bytes):
         )
 
 
+def _safe_name(name: str) -> str:
+    """Anführungszeichen/Steuerzeichen aus Dateinamen entfernen (Header-Injection)."""
+    import re as _re
+
+    return _re.sub(r'[\r\n"\\;]+', "_", name)[:150] or "datei"
+
+
 def _pdf_response(data: bytes, filename: str, headers: dict | None = None):
-    h = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    h = {"Content-Disposition": f'attachment; filename="{_safe_name(filename)}"'}
     if headers:
         h.update(headers)
     return StreamingResponse(io.BytesIO(data), media_type="application/pdf", headers=h)
@@ -48,7 +55,7 @@ async def pdf_to_text(file: UploadFile = File(...)):
     return StreamingResponse(
         io.BytesIO(result.file_content),
         media_type="text/plain; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{_name(file)}.txt"'},
+        headers={"Content-Disposition": f'attachment; filename="{_safe_name(_name(file))}.txt"'},
     )
 
 
@@ -219,14 +226,15 @@ def sign_digital(
 
 
 @router.post("/scan-optimize")
-async def scan_optimize(
+def scan_optimize(
     file: UploadFile = File(...),
     language: str = Form("deu"),
     deskew: bool = Form(True),
     rotate_pages: bool = Form(True),
     force_ocr: bool = Form(False),
 ):
-    content = await file.read()
+    """Sync-Endpoint (Threadpool): OCRmyPDF darf den Event-Loop nicht blockieren."""
+    content = file.file.read()
     _validate_pdf(file, content)
     result = get_pdf_extras().scan_optimize(
         content,
@@ -242,7 +250,7 @@ async def scan_optimize(
 
 
 @router.post("/batch")
-async def batch_apply(
+def batch_apply(
     files: list[UploadFile] = File(...),
     operation: str = Form(..., description="compress | rotate | protect | bates | pdfa"),
     params: str = Form("{}", description="JSON-Objekt mit Operations-Parametern"),
@@ -262,7 +270,7 @@ async def batch_apply(
     total = 0
     file_data: list[tuple[str, bytes]] = []
     for f in files:
-        content = await f.read()
+        content = f.file.read()
         total += len(content)
         if total > limits.max_total:
             raise HTTPException(
@@ -288,11 +296,12 @@ async def batch_apply(
 
 
 @router.post("/to-pdfa")
-async def to_pdfa(
+def to_pdfa(
     file: UploadFile = File(...),
     level: str = Form("2b", description="PDF/A-Level: 1b, 2b, 3b"),
 ):
-    content = await file.read()
+    """Sync-Endpoint (Threadpool): Ghostscript darf den Event-Loop nicht blockieren."""
+    content = file.file.read()
     _validate_pdf(file, content)
     result = get_pdf_extras().convert_pdfa(content, level=level)
     if not result.success:
@@ -438,7 +447,7 @@ async def job_result(job_id: str, request: Request):
             status_code=404, detail="Ergebnis nicht verfügbar (abgeholt, abgelaufen oder nicht fertig)"
         )
     headers = {
-        "Content-Disposition": f'attachment; filename="{job.filename}"',
+        "Content-Disposition": f'attachment; filename="{_safe_name(job.filename)}"',
         **job.headers,
     }
     return StreamingResponse(io.BytesIO(job.content), media_type=job.media_type, headers=headers)
