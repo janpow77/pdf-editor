@@ -1,0 +1,37 @@
+# PDF-Editor-App — eigenständiger Stack (kein Bezug zum audit_designer-Stack).
+#
+# Lokal:      docker compose up --build          → http://localhost:8080
+# Produktion: docker compose --profile prod up -d  (zusätzlich cloudflared;
+#             TUNNEL_TOKEN in .env bzw. /etc/pdf-editor/env setzen)
+
+services:
+  backend:
+    build: ./backend
+    environment:
+      - PDFAPP_MAX_FILE_SIZE_MB=${PDFAPP_MAX_FILE_SIZE_MB:-50}
+      - PDFAPP_MAX_TOTAL_SIZE_MB=${PDFAPP_MAX_TOTAL_SIZE_MB:-200}
+      - PDFAPP_RATE_LIMIT_DEFAULT=${PDFAPP_RATE_LIMIT_DEFAULT:-30/minute;500/day}
+      - PDFAPP_SMTP_HOST=${PDFAPP_SMTP_HOST:-}
+      - PDFAPP_SMTP_PORT=${PDFAPP_SMTP_PORT:-587}
+      - PDFAPP_SMTP_USER=${PDFAPP_SMTP_USER:-}
+      - PDFAPP_SMTP_PASSWORD=${PDFAPP_SMTP_PASSWORD:-}
+      - PDFAPP_SMTP_FROM=${PDFAPP_SMTP_FROM:-noreply@flowaudit.de}
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:8080:80"
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["prod"]
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - frontend
+    restart: unless-stopped
