@@ -299,3 +299,146 @@ async def to_pdfa(
         status = 503 if "nicht verfügbar" in (result.error or "") else 500
         raise HTTPException(status_code=status, detail=result.error)
     return _pdf_response(result.file_content, f"{_name(file)}_pdfa.pdf")
+
+
+# ── Asynchrone Jobs für langlaufende Verarbeitungen ───────────
+# OCR, Vergleich und Scan-Optimierung können bei großen Dateien länger dauern
+# als Browser-Timeouts erlauben. Ablauf: POST /jobs/<op> → job_id,
+# GET /jobs/{id} → Status, GET /jobs/{id}/result → Ergebnis (einmalig,
+# danach aus dem RAM gelöscht). Jobs sind an Nutzer-ID bzw. Client-IP gebunden.
+
+from fastapi import Request  # noqa: E402
+
+from app import jobs as job_store  # noqa: E402
+from app.ratelimit import tier_key  # noqa: E402
+
+
+def _job_ocr(content: bytes, language: str):
+    from app.services.pdf_editor_service import get_pdf_editor
+
+    result = get_pdf_editor().ocr_pdf(content, language=language)
+    if not result.success:
+        raise RuntimeError(result.error or "OCR fehlgeschlagen")
+    meta = result.metadata or {}
+    return result.file_content, {
+        "X-Pages-Processed": str(meta.get("pages_processed", 0)),
+        "X-Characters-Recognized": str(meta.get("characters_recognized", 0)),
+    }
+
+
+def _job_compare(content_a: bytes, content_b: bytes, include_visual: bool):
+    import json as _json
+
+    from app.services.pdf_editor_service import get_pdf_editor
+
+    result = get_pdf_editor().compare_pdfs(content_a, content_b, include_visual)
+    if not result.success:
+        raise RuntimeError(result.error or "Vergleich fehlgeschlagen")
+    return _json.dumps(result.metadata or {}).encode(), {}
+
+
+def _job_scan(content: bytes, language: str, deskew: bool, rotate: bool, force: bool):
+    result = get_pdf_extras().scan_optimize(
+        content, language=language, deskew=deskew, rotate_pages=rotate, force_ocr=force
+    )
+    if not result.success:
+        raise RuntimeError(result.error or "Scan-Optimierung fehlgeschlagen")
+    return result.file_content, {}
+
+
+@router.post("/jobs/ocr", status_code=202)
+async def start_ocr_job(
+    request: Request,
+    file: UploadFile = File(...),
+    language: str = Form("deu"),
+):
+    content = await file.read()
+    _validate_pdf(file, content)
+    try:
+        job_id = job_store.submit(
+            tier_key(request),
+            f"{_name(file)}_ocr.pdf",
+            "application/pdf",
+            _job_ocr,
+            content,
+            language,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    return {"job_id": job_id}
+
+
+@router.post("/jobs/compare", status_code=202)
+async def start_compare_job(
+    request: Request,
+    file_a: UploadFile = File(...),
+    file_b: UploadFile = File(...),
+    include_visual: bool = Form(True),
+):
+    content_a = await file_a.read()
+    content_b = await file_b.read()
+    _validate_pdf(file_a, content_a)
+    _validate_pdf(file_b, content_b)
+    try:
+        job_id = job_store.submit(
+            tier_key(request),
+            "vergleich.json",
+            "application/json",
+            _job_compare,
+            content_a,
+            content_b,
+            include_visual,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    return {"job_id": job_id}
+
+
+@router.post("/jobs/scan-optimize", status_code=202)
+async def start_scan_job(
+    request: Request,
+    file: UploadFile = File(...),
+    language: str = Form("deu"),
+    deskew: bool = Form(True),
+    rotate_pages: bool = Form(True),
+    force_ocr: bool = Form(False),
+):
+    content = await file.read()
+    _validate_pdf(file, content)
+    try:
+        job_id = job_store.submit(
+            tier_key(request),
+            f"{_name(file)}_optimiert.pdf",
+            "application/pdf",
+            _job_scan,
+            content,
+            language,
+            deskew,
+            rotate_pages,
+            force_ocr,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    return {"job_id": job_id}
+
+
+@router.get("/jobs/{job_id}")
+async def job_status(job_id: str, request: Request):
+    job = job_store.get(job_id, tier_key(request))
+    if job is None:
+        raise HTTPException(status_code=404, detail="Auftrag nicht gefunden")
+    return {"job_id": job.id, "status": job.status, "error": job.error}
+
+
+@router.get("/jobs/{job_id}/result")
+async def job_result(job_id: str, request: Request):
+    job = job_store.take_result(job_id, tier_key(request))
+    if job is None:
+        raise HTTPException(
+            status_code=404, detail="Ergebnis nicht verfügbar (abgeholt, abgelaufen oder nicht fertig)"
+        )
+    headers = {
+        "Content-Disposition": f'attachment; filename="{job.filename}"',
+        **job.headers,
+    }
+    return StreamingResponse(io.BytesIO(job.content), media_type=job.media_type, headers=headers)

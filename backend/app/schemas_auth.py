@@ -24,8 +24,24 @@ def _validate_password(v: str) -> str:
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
+    turnstile_token: str | None = None
 
     _pw = field_validator("password")(_validate_password)
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    password: str
+
+    _pw = field_validator("password")(_validate_password)
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str
 
 
 class UserResponse(BaseModel):
@@ -35,6 +51,7 @@ class UserResponse(BaseModel):
     email: str
     role: str
     is_active: bool
+    is_verified: bool = False
     created_at: datetime
     last_login: datetime | None = None
 

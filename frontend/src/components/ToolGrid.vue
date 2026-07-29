@@ -103,6 +103,7 @@ import PdfAnnotate from '@/components/tools/PdfAnnotate.vue'
 import PdfSignDigital from '@/components/tools/PdfSignDigital.vue'
 import PdfScanOptimize from '@/components/tools/PdfScanOptimize.vue'
 import PdfBatch from '@/components/tools/PdfBatch.vue'
+import PdfTocEditor from '@/components/tools/PdfTocEditor.vue'
 import PdfOcr from '@/components/tools/PdfOcr.vue'
 import WordToPdf from '@/components/tools/WordToPdf.vue'
 import WordMerge from '@/components/tools/WordMerge.vue'
@@ -141,6 +142,7 @@ const toolComponents: Record<string, Component> = {
   signDigital: markRaw(PdfSignDigital),
   scanOptimize: markRaw(PdfScanOptimize),
   batch: markRaw(PdfBatch),
+  tocEditor: markRaw(PdfTocEditor),
   ocr: markRaw(PdfOcr),
   wordToPdf: markRaw(WordToPdf),
   wordMerge: markRaw(WordMerge),
@@ -179,6 +181,7 @@ const pdfTools = [
   { id: 'signDigital', label: 'Digital signieren', desc: 'Mit Zertifikat (PAdES)', icon: '🔏', color: 'bg-blue-100 dark:bg-blue-900/30' },
   { id: 'scanOptimize', label: 'Scan optimieren', desc: 'Geraderücken + OCR', icon: '🧹', color: 'bg-cyan-100 dark:bg-cyan-900/30' },
   { id: 'batch', label: 'Batch', desc: 'Viele Dateien auf einmal', icon: '📦', color: 'bg-pink-100 dark:bg-pink-900/30' },
+  { id: 'tocEditor', label: 'Lesezeichen', desc: 'Inhaltsverzeichnis bearbeiten', icon: '🔖', color: 'bg-slate-100 dark:bg-slate-700/50' },
 ]
 
 const wordTools = [

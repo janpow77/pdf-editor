@@ -431,7 +431,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { apiPost } from '@/lib/api'
+import { runJob } from '@/lib/jobs'
 
 defineEmits<{ (e: 'back'): void }>()
 
@@ -563,7 +563,8 @@ async function doCompare() {
     fd.append('file_b', fileB.value)
     fd.append('include_visual', String(includeVisual.value))
 
-    const response = await apiPost(`${API_BASE}/compare`, fd, { timeout: TIMEOUT })
+    // Async-Job: übersteht auch sehr große Dateien ohne Browser-Timeout
+    const response = await runJob('/api/pdf-extras/jobs/compare', fd)
 
     const data: CompareResult = await response.json()
     result.value = data

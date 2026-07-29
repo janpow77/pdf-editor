@@ -44,6 +44,9 @@
     </form>
 
     <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">
+      <RouterLink to="/passwort-vergessen" class="text-blue-600 dark:text-blue-400 hover:underline">Passwort vergessen?</RouterLink>
+    </p>
+    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
       Noch kein Konto?
       <RouterLink to="/registrieren" class="text-blue-600 dark:text-blue-400 hover:underline">Kostenlos registrieren</RouterLink>
     </p>

@@ -37,6 +37,15 @@ class Settings(BaseSettings):
     # Konto-Einstellungen (JSON-Blob)
     preferences_max_bytes: int = 16384
 
+    # Öffentliche Basis-URL für Links in Mails (Verifikation/Passwort-Reset),
+    # z.B. https://pdf.flowaudit.de — leer = Flows senden keine Mails
+    public_base_url: str = ""
+
+    # Cloudflare Turnstile (optional): beide Keys gesetzt = Registrierung und
+    # Mailversand verlangen ein gültiges Turnstile-Token
+    turnstile_site_key: str = ""
+    turnstile_secret: str = ""
+
     # Mailversand — nur aktiv, wenn smtp_host gesetzt ist
     smtp_host: str = ""
     smtp_port: int = 587

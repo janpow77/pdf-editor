@@ -33,8 +33,14 @@ async def send_results(
     to: str = Form(...),
     subject: str = Form("Ihre Dateien vom PDF-Editor"),
     files: list[UploadFile] = File(...),
+    turnstile_token: str | None = Form(None),
 ):
     """Sendet die übergebenen Ergebnis-Dateien als Anhang an die angegebene Adresse."""
+    from app.api.auth import verify_turnstile_or_403
+
+    verify_turnstile_or_403(
+        turnstile_token, request.client.host if request.client else None
+    )
     if not settings.smtp_host:
         raise HTTPException(
             status_code=503, detail="Mailversand ist auf diesem Server nicht konfiguriert"

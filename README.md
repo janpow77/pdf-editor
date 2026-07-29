@@ -58,6 +58,20 @@ Alle Einstellungen über Umgebungsvariablen mit Präfix `PDFAPP_` — siehe
 | `PDFAPP_RATE_LIMIT_MAIL` | `5/hour` | Rate-Limit Mailversand |
 | `PDFAPP_SMTP_HOST` | *(leer)* | leer = Mailversand deaktiviert (503) |
 
+## Datenbank-Migrationen (Alembic)
+
+Frische Datenbanken initialisiert der Backend-Start selbst (`create_all` +
+Admin-Seed). Für Schema-Änderungen an bestehenden Datenbanken:
+
+```bash
+cd backend
+alembic upgrade head        # nutzt PDFAPP_DATABASE_URL aus der Umgebung
+alembic revision -m "..."   # neue Migration anlegen
+```
+
+Die Initial-Migration `0001` ist idempotent und läuft auch auf per
+`create_all` erzeugten Beständen sauber durch (zieht fehlende Spalten nach).
+
 ## Deployment Hetzner + Cloudflare-Tunnel (`pdf.flowaudit.de`)
 
 Analog zum Muster in `docs/HETZNER_DEPLOY.md` des audit_designer-Repos:

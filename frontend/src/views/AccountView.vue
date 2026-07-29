@@ -2,7 +2,24 @@
   <div class="max-w-2xl mx-auto px-4 py-8 space-y-8">
     <div>
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Mein Konto</h1>
-      <p class="text-sm text-gray-500 dark:text-gray-400">{{ user?.email }}</p>
+      <p class="text-sm text-gray-500 dark:text-gray-400">
+        {{ user?.email }}
+        <span v-if="user?.is_verified" class="text-green-600 dark:text-green-400">· bestätigt</span>
+      </p>
+    </div>
+
+    <div
+      v-if="user && !user.is_verified && flowsAvailable"
+      class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg text-sm text-amber-800 dark:text-amber-300 flex items-center justify-between gap-3 flex-wrap"
+    >
+      <span>Ihre E-Mail-Adresse ist noch nicht bestätigt.</span>
+      <button
+        class="px-3 py-1.5 text-sm rounded-lg border border-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50"
+        :disabled="verifySending"
+        @click="requestVerification"
+      >
+        {{ verifySent ? 'Mail versendet' : verifySending ? 'Sende…' : 'Bestätigungs-Mail senden' }}
+      </button>
     </div>
 
     <!-- Werkzeug-Einstellungen -->
@@ -78,6 +95,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { apiGetJson, apiJson } from '@/lib/api'
 import { deleteAccount, loadPreferences, preferences, savePreferences, user } from '@/lib/auth'
 
 const router = useRouter()
@@ -90,7 +108,27 @@ const deletePassword = ref('')
 const deleting = ref(false)
 const deleteError = ref<string | null>(null)
 
+const flowsAvailable = ref(false)
+const verifySending = ref(false)
+const verifySent = ref(false)
+
+async function requestVerification() {
+  verifySending.value = true
+  try {
+    await apiJson('POST', '/api/auth/request-verification')
+    verifySent.value = true
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : 'Versand fehlgeschlagen'
+  } finally {
+    verifySending.value = false
+  }
+}
+
 onMounted(async () => {
+  try {
+    const health = await apiGetJson<{ account_flows: boolean }>('/api/health')
+    flowsAvailable.value = health.account_flows
+  } catch { /* Hinweis dann einfach ausblenden */ }
   await loadPreferences()
   ocrLanguage.value = (preferences.value.ocr_language as string) || 'deu'
   watermarkText.value = (preferences.value.watermark_text as string) || ''

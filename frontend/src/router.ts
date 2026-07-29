@@ -18,6 +18,21 @@ export const router = createRouter({
       component: () => import('@/views/RegisterView.vue'),
     },
     {
+      path: '/passwort-vergessen',
+      name: 'passwort-vergessen',
+      component: () => import('@/views/PasswortVergessenView.vue'),
+    },
+    {
+      path: '/passwort-reset',
+      name: 'passwort-reset',
+      component: () => import('@/views/PasswortResetView.vue'),
+    },
+    {
+      path: '/email-bestaetigen',
+      name: 'email-bestaetigen',
+      component: () => import('@/views/EmailBestaetigenView.vue'),
+    },
+    {
       path: '/konto',
       name: 'account',
       component: () => import('@/views/AccountView.vue'),

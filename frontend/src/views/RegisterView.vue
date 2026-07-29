@@ -43,6 +43,8 @@
         </span>
       </label>
 
+      <div v-if="turnstileSiteKey" ref="turnstileBox" class="min-h-[70px]"></div>
+
       <div v-if="error" class="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-sm text-red-700 dark:text-red-300">
         {{ error }}
       </div>
@@ -64,8 +66,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import { apiGetJson } from '@/lib/api'
 import { register } from '@/lib/auth'
 
 const router = useRouter()
@@ -75,12 +78,43 @@ const consent = ref(false)
 const loading = ref(false)
 const error = ref<string | null>(null)
 
+// Cloudflare Turnstile — nur aktiv, wenn der Server einen Site-Key meldet
+const turnstileSiteKey = ref('')
+const turnstileToken = ref('')
+const turnstileBox = ref<HTMLElement | null>(null)
+
+onMounted(async () => {
+  try {
+    const health = await apiGetJson<{ turnstile_site_key: string | null }>('/api/health')
+    if (!health.turnstile_site_key) return
+    turnstileSiteKey.value = health.turnstile_site_key
+    await new Promise<void>((resolve, reject) => {
+      const s = document.createElement('script')
+      s.src = 'https://challenges.cloudflare.com/turnstile/api.js?render=explicit'
+      s.async = true
+      s.onload = () => resolve()
+      s.onerror = () => reject(new Error('Turnstile konnte nicht geladen werden'))
+      document.head.appendChild(s)
+    })
+    const turnstile = (window as any).turnstile
+    if (turnstile && turnstileBox.value) {
+      turnstile.render(turnstileBox.value, {
+        sitekey: turnstileSiteKey.value,
+        callback: (token: string) => { turnstileToken.value = token },
+        'expired-callback': () => { turnstileToken.value = '' },
+      })
+    }
+  } catch {
+    // Widget-Fehler blockieren die Seite nicht — der Server lehnt dann ab
+  }
+})
+
 async function submit() {
   if (!consent.value) return
   loading.value = true
   error.value = null
   try {
-    await register(email.value, password.value)
+    await register(email.value, password.value, turnstileToken.value || undefined)
     router.push('/')
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Registrierung fehlgeschlagen'

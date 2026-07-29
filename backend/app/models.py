@@ -37,6 +37,12 @@ class User(Base):
     last_login: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # E-Mail-Verifikation + Passwort-Reset: nur Token-HASHES werden gespeichert
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    verify_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    verify_token_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reset_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reset_token_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     @property
     def is_locked(self) -> bool:

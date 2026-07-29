@@ -52,11 +52,13 @@
 import { ref } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
 import { useToolRun } from '@/composables/useToolRun'
+import { downloadBlob } from '@/lib/api'
+import { runJob } from '@/lib/jobs'
 import { prefDefault } from '@/lib/auth'
 
 defineEmits<{ (e: 'back'): void }>()
 
-const { loading, error, done, run } = useToolRun()
+const { loading, error, done } = useToolRun()
 const file = ref<File | null>(null)
 const language = ref(prefDefault('ocr_language', 'deu'))
 const deskew = ref(true)
@@ -65,12 +67,24 @@ const forceOcr = ref(false)
 
 async function apply() {
   if (!file.value) return
-  const fd = new FormData()
-  fd.append('file', file.value)
-  fd.append('language', language.value)
-  fd.append('deskew', String(deskew.value))
-  fd.append('rotate_pages', String(rotate.value))
-  fd.append('force_ocr', String(forceOcr.value))
-  await run('/api/pdf-extras/scan-optimize', fd, file.value.name.replace(/\.pdf$/i, '_optimiert.pdf'))
+  loading.value = true
+  error.value = null
+  done.value = false
+  try {
+    const fd = new FormData()
+    fd.append('file', file.value)
+    fd.append('language', language.value)
+    fd.append('deskew', String(deskew.value))
+    fd.append('rotate_pages', String(rotate.value))
+    fd.append('force_ocr', String(forceOcr.value))
+    // Async-Job statt Direktaufruf — Scan-Optimierung kann Minuten dauern
+    const resp = await runJob('/api/pdf-extras/jobs/scan-optimize', fd)
+    await downloadBlob(resp, file.value.name.replace(/\.pdf$/i, '_optimiert.pdf'))
+    done.value = true
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : 'Unbekannter Fehler'
+  } finally {
+    loading.value = false
+  }
 }
 </script>

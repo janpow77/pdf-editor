@@ -121,6 +121,8 @@ async def health(request: Request):
     return {
         "status": "ok",
         "accounts": bool(getattr(request.app.state, "db_available", False)),
+        "turnstile_site_key": settings.turnstile_site_key or None,
+        "account_flows": bool(settings.smtp_host and settings.public_base_url),
         "features": {
             **get_pdf_tools().check_features(),
             **get_pdf_extras().check_features(),

@@ -158,7 +158,7 @@
 
 <script setup lang="ts">
 import { ref, onUnmounted } from 'vue'
-import { apiPost } from '@/lib/api'
+import { runJob } from '@/lib/jobs'
 import { prefDefault } from '@/lib/auth'
 
 defineEmits<{ (e: 'back'): void }>()
@@ -237,7 +237,8 @@ async function runOcr() {
     fd.append('file', file.value)
     fd.append('language', language.value)
 
-    const response = await apiPost(`${API_BASE}/ocr`, fd, { timeout: OCR_TIMEOUT })
+    // Async-Job: übersteht auch sehr große Dateien ohne Browser-Timeout
+    const response = await runJob('/api/pdf-extras/jobs/ocr', fd)
 
     // Extract metadata from headers
     const pagesProcessed = Number(response.headers.get('X-Pages-Processed') || 0)

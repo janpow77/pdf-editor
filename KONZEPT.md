@@ -62,10 +62,17 @@ Arbeitskopie-Prinzip wie im Texteditor. Dabei behobener Vorlagen-Defekt:
 `add_ink_annot` verlangte in aktuellen PyMuPDF-Versionen Float-Paare statt
 `fitz.Point` (Regressionstest vorhanden).
 
-### Phase 2 — Rest
+### Restpunkte — umgesetzt
 
-Noch offen: TOC-/Lesezeichen-Editor-UI, asynchrones OCR/Compare für sehr
-große Dateien (aktuell synchron mit 5-Minuten-Timeout).
+- **Lesezeichen-/TOC-Editor**: Tabellen-UI (Ebene/Titel/Seite, verschieben,
+  löschen, hinzufügen) über die vorhandenen toc/read-, toc/write- und
+  toc/auto-detect-Endpoints.
+- **Asynchrone Verarbeitung** für OCR, Vergleich und Scan-Optimierung:
+  In-Memory-Job-Queue (ThreadPool, TTL 15 min, Ergebnis einmalig abholbar,
+  Jobs an Nutzer-ID/IP gebunden) mit Polling im Frontend — große Dateien
+  laufen nicht mehr in Browser-Timeouts. Grenze: Der Job-Store ist
+  prozesslokal; bei mehreren Backend-Replikas braucht es Sticky-Sessions
+  oder einen externen Store.
 
 ### Optionale Konten — vorgezogen und umgesetzt
 
@@ -83,12 +90,22 @@ Ursprünglich Phase 3, auf Nutzerwunsch vorgezogen. Grundsätze (alle eingehalte
   Fehlversuchen (30 min), identische Login-Fehlermeldung gegen User-Enumeration,
   Selbstschutz im Admin-Bereich (letzter aktiver Admin nicht entfernbar).
 
-### Hardening-Backlog (offen)
+### Hardening — Stand
 
-- Alembic-Migrationen statt `create_all` (nötig ab der ersten Schema-Änderung).
-- E-Mail-Verifikation bei Registrierung, Passwort-Reset per Mail.
-- Refresh-Tokens / kürzere Access-Token-Laufzeit.
-- Turnstile/Captcha für Registrierung und Mailversand, falls Missbrauch auftritt.
+- ✅ **Alembic**: Scaffold + idempotente Initial-Migration (`alembic upgrade head`
+  gegen `PDFAPP_DATABASE_URL`); `create_all` bleibt als Fallback für frische
+  Datenbanken im Lifespan.
+- ✅ **E-Mail-Verifikation**: Bestätigungs-Mail bei Registrierung (Token-Hash,
+  24 h gültig), `is_verified`-Status, Nachfordern über die Konto-Seite. Aktiv,
+  sobald SMTP + `PDFAPP_PUBLIC_BASE_URL` gesetzt sind; ohne Konfiguration
+  läuft die Registrierung unverändert.
+- ✅ **Passwort-Reset**: Anfrage antwortet immer 202 (keine User-Enumeration),
+  Token-Hash 2 h gültig, Reset resettet auch Lockout-Zähler.
+- ✅ **Turnstile**: optionaler Bot-Schutz für Registrierung und Mailversand —
+  aktiv, sobald `PDFAPP_TURNSTILE_SITE_KEY/SECRET` gesetzt sind; Widget lädt
+  nur dann.
+- Offen: Refresh-Tokens / kürzere Access-Token-Laufzeit (bewusst zurückgestellt,
+  24-h-JWT für dieses Angebot akzeptiert).
 
 ## 4. Architektur
 
