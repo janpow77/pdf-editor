@@ -23,6 +23,15 @@
       </button>
     </div>
 
+    <WorkSessionBar
+      tool="formDesigner"
+      :blob="workingBlob"
+      :name="workingName"
+      :state="sessionState"
+      :change-count="fields.length"
+      @restore="restoreSession"
+    />
+
     <FileDrop v-if="!workingBlob" v-model="file" />
 
     <template v-else>
@@ -300,6 +309,7 @@
 import { computed, ref, watch } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
 import PdfViewer from '@/components/PdfViewer.vue'
+import WorkSessionBar from '@/components/WorkSessionBar.vue'
 import { apiPost, downloadBlob } from '@/lib/api'
 
 defineEmits<{ (e: 'back'): void }>()
@@ -389,6 +399,25 @@ const nameConflict = computed(() => {
   if (!s) return false
   return fields.value.some((f) => f.id !== s.id && f.name.trim() === s.name.trim())
 })
+
+// Für „Bearbeitung unterbrechen": Felder + Seite mitsamt Dokument sichern.
+// Ergänzt das reine Layout-JSON, das nur die Felder ohne Dokument enthält.
+const sessionState = computed(() => ({ fields: fields.value, page: page.value }))
+
+function restoreSession(payload: { name: string; blob: Blob; state: unknown }) {
+  workingBlob.value = payload.blob
+  workingName.value = payload.name
+  const state = payload.state as { fields?: DesignerField[]; page?: number } | null
+  if (state?.fields?.length) {
+    loadFieldArray(state.fields as unknown[])
+  } else {
+    fields.value = []
+    selectedId.value = null
+  }
+  page.value = state?.page && state.page > 0 ? state.page : 1
+  restoredHint.value = ''
+  error.value = null
+}
 
 function typeIcon(t: FieldType): string {
   return fieldTypes.find((x) => x.value === t)?.icon ?? '▭'

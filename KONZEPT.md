@@ -206,6 +206,32 @@ Wort-Rechtecke gefunden, damit auch eine IBAN in Vierergruppen erfasst wird.
 Weil Schwärzen unumkehrbar ist, gibt es eine **Vorschau**, die jede Fundstelle
 mit Text, Muster und Seite auflistet, bevor etwas entfernt wird.
 
+### Bearbeitung unterbrechen und fortsetzen (2026-07-30) — umgesetzt
+
+Editoren halten einen Arbeitsstand: die Arbeitskopie des Dokuments **plus die
+noch nicht angewandten Änderungen**. Ein reines PDF hätte nur den angewandten
+Stand — genau die vorgemerkten Änderungen will man beim Unterbrechen aber
+behalten. Zwei bewusst getrennte Wege (`lib/worksession.ts`,
+`components/WorkSessionBar.vue`, eingebaut in Textbearbeitung, Anmerkungen und
+Formular-Designer):
+
+- **Im Browser** (IndexedDB, entprellt alle 1,5 s): Beim nächsten Öffnen bietet
+  das Werkzeug „Fortsetzen" an, mit Zeitangabe und Zahl der offenen Änderungen.
+  Die Daten bleiben auf dem Gerät, der Server sieht sie nie; „Browser-Sicherung
+  löschen" entfernt sie sofort. Dokumente über 40 MB werden nicht lokal
+  zwischengelagert (Quota) — das Werkzeug sagt das und verweist auf die Datei.
+- **Als Sitzungsdatei** (.zip mit `dokument.pdf` + `arbeitsstand.json`): für
+  Gerätewechsel und längere Pausen. Beim Laden werden auch einfache PDFs
+  akzeptiert (dann ohne offene Änderungen); Dateien aus einem anderen Werkzeug
+  oder mit fremder Version werden mit Begründung abgewiesen.
+
+Zwei Fehler, die der E2E-Lauf aufgedeckt hat und die behoben sind: der Zustand
+enthielt reaktive Vue-Proxys, die IndexedDB nicht klonen kann (die Sicherung
+schlug ab der ersten Änderung still fehl → JSON-Normalisierung plus
+aussagekräftiger Hinweis statt stiller Fehlschlag), und der Knopf „Arbeitsstand
+laden" war nur bei geöffnetem Dokument sichtbar — also genau dann nicht, wenn
+man ihn braucht.
+
 ### Werkzeug-Freigabe durch den Administrator (2026-07-30) — umgesetzt
 
 Der Betreiber entscheidet im Admin-Bereich pro Werkzeug, ob es allen offensteht
@@ -393,6 +419,8 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | F15 | Kein freies JavaScript im PDF: `app.alert`, `submitForm`, `eval` u.ä. werden abgelehnt, Feld bleibt ohne Skript | `test_form_advanced.py::test_formula_rejects_javascript` | ✅ automatisiert |
 | F16 | CSV: Werte-Export, Vorlage, Serienbefüllung (Zeile → PDF, `dateiname`, ZIP ab zwei Zeilen, 200-Zeilen-Grenze, Hinweis bei unbekannten Spalten) | `test_form_advanced.py` (7 Fälle) + Browser-E2E mit Prüfung der befüllten Werte im ZIP | ✅ automatisiert + live geprüft |
 | F17 | Stapelsignatur und Umbenennen im Batch; Bild ersetzen behält Position; Vertrauensanker liefern echtes Vertrauensurteil | `test_form_advanced.py` + Browser-E2E (Umbenennen, Bildaustausch im PDF nachgemessen) | ✅ automatisiert + live geprüft |
+| F23 | Bearbeitung unterbrechen: Arbeitskopie + offene Änderungen werden im Browser gesichert, „Fortsetzen" stellt beides wieder her, Ergebnis landet korrekt im PDF | Browser-E2E (IndexedDB direkt ausgelesen, Neuladen, Anwenden, Textprüfung im PDF) | ✅ live geprüft |
+| F24 | Sitzungsdatei: ZIP enthält dokument.pdf + arbeitsstand.json, lässt sich in einem anderen Browser laden; fremdes Werkzeug wird abgewiesen; Browser-Sicherung löschbar | Browser-E2E (9 Schritte, zweiter Browser-Kontext, manipulierte Datei) | ✅ live geprüft |
 | F20 | Anzeige im Browser: pdf.js rendert lokal (Canvas bemalt), keine Thumbnail-Anfrage mehr, Zoom rendert neu statt zu skalieren, Seitenwechsel ohne Server | Browser-E2E (Canvas-Pixelprüfung, Netzwerk-Mitschnitt, Zoom-Vergleich) | ✅ live geprüft |
 | F21 | Textbearbeitung erhält Sonderzeichen (—, „", m², €) und führt Fett/Kursiv fort; ohne Schriftdateien Rückfall mit Hinweis | `test_redact_fonts.py` (5 Fälle) + Browser-E2E mit Prüfung im erzeugten PDF | ✅ automatisiert + live geprüft |
 | F22 | Musterschwärzung: neun Muster + Namenslisten, IBAN über Leerzeichen hinweg, Vorschau ändert nichts, Schwärzung entfernt Text und lässt Umfeld stehen | `test_redact_fonts.py` (11 Fälle) + Browser-E2E | ✅ automatisiert + live geprüft |

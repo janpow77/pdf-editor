@@ -11,6 +11,15 @@
       ins Dokument.
     </div>
 
+    <WorkSessionBar
+      tool="annotate"
+      :blob="workingBlob"
+      :name="workingName"
+      :state="sessionState"
+      :change-count="pending.length"
+      @restore="restoreSession"
+    />
+
     <FileDrop v-if="!workingBlob" v-model="file" />
 
     <template v-if="workingBlob">
@@ -127,6 +136,7 @@
 import { computed, ref, watch } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
 import PdfViewer from '@/components/PdfViewer.vue'
+import WorkSessionBar from '@/components/WorkSessionBar.vue'
 import { apiPost, downloadBlob } from '@/lib/api'
 
 defineEmits<{ (e: 'back'): void }>()
@@ -162,6 +172,18 @@ const textPrompt = ref<{ kind: 'freetext' | 'text_comment'; text: string; box: {
 const boxSize = ref({ w: 1, h: 1 })
 
 const pagePending = computed(() => pending.value.filter((a) => a.page === page.value))
+
+// Für „Bearbeitung unterbrechen": noch nicht angewandte Anmerkungen + Seite
+const sessionState = computed(() => ({ pending: pending.value, page: page.value }))
+
+function restoreSession(payload: { name: string; blob: Blob; state: unknown }) {
+  workingBlob.value = payload.blob
+  workingName.value = payload.name
+  const state = payload.state as { pending?: Annotation[]; page?: number } | null
+  pending.value = state?.pending ?? []
+  page.value = state?.page && state.page > 0 ? state.page : 1
+  error.value = null
+}
 
 watch(file, async (f) => {
   if (!f) return

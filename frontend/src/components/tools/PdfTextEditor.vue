@@ -11,6 +11,15 @@
       bei längerem Text wird die Schrift automatisch verkleinert.
     </div>
 
+    <WorkSessionBar
+      tool="textEditor"
+      :blob="workingBlob"
+      :name="workingName"
+      :state="sessionState"
+      :change-count="editCount"
+      @restore="restoreSession"
+    />
+
     <FileDrop v-if="!workingBlob" v-model="file" />
 
     <template v-if="workingBlob">
@@ -112,6 +121,7 @@
 import { computed, ref, watch } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
 import PdfViewer from '@/components/PdfViewer.vue'
+import WorkSessionBar from '@/components/WorkSessionBar.vue'
 import { apiPost, downloadBlob } from '@/lib/api'
 
 defineEmits<{ (e: 'back'): void }>()
@@ -152,6 +162,22 @@ const draftSize = ref(11)
 const edits = ref(new Map<string, Edit>())
 
 const editCount = computed(() => edits.value.size)
+
+// Für „Bearbeitung unterbrechen": offene Änderungen + Seite sichern
+const sessionState = computed(() => ({
+  edits: [...edits.value.entries()],
+  page: page.value,
+}))
+
+function restoreSession(payload: { name: string; blob: Blob; state: unknown }) {
+  workingBlob.value = payload.blob
+  workingName.value = payload.name
+  const state = payload.state as { edits?: [string, Edit][]; page?: number } | null
+  edits.value = new Map(state?.edits ?? [])
+  page.value = state?.page && state.page > 0 ? state.page : 1
+  selected.value = null
+  error.value = null
+}
 
 watch(file, async (f) => {
   if (!f) return

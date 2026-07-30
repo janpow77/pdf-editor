@@ -27,6 +27,20 @@
       </section>
 
       <section>
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Arbeitsstand der Editoren</h2>
+        <p>
+          Damit Sie eine Bearbeitung unterbrechen und später fortsetzen können, legen die
+          Editoren (Text bearbeiten, Anmerkungen, Formular-Designer) den Arbeitsstand —
+          also die Arbeitskopie des Dokuments und die noch nicht angewandten Änderungen —
+          <strong>in Ihrem Browser</strong> ab (IndexedDB, auf Ihrem Gerät). Diese Daten
+          werden nicht an den Server übertragen. Sie können sie jederzeit über
+          „Browser-Sicherung löschen" im jeweiligen Werkzeug entfernen; das Löschen der
+          Browserdaten entfernt sie ebenfalls. Alternativ speichern Sie den Arbeitsstand
+          als Datei auf Ihrem Rechner und laden ihn beim Weiterarbeiten wieder hoch.
+        </p>
+      </section>
+
+      <section>
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">KI-Funktionen (optional)</h2>
         <p>
           Sofern der Betreiber die KI-Funktionen (Zusammenfassen, Fragen zum Dokument)
