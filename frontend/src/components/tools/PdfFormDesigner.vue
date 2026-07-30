@@ -44,12 +44,6 @@
 
       <!-- Seiten-Navigation + Aktionen -->
       <div class="flex flex-wrap items-center gap-2 text-sm">
-        <button class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40" :disabled="page <= 1" @click="goToPage(page - 1)">←</button>
-        <span class="text-gray-600 dark:text-gray-300 tabular-nums">Seite {{ page }} / {{ pageCount }}</span>
-        <button class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40" :disabled="page >= pageCount" @click="goToPage(page + 1)">→</button>
-
-        <span class="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700"></span>
-
         <button class="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-primary-400" @click="saveLayoutFile">
           Layout speichern
         </button>
@@ -74,17 +68,16 @@
       <div class="grid lg:grid-cols-[1fr,20rem] gap-4 items-start">
         <!-- Zeichenfläche -->
         <div>
-          <div v-if="loadingPage" class="text-sm text-gray-500 py-8 text-center">Lade Seite…</div>
-          <div
-            v-else-if="pageImage"
-            ref="canvasBox"
-            class="relative inline-block w-full border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden bg-white select-none cursor-crosshair"
-            @mousedown.prevent="onDown"
-            @mousemove.prevent="onMove"
-            @mouseup.prevent="onUp"
-            @mouseleave="onUp"
-          >
-            <img :src="`data:image/png;base64,${pageImage}`" class="w-full pointer-events-none" alt="PDF-Seite" draggable="false" />
+          <PdfViewer v-model="page" :source="workingBlob" @loaded="pageCount = $event">
+            <template #overlay>
+              <div
+                ref="canvasBox"
+                class="absolute inset-0 cursor-crosshair"
+                @mousedown.prevent="onDown"
+                @mousemove.prevent="onMove"
+                @mouseup.prevent="onUp"
+                @mouseleave="onUp"
+              >
             <svg class="absolute inset-0 w-full h-full">
               <g v-for="f in pageFields" :key="f.id" @mousedown.stop.prevent="selectedId = f.id">
                 <rect
@@ -119,7 +112,9 @@
                 stroke-width="1.5"
               />
             </svg>
-          </div>
+              </div>
+            </template>
+          </PdfViewer>
         </div>
 
         <!-- Eigenschaften + Feldliste -->
@@ -304,6 +299,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
+import PdfViewer from '@/components/PdfViewer.vue'
 import { apiPost, downloadBlob } from '@/lib/api'
 
 defineEmits<{ (e: 'back'): void }>()
@@ -371,8 +367,6 @@ const workingBlob = ref<Blob | null>(null)
 const workingName = ref('dokument.pdf')
 const page = ref(1)
 const pageCount = ref(1)
-const pageImage = ref('')
-const loadingPage = ref(false)
 const busy = ref(false)
 const error = ref<string | null>(null)
 const summary = ref('')
@@ -558,8 +552,6 @@ watch(file, async (f) => {
   error.value = null
   summary.value = ''
   checkResult.value = null
-  await loadMeta()
-  await loadPage()
   restoreLayout()
 })
 
@@ -579,40 +571,9 @@ function restoreLayout() {
   }
 }
 
-async function loadMeta() {
-  try {
-    const fd = new FormData()
-    fd.append('file', workingBlob.value!, workingName.value)
-    const resp = await apiPost('/api/pdf-tools/metadata/read', fd)
-    pageCount.value = (await resp.json()).page_count || 1
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Metadaten lesen fehlgeschlagen'
-  }
-}
-
-async function loadPage() {
-  if (!workingBlob.value) return
-  loadingPage.value = true
-  try {
-    const fd = new FormData()
-    fd.append('file', workingBlob.value, workingName.value)
-    const resp = await apiPost(`/api/pdf-tools/thumbnails?pages=${page.value}&max_width=1100`, fd)
-    pageImage.value = (await resp.json()).thumbnails[String(page.value)] || ''
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Seite laden fehlgeschlagen'
-  } finally {
-    loadingPage.value = false
-  }
-}
-
-async function goToPage(p: number) {
-  page.value = Math.min(Math.max(1, p), pageCount.value)
-  await loadPage()
-}
-
 function jumpTo(f: DesignerField) {
   selectedId.value = f.id
-  if (f.page !== page.value) goToPage(f.page)
+  page.value = f.page  // der Viewer rendert die Seite lokal nach
 }
 
 // ── Zeichnen ─────────────────────────────────────────────────
@@ -735,7 +696,6 @@ function clearAll() {
 function reset() {
   file.value = null
   workingBlob.value = null
-  pageImage.value = ''
   fields.value = []
   selectedId.value = null
   summary.value = ''

@@ -7,7 +7,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import current_limits
-from app.services.pdf_extras_service import get_pdf_extras
+from app.services.pdf_extras_service import REDACTION_PATTERNS, get_pdf_extras
 
 router = APIRouter(prefix="/pdf-extras", tags=["PDF Extras"])
 
@@ -255,6 +255,78 @@ async def redact_by_search(
         result.file_content,
         f"{_name(file)}_geschwaerzt.pdf",
         headers={"X-Redactions": str((result.metadata or {}).get("redactions", 0))},
+    )
+
+
+@router.get("/redact/patterns")
+async def list_redaction_patterns():
+    """Verfügbare Suchmuster für die Schwärzung."""
+    return {
+        "patterns": [
+            {"id": key, "label": p.label, "hint": p.hint}
+            for key, p in REDACTION_PATTERNS.items()
+        ]
+    }
+
+
+@router.post("/redact-patterns")
+def redact_by_patterns(
+    file: UploadFile = File(...),
+    patterns: str = Form("[]", description='JSON-Liste, z.B. ["iban","email"]'),
+    terms: str = Form("", description="Begriffe/Namen, einer pro Zeile"),
+    case_sensitive: bool = Form(False),
+    whole_word: bool = Form(True),
+    preview: bool = Form(
+        False, description="Nur Fundstellen melden, nichts schwärzen"
+    ),
+):
+    """Musterbasierte Schwärzung (IBAN, E-Mail, Namenslisten …).
+
+    Sync-Endpoint (Threadpool): jede Seite wird nach Wörtern durchsucht.
+    `preview=true` liefert die Fundstellen als JSON — Schwärzen ist
+    unumkehrbar und sollte vorher geprüft werden.
+    """
+    content = file.file.read()
+    _validate_pdf(file, content)
+    try:
+        pattern_list = json.loads(patterns)
+        assert isinstance(pattern_list, list)
+    except (json.JSONDecodeError, AssertionError):
+        raise HTTPException(status_code=400, detail="patterns muss eine JSON-Liste sein")
+    unknown = [p for p in pattern_list if p not in REDACTION_PATTERNS]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unbekannte Muster: {', '.join(unknown)}")
+    term_list = [t.strip() for t in terms.splitlines() if t.strip()][:200]
+    if not pattern_list and not term_list:
+        raise HTTPException(status_code=400, detail="Mindestens ein Muster oder Begriff nötig")
+
+    service = get_pdf_extras()
+    if preview:
+        found = service.find_pattern_matches(
+            content, pattern_list, term_list, case_sensitive, whole_word
+        )
+        if found is None:
+            raise HTTPException(status_code=503, detail="PyMuPDF nicht verfügbar")
+        findings, counts = found
+        return {
+            "total": len(findings),
+            "by_pattern": counts,
+            # Für die Sichtprüfung: Fundstellen mit Seite und Fundtext
+            "findings": findings[:500],
+            "truncated": len(findings) > 500,
+        }
+
+    result = service.redact_patterns(
+        content, pattern_list, term_list, case_sensitive, whole_word
+    )
+    if not result.success:
+        status = 422 if "Keine Fundstellen" in (result.error or "") else 500
+        raise HTTPException(status_code=status, detail=result.error)
+    meta = result.metadata or {}
+    return _pdf_response(
+        result.file_content,
+        f"{_name(file)}_geschwaerzt.pdf",
+        headers={"X-Redactions": str(meta.get("redactions", 0))},
     )
 
 

@@ -172,6 +172,40 @@ Was bewusst offen bleibt (Zusammenarbeit/DMS/Cloud, Live-Webseiten→PDF wegen
 SSRF, QES/EU-Trusted-Lists, XFA, Handschrift-OCR, PDF→PowerPoint/EPUB,
 SDK/Plugin-System), steht mit Begründung in MODULKATALOG_2026.md.
 
+### Abstand zu Acrobat verkleinert (2026-07-30) — umgesetzt
+
+Drei Punkte aus der ehrlichen Selbsteinschätzung „guter Adobe-Klon?":
+
+**1. Echte Anzeige im Browser (pdf.js).** Die Vorschau lief bisher über
+serverseitig gerenderte Thumbnails: jede Seite ein Upload, ein Bild zurück,
+Zoom nur als Hochskalierung. Jetzt rendert `components/PdfViewer.vue` das
+Dokument lokal — vektorbasiert, mit Seitennavigation, Zoom (25–400 %) und
+„Breite anpassen". Für die reine Ansicht verlässt die Datei den Browser nicht
+mehr; Textbearbeitung, Anmerkungen und Formular-Designer teilen sich die
+Komponente über einen Overlay-Slot (Kinder rechnen weiter in 0–1-Koordinaten).
+Die Werkzeuge werden per `defineAsyncComponent` nachgeladen, damit pdf.js die
+Startseite nicht belastet (Startbundle 227 kB statt 488 kB, pdf.js in eigenem
+Chunk). Grenze bleibt: das Erzeugen der geänderten Datei läuft weiter über den
+Server (PyMuPDF) — es ist kein Live-Editor wie Acrobat, aber alles außer dem
+Schreibvorgang passiert lokal.
+
+**2. Schrifteinbettung statt Basis-14.** Die Textbearbeitung nutzte die
+eingebauten Schriften, die nur Latin-1 können — „—", „✓" oder „€" gingen als
+„?" verloren. Jetzt wird eine echte TrueType-Schrift eingebettet: Liberation
+(metrisch kompatibel zu Arial/Times/Courier, das Layout bleibt ähnlich),
+DejaVu als Rückfall mit breiterer Zeichenabdeckung. Der Schriftname des
+Originalblocks bestimmt Familie, Fett und Kursiv; fehlt ein Zeichen in der
+gewählten Schrift, wird automatisch auf die breitere gewechselt. Ohne
+Schriftdateien im System greift weiterhin Basis-14 mit sichtbarem Hinweis.
+
+**3. Musterbasierte Schwärzung.** Neben dem Einzelbegriff gibt es jetzt neun
+Muster (IBAN, E-Mail, Telefon, Steuer-ID, USt-IdNr., Kreditkarte, Datum,
+IP-Adresse, Aktenzeichen) und Namenslisten (ein Begriff pro Zeile), jeweils
+mit Optionen für Groß-/Kleinschreibung und ganze Wörter. Treffer werden über
+Wort-Rechtecke gefunden, damit auch eine IBAN in Vierergruppen erfasst wird.
+Weil Schwärzen unumkehrbar ist, gibt es eine **Vorschau**, die jede Fundstelle
+mit Text, Muster und Seite auflistet, bevor etwas entfernt wird.
+
 ### Werkzeug-Freigabe durch den Administrator (2026-07-30) — umgesetzt
 
 Der Betreiber entscheidet im Admin-Bereich pro Werkzeug, ob es allen offensteht
@@ -359,6 +393,9 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | F15 | Kein freies JavaScript im PDF: `app.alert`, `submitForm`, `eval` u.ä. werden abgelehnt, Feld bleibt ohne Skript | `test_form_advanced.py::test_formula_rejects_javascript` | ✅ automatisiert |
 | F16 | CSV: Werte-Export, Vorlage, Serienbefüllung (Zeile → PDF, `dateiname`, ZIP ab zwei Zeilen, 200-Zeilen-Grenze, Hinweis bei unbekannten Spalten) | `test_form_advanced.py` (7 Fälle) + Browser-E2E mit Prüfung der befüllten Werte im ZIP | ✅ automatisiert + live geprüft |
 | F17 | Stapelsignatur und Umbenennen im Batch; Bild ersetzen behält Position; Vertrauensanker liefern echtes Vertrauensurteil | `test_form_advanced.py` + Browser-E2E (Umbenennen, Bildaustausch im PDF nachgemessen) | ✅ automatisiert + live geprüft |
+| F20 | Anzeige im Browser: pdf.js rendert lokal (Canvas bemalt), keine Thumbnail-Anfrage mehr, Zoom rendert neu statt zu skalieren, Seitenwechsel ohne Server | Browser-E2E (Canvas-Pixelprüfung, Netzwerk-Mitschnitt, Zoom-Vergleich) | ✅ live geprüft |
+| F21 | Textbearbeitung erhält Sonderzeichen (—, „", m², €) und führt Fett/Kursiv fort; ohne Schriftdateien Rückfall mit Hinweis | `test_redact_fonts.py` (5 Fälle) + Browser-E2E mit Prüfung im erzeugten PDF | ✅ automatisiert + live geprüft |
+| F22 | Musterschwärzung: neun Muster + Namenslisten, IBAN über Leerzeichen hinweg, Vorschau ändert nichts, Schwärzung entfernt Text und lässt Umfeld stehen | `test_redact_fonts.py` (11 Fälle) + Browser-E2E | ✅ automatisiert + live geprüft |
 | F18 | Werkzeug-Freigabe: Admin sperrt Werkzeuge; anonym → Kachel ausgegraut mit Anmelde-Hinweis, API antwortet 403; angemeldet nutzbar; Aufheben wirkt sofort | `test_tool_access.py` (15 Fälle) + Browser-E2E (9 Schritte, inkl. direktem API-Aufruf aus der Seite) | ✅ automatisiert + live geprüft |
 | F19 | Katalog-Konsistenz: Backend-Werkzeug-IDs = Kacheln der Oberfläche; jeder Katalog-Pfad ist eine echte Route; gemeinsame Vorschau-Endpunkte bleiben frei | `test_tool_access.py::test_catalog_matches_frontend_tiles` / `::test_catalog_paths_exist_in_app` / `::test_shared_preview_endpoint_stays_open` | ✅ automatisiert |
 | D1 | Keine Datei-Persistenz nach Verarbeitung | Dateisystem-Diff vor/nach 7-Operationen-Serie | ✅ live geprüft (0 neue Dateien) |

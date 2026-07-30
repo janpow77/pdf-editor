@@ -16,11 +16,6 @@
     <template v-if="workingBlob">
       <!-- Werkzeugleiste -->
       <div class="flex items-center gap-2 flex-wrap bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3">
-        <button class="px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 disabled:opacity-40" :disabled="page <= 1" @click="goToPage(page - 1)">←</button>
-        <span class="text-sm text-gray-700 dark:text-gray-300">Seite {{ page }} / {{ pageCount }}</span>
-        <button class="px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 disabled:opacity-40" :disabled="page >= pageCount" @click="goToPage(page + 1)">→</button>
-
-        <span class="mx-2 text-gray-300 dark:text-gray-600">|</span>
         <span class="text-sm text-gray-500 dark:text-gray-400">{{ editCount }} Änderung(en) ausstehend</span>
 
         <span class="flex-1"></span>
@@ -51,19 +46,24 @@
       <div class="grid lg:grid-cols-3 gap-4">
         <!-- Seitenansicht mit Block-Overlay -->
         <div class="lg:col-span-2">
-          <div v-if="loadingPage" class="text-sm text-gray-500 py-8 text-center">Lade Seite…</div>
-          <div v-else-if="pageImage" class="relative inline-block w-full border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden bg-white">
-            <img :src="`data:image/png;base64,${pageImage}`" class="w-full select-none" alt="PDF-Seite" draggable="false" />
-            <button
-              v-for="(b, i) in blocks"
-              :key="i"
-              class="absolute border transition-colors"
-              :class="blockClass(i)"
-              :style="blockStyle(b)"
-              :title="b.text.slice(0, 120)"
-              @click="selectBlock(i)"
-            ></button>
-          </div>
+          <PdfViewer
+            v-model="page"
+            :source="workingBlob"
+            @loaded="pageCount = $event"
+            @rendered="loadBlocks"
+          >
+            <template #overlay>
+              <button
+                v-for="(b, i) in blocks"
+                :key="i"
+                class="absolute border transition-colors"
+                :class="blockClass(i)"
+                :style="blockStyle(b)"
+                :title="b.text.slice(0, 120)"
+                @click="selectBlock(i)"
+              ></button>
+            </template>
+          </PdfViewer>
         </div>
 
         <!-- Bearbeitungs-Panel -->
@@ -111,6 +111,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
+import PdfViewer from '@/components/PdfViewer.vue'
 import { apiPost, downloadBlob } from '@/lib/api'
 
 defineEmits<{ (e: 'back'): void }>()
@@ -129,6 +130,9 @@ interface Edit {
   text: string
   font_size: number
   color: string
+  // Schriftname des Originalblocks — das Backend bettet eine dazu passende
+  // Schrift ein, damit Umlaute und Sonderzeichen erhalten bleiben
+  font: string
 }
 
 const file = ref<File | null>(null)
@@ -136,7 +140,6 @@ const workingBlob = ref<Blob | null>(null)
 const workingName = ref('dokument.pdf')
 const page = ref(1)
 const pageCount = ref(1)
-const pageImage = ref('')
 const blocks = ref<Block[]>([])
 const loadingPage = ref(false)
 const applying = ref(false)
@@ -157,54 +160,29 @@ watch(file, async (f) => {
   edits.value = new Map()
   page.value = 1
   error.value = null
-  await loadMeta()
-  await loadPage()
+  // Seitenzahl und Darstellung liefert der Viewer lokal — hier nur die Blöcke
 })
 
 function editKey(blockIdx: number): string {
   return `${page.value}:${blockIdx}`
 }
 
-async function loadMeta() {
-  const fd = new FormData()
-  fd.append('file', workingBlob.value!, workingName.value)
-  try {
-    const resp = await apiPost('/api/pdf-tools/metadata/read', fd)
-    const meta = await resp.json()
-    pageCount.value = meta.page_count || 1
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Metadaten lesen fehlgeschlagen'
-  }
-}
-
-async function loadPage() {
+async function loadBlocks() {
   if (!workingBlob.value) return
   loadingPage.value = true
   selected.value = null
   error.value = null
   try {
-    const fdImg = new FormData()
-    fdImg.append('file', workingBlob.value, workingName.value)
-    const imgResp = await apiPost(`/api/pdf-tools/thumbnails?pages=${page.value}&max_width=1100`, fdImg)
-    const imgData = await imgResp.json()
-    pageImage.value = imgData.thumbnails[String(page.value)] || ''
-
-    const fdBlocks = new FormData()
-    fdBlocks.append('file', workingBlob.value, workingName.value)
-    fdBlocks.append('page', String(page.value))
-    const blockResp = await apiPost('/api/pdf-editor/text-blocks', fdBlocks)
-    const blockData = await blockResp.json()
-    blocks.value = blockData.blocks
+    const fd = new FormData()
+    fd.append('file', workingBlob.value, workingName.value)
+    fd.append('page', String(page.value))
+    const resp = await apiPost('/api/pdf-editor/text-blocks', fd)
+    blocks.value = (await resp.json()).blocks
   } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Seite laden fehlgeschlagen'
+    error.value = e instanceof Error ? e.message : 'Textblöcke laden fehlgeschlagen'
   } finally {
     loadingPage.value = false
   }
-}
-
-async function goToPage(p: number) {
-  page.value = Math.min(Math.max(1, p), pageCount.value)
-  await loadPage()
 }
 
 function blockStyle(b: Block) {
@@ -239,6 +217,7 @@ function saveDraft() {
     text: draftText.value,
     font_size: draftSize.value,
     color: b.color || '#000000',
+    font: b.font_name || '',
   })
   edits.value = new Map(edits.value)
   selected.value = null
@@ -264,7 +243,6 @@ async function applyEdits() {
     warnings.value = Number(resp.headers.get('X-Warnings') || 0)
     workingBlob.value = await resp.blob()
     edits.value = new Map()
-    await loadPage()
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Anwenden fehlgeschlagen'
   } finally {
@@ -283,7 +261,6 @@ async function download() {
 function reset() {
   file.value = null
   workingBlob.value = null
-  pageImage.value = ''
   blocks.value = []
   edits.value = new Map()
   selected.value = null

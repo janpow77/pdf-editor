@@ -39,9 +39,6 @@
       </div>
 
       <div class="flex items-center gap-2 flex-wrap bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3">
-        <button class="px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 disabled:opacity-40" :disabled="page <= 1" @click="goToPage(page - 1)">←</button>
-        <span class="text-sm text-gray-700 dark:text-gray-300">Seite {{ page }} / {{ pageCount }}</span>
-        <button class="px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 disabled:opacity-40" :disabled="page >= pageCount" @click="goToPage(page + 1)">→</button>
         <span class="mx-2 text-gray-300 dark:text-gray-600">|</span>
         <span class="text-sm text-gray-500 dark:text-gray-400">{{ pending.length }} Anmerkung(en) ausstehend</span>
         <button v-if="pending.length" class="text-sm text-red-500 hover:text-red-700" @click="undoLast">Letzte rückgängig</button>
@@ -66,18 +63,17 @@
         </button>
       </div>
 
-      <div v-if="loadingPage" class="text-sm text-gray-500 py-8 text-center">Lade Seite…</div>
-      <div
-        v-else-if="pageImage"
-        ref="canvasBox"
-        class="relative inline-block w-full border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden bg-white select-none"
-        :class="tool === 'select' ? 'cursor-default' : 'cursor-crosshair'"
-        @mousedown.prevent="onDown"
-        @mousemove.prevent="onMove"
-        @mouseup.prevent="onUp"
-        @mouseleave="onUp"
-      >
-        <img :src="`data:image/png;base64,${pageImage}`" class="w-full pointer-events-none" alt="PDF-Seite" draggable="false" />
+      <PdfViewer v-model="page" :source="workingBlob" @loaded="pageCount = $event">
+        <template #overlay>
+          <div
+            ref="canvasBox"
+            class="absolute inset-0"
+            :class="tool === 'select' ? 'cursor-default' : 'cursor-crosshair'"
+            @mousedown.prevent="onDown"
+            @mousemove.prevent="onMove"
+            @mouseup.prevent="onUp"
+            @mouseleave="onUp"
+          >
         <!-- Ausstehende Anmerkungen dieser Seite -->
         <svg class="absolute inset-0 w-full h-full pointer-events-none">
           <template v-for="(a, i) in pagePending" :key="i">
@@ -104,7 +100,9 @@
           <line v-if="draft && tool === 'line'" :x1="pct(draft.x0)" :y1="pcty(draft.y0)" :x2="pct(draft.x1)" :y2="pcty(draft.y1)" stroke="#7c3aed" stroke-dasharray="4" stroke-width="1.5" />
           <polyline v-if="inkPath.length > 1 && tool === 'ink'" :points="inkPoints({ paths: [inkPath] })" fill="none" stroke="#7c3aed" stroke-width="2" />
         </svg>
-      </div>
+          </div>
+        </template>
+      </PdfViewer>
 
       <!-- Texteingabe-Dialog für Freitext/Kommentar -->
       <div v-if="textPrompt" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -128,6 +126,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
+import PdfViewer from '@/components/PdfViewer.vue'
 import { apiPost, downloadBlob } from '@/lib/api'
 
 defineEmits<{ (e: 'back'): void }>()
@@ -150,8 +149,6 @@ const workingBlob = ref<Blob | null>(null)
 const workingName = ref('dokument.pdf')
 const page = ref(1)
 const pageCount = ref(1)
-const pageImage = ref('')
-const loadingPage = ref(false)
 const applying = ref(false)
 const error = ref<string | null>(null)
 const tool = ref('highlight')
@@ -173,40 +170,7 @@ watch(file, async (f) => {
   pending.value = []
   page.value = 1
   error.value = null
-  await loadMeta()
-  await loadPage()
 })
-
-async function loadMeta() {
-  try {
-    const fd = new FormData()
-    fd.append('file', workingBlob.value!, workingName.value)
-    const resp = await apiPost('/api/pdf-tools/metadata/read', fd)
-    pageCount.value = (await resp.json()).page_count || 1
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Metadaten lesen fehlgeschlagen'
-  }
-}
-
-async function loadPage() {
-  if (!workingBlob.value) return
-  loadingPage.value = true
-  try {
-    const fd = new FormData()
-    fd.append('file', workingBlob.value, workingName.value)
-    const resp = await apiPost(`/api/pdf-tools/thumbnails?pages=${page.value}&max_width=1100`, fd)
-    pageImage.value = (await resp.json()).thumbnails[String(page.value)] || ''
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Seite laden fehlgeschlagen'
-  } finally {
-    loadingPage.value = false
-  }
-}
-
-async function goToPage(p: number) {
-  page.value = Math.min(Math.max(1, p), pageCount.value)
-  await loadPage()
-}
 
 // ── Koordinaten-Helfer (SVG rendert in Pixeln, Modell ist 0-1-normiert) ──
 function measure() {
@@ -318,7 +282,6 @@ async function applyAnnotations() {
     const resp = await apiPost('/api/pdf-editor/annotations', fd)
     workingBlob.value = await resp.blob()
     pending.value = []
-    await loadPage()
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Anwenden fehlgeschlagen'
   } finally {
@@ -336,7 +299,6 @@ async function download() {
 function reset() {
   file.value = null
   workingBlob.value = null
-  pageImage.value = ''
   pending.value = []
   inkPath.value = []
   draft.value = null

@@ -19,7 +19,7 @@ Tabelle am Ende.
 |---|---|
 | PDF erstellen aus Word/Excel/PowerPoint/ODF/RTF/Text/Bildern | ✅ (Word→PDF, Office→PDF via LibreOffice, Bilder→PDF) |
 | PDF erstellen aus HTML | ✅ (HTML-Dateien via Office→PDF) / ❌ Live-Webseiten (bräuchte Headless-Browser **und** würde serverseitige URL-Abrufe erlauben → SSRF-Risiko, bewusst nicht umgesetzt) |
-| Text ändern | ✅ WYSIWYG-Blockeditor (Grenze: kein Acrobat-Reflow) |
+| Text ändern | ✅ WYSIWYG-Blockeditor mit **eingebetteten Schriften** (Liberation/DejaVu, Stil des Originalblocks); Grenze: kein Acrobat-Reflow über Absätze und Seiten |
 | Bilder austauschen | ✅ Bilder auflisten (mit Vorschau) und gezielt ersetzen; Einfügen via Signatur/Wasserzeichen |
 | Seiten verschieben/löschen/drehen/extrahieren/kopieren/leere einfügen | ✅ (Seiten ordnen, Rotieren, Teilen, Leere Seiten) |
 | Merge / Split / Komprimieren | ✅ |
@@ -130,12 +130,12 @@ aus Audit Designer heraus nutzen (Vorverarbeitung: OCR, PDF/A, Split).
 
 ## 17. Behörden/Prüfer-Spezifika — ✅ Kern abgedeckt
 
-✅ DSGVO-Schwärzung, Bates/Aktenzeichen-Kennzeichnung, PDF/A, Tabellen-Extraktion aus Bescheiden (PDF→Excel/CSV), Formulare, Signaturprüfung mit Bericht, **Prüfakte** (Merge mit Lesezeichen pro Dokument + durchgehender Bates-Nummerierung), Metadaten-Bereinigung vor Weitergabe
+✅ DSGVO-Schwärzung **musterbasiert** (IBAN, E-Mail, Telefon, Steuer-ID, USt-IdNr., Kreditkarte, Datum, IP, Aktenzeichen) und über Namenslisten, jeweils mit Vorschau vor dem unumkehrbaren Schritt, Bates/Aktenzeichen-Kennzeichnung, PDF/A, Tabellen-Extraktion aus Bescheiden (PDF→Excel/CSV), Formulare, Signaturprüfung mit Bericht, **Prüfakte** (Merge mit Lesezeichen pro Dokument + durchgehender Bates-Nummerierung), Metadaten-Bereinigung vor Weitergabe
 ❌ Revisionssichere Archivierung (⛔ Speicherung), Fördernummern-/SAP-Erkennung (gehört zu Modul 16 → Audit Designer).
 
 ## 18. Premium 2026 — 🟡 Fundament + erste Bausteine
 
-✅ Lokale KI ohne Cloud (Modul 4), **Qualitätsprüfung von Scans** (leere Seiten, Scans ohne Textebene, doppelte Seiten), Rolodex-Dashboard
+✅ Lokale KI ohne Cloud (Modul 4), **Anzeige im Browser via pdf.js** (vektorbasiert, Zoom 25–400 %, keine Server-Runde für die Vorschau), **Qualitätsprüfung von Scans** (leere Seiten, Scans ohne Textebene, doppelte Seiten), Rolodex-Dashboard
 ❌ Sprachsteuerung, Mindmaps, Wissensgraphen, KI-Agenten: Zukunftsmodule.
 
 ---
@@ -156,3 +156,4 @@ aus Audit Designer heraus nutzen (Vorverarbeitung: OCR, PDF/A, Split).
 | PDF → PowerPoint/EPUB, Tabellen-/Layout-Vergleich | Nischenformate bzw. hoher Aufwand bei geringem Prüfnutzen; Text- und Visuellvergleich decken die Praxis ab. |
 | SDK/JS-API/Plugin-System | Für eine anonyme Public-App ohne Nutzen — die REST-API deckt Automatisierung ab. |
 | Ausführung der Formular-Berechnungen in der App | Die Aktionen liegen normkonform im PDF; ausgeführt werden sie vom Viewer (Acrobat & Co.). Ein eigener JS-Interpreter wäre ein Sicherheitsrisiko ohne Mehrwert. |
+| Live-Editor wie Acrobat (Tippen direkt auf der Seite) | Die Anzeige läuft seit 2026-07-30 lokal über pdf.js; das Schreiben der geänderten Datei bleibt serverseitig (PyMuPDF). Ein vollständiger Editor im Browser bräuchte eine zweite, unabhängige PDF-Schreibimplementierung — hoher Aufwand, doppelte Fehlerquelle. |

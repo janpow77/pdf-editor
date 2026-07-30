@@ -79,7 +79,12 @@ TOOL_CATALOG: tuple[ToolEntry, ...] = (
             "/api/pdf-editor/text/search",
         ),
     ),
-    ToolEntry("redact", "Schwärzen", _PDF, ("/api/pdf-extras/redact",)),
+    ToolEntry(
+        "redact",
+        "Schwärzen",
+        _PDF,
+        ("/api/pdf-extras/redact", "/api/pdf-extras/redact-patterns"),
+    ),
     ToolEntry("pageNumbers", "Seitenzahlen", _PDF, ("/api/pdf-editor/page-numbers",)),
     ToolEntry("headerFooter", "Kopf-/Fußzeile", _PDF, ("/api/pdf-editor/header-footer",)),
     ToolEntry("bates", "Bates-Nummern", _PDF, ("/api/pdf-extras/bates",)),

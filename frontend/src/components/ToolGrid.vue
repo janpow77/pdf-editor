@@ -79,7 +79,7 @@
           aria-label="Werkzeug-Karussell — Pfeiltasten zum Blättern, Enter zum Öffnen"
           @keydown.left.prevent="step(-1)"
           @keydown.right.prevent="step(1)"
-          @keydown.enter.prevent="activeTool = allTools[rolodexIndex].id"
+          @keydown.enter.prevent="openTool(allTools[rolodexIndex].id)"
           @wheel.prevent="onWheel"
         >
           <button
@@ -152,56 +152,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, onMounted, ref, type Component } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiGetJson } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-import PdfMerge from '@/components/tools/PdfMerge.vue'
-import PdfSplit from '@/components/tools/PdfSplit.vue'
-import PdfRotate from '@/components/tools/PdfRotate.vue'
-import PdfToImages from '@/components/tools/PdfToImages.vue'
-import PdfCompress from '@/components/tools/PdfCompress.vue'
-import PdfWatermark from '@/components/tools/PdfWatermark.vue'
-import ImagesToPdf from '@/components/tools/ImagesToPdf.vue'
-import PdfPageEditor from '@/components/tools/PdfPageEditor.vue'
-import PdfMetadata from '@/components/tools/PdfMetadata.vue'
-import PdfCompare from '@/components/tools/PdfCompare.vue'
-import PdfProtect from '@/components/tools/PdfProtect.vue'
-import PdfToWord from '@/components/tools/PdfToWord.vue'
-import PdfToExcel from '@/components/tools/PdfToExcel.vue'
-import PdfTextEditor from '@/components/tools/PdfTextEditor.vue'
-import PdfPageNumbers from '@/components/tools/PdfPageNumbers.vue'
-import PdfHeaderFooter from '@/components/tools/PdfHeaderFooter.vue'
-import PdfSearchReplace from '@/components/tools/PdfSearchReplace.vue'
-import PdfRedact from '@/components/tools/PdfRedact.vue'
-import PdfFlatten from '@/components/tools/PdfFlatten.vue'
-import PdfToText from '@/components/tools/PdfToText.vue'
-import PdfBates from '@/components/tools/PdfBates.vue'
-import PdfFormFill from '@/components/tools/PdfFormFill.vue'
-import PdfFormDesigner from '@/components/tools/PdfFormDesigner.vue'
-import PdfPdfa from '@/components/tools/PdfPdfa.vue'
-import PdfSignImage from '@/components/tools/PdfSignImage.vue'
-import PdfImageReplace from '@/components/tools/PdfImageReplace.vue'
-import PdfAnnotate from '@/components/tools/PdfAnnotate.vue'
-import PdfSignDigital from '@/components/tools/PdfSignDigital.vue'
-import PdfScanOptimize from '@/components/tools/PdfScanOptimize.vue'
-import PdfBatch from '@/components/tools/PdfBatch.vue'
-import PdfTocEditor from '@/components/tools/PdfTocEditor.vue'
-import PdfOcr from '@/components/tools/PdfOcr.vue'
-import PdfExport from '@/components/tools/PdfExport.vue'
-import PdfClean from '@/components/tools/PdfClean.vue'
-import PdfPermissions from '@/components/tools/PdfPermissions.vue'
-import PdfVerifySignatures from '@/components/tools/PdfVerifySignatures.vue'
-import PdfInsertBlank from '@/components/tools/PdfInsertBlank.vue'
-import PdfPruefakte from '@/components/tools/PdfPruefakte.vue'
-import PdfQualityCheck from '@/components/tools/PdfQualityCheck.vue'
-import PdfAiAssistant from '@/components/tools/PdfAiAssistant.vue'
-import OfficeToPdf from '@/components/tools/OfficeToPdf.vue'
-import WordToPdf from '@/components/tools/WordToPdf.vue'
-import WordMerge from '@/components/tools/WordMerge.vue'
-import WordDiff from '@/components/tools/WordDiff.vue'
-import WordMetadata from '@/components/tools/WordMetadata.vue'
-import ExcelMetadata from '@/components/tools/ExcelMetadata.vue'
 
 interface Tool {
   id: string
@@ -231,53 +185,55 @@ function openTool(id: string) {
   activeTool.value = id
 }
 
+// Werkzeuge werden erst beim Öffnen geladen — die Startseite bleibt leicht,
+// obwohl der Editor-Teil pdf.js mitbringt.
 const toolComponents: Record<string, Component> = {
-  merge: markRaw(PdfMerge),
-  split: markRaw(PdfSplit),
-  rotate: markRaw(PdfRotate),
-  toImages: markRaw(PdfToImages),
-  compress: markRaw(PdfCompress),
-  watermark: markRaw(PdfWatermark),
-  imagesToPdf: markRaw(ImagesToPdf),
-  pageEditor: markRaw(PdfPageEditor),
-  metadata: markRaw(PdfMetadata),
-  pdfCompare: markRaw(PdfCompare),
-  protect: markRaw(PdfProtect),
-  pdfToWord: markRaw(PdfToWord),
-  pdfToExcel: markRaw(PdfToExcel),
-  textEditor: markRaw(PdfTextEditor),
-  pageNumbers: markRaw(PdfPageNumbers),
-  headerFooter: markRaw(PdfHeaderFooter),
-  searchReplace: markRaw(PdfSearchReplace),
-  redact: markRaw(PdfRedact),
-  flatten: markRaw(PdfFlatten),
-  toText: markRaw(PdfToText),
-  bates: markRaw(PdfBates),
-  formFill: markRaw(PdfFormFill),
-  formDesigner: markRaw(PdfFormDesigner),
-  pdfa: markRaw(PdfPdfa),
-  signImage: markRaw(PdfSignImage),
-  imageReplace: markRaw(PdfImageReplace),
-  annotate: markRaw(PdfAnnotate),
-  signDigital: markRaw(PdfSignDigital),
-  scanOptimize: markRaw(PdfScanOptimize),
-  batch: markRaw(PdfBatch),
-  tocEditor: markRaw(PdfTocEditor),
-  ocr: markRaw(PdfOcr),
-  pdfExport: markRaw(PdfExport),
-  clean: markRaw(PdfClean),
-  permissions: markRaw(PdfPermissions),
-  verifySignatures: markRaw(PdfVerifySignatures),
-  insertBlank: markRaw(PdfInsertBlank),
-  pruefakte: markRaw(PdfPruefakte),
-  qualityCheck: markRaw(PdfQualityCheck),
-  aiAssistant: markRaw(PdfAiAssistant),
-  officeToPdf: markRaw(OfficeToPdf),
-  wordToPdf: markRaw(WordToPdf),
-  wordMerge: markRaw(WordMerge),
-  wordDiff: markRaw(WordDiff),
-  wordMeta: markRaw(WordMetadata),
-  excelMeta: markRaw(ExcelMetadata),
+  merge: defineAsyncComponent(() => import('@/components/tools/PdfMerge.vue')),
+  split: defineAsyncComponent(() => import('@/components/tools/PdfSplit.vue')),
+  rotate: defineAsyncComponent(() => import('@/components/tools/PdfRotate.vue')),
+  toImages: defineAsyncComponent(() => import('@/components/tools/PdfToImages.vue')),
+  compress: defineAsyncComponent(() => import('@/components/tools/PdfCompress.vue')),
+  watermark: defineAsyncComponent(() => import('@/components/tools/PdfWatermark.vue')),
+  imagesToPdf: defineAsyncComponent(() => import('@/components/tools/ImagesToPdf.vue')),
+  pageEditor: defineAsyncComponent(() => import('@/components/tools/PdfPageEditor.vue')),
+  metadata: defineAsyncComponent(() => import('@/components/tools/PdfMetadata.vue')),
+  pdfCompare: defineAsyncComponent(() => import('@/components/tools/PdfCompare.vue')),
+  protect: defineAsyncComponent(() => import('@/components/tools/PdfProtect.vue')),
+  pdfToWord: defineAsyncComponent(() => import('@/components/tools/PdfToWord.vue')),
+  pdfToExcel: defineAsyncComponent(() => import('@/components/tools/PdfToExcel.vue')),
+  textEditor: defineAsyncComponent(() => import('@/components/tools/PdfTextEditor.vue')),
+  pageNumbers: defineAsyncComponent(() => import('@/components/tools/PdfPageNumbers.vue')),
+  headerFooter: defineAsyncComponent(() => import('@/components/tools/PdfHeaderFooter.vue')),
+  searchReplace: defineAsyncComponent(() => import('@/components/tools/PdfSearchReplace.vue')),
+  redact: defineAsyncComponent(() => import('@/components/tools/PdfRedact.vue')),
+  flatten: defineAsyncComponent(() => import('@/components/tools/PdfFlatten.vue')),
+  toText: defineAsyncComponent(() => import('@/components/tools/PdfToText.vue')),
+  bates: defineAsyncComponent(() => import('@/components/tools/PdfBates.vue')),
+  formFill: defineAsyncComponent(() => import('@/components/tools/PdfFormFill.vue')),
+  formDesigner: defineAsyncComponent(() => import('@/components/tools/PdfFormDesigner.vue')),
+  pdfa: defineAsyncComponent(() => import('@/components/tools/PdfPdfa.vue')),
+  signImage: defineAsyncComponent(() => import('@/components/tools/PdfSignImage.vue')),
+  imageReplace: defineAsyncComponent(() => import('@/components/tools/PdfImageReplace.vue')),
+  annotate: defineAsyncComponent(() => import('@/components/tools/PdfAnnotate.vue')),
+  signDigital: defineAsyncComponent(() => import('@/components/tools/PdfSignDigital.vue')),
+  scanOptimize: defineAsyncComponent(() => import('@/components/tools/PdfScanOptimize.vue')),
+  batch: defineAsyncComponent(() => import('@/components/tools/PdfBatch.vue')),
+  tocEditor: defineAsyncComponent(() => import('@/components/tools/PdfTocEditor.vue')),
+  ocr: defineAsyncComponent(() => import('@/components/tools/PdfOcr.vue')),
+  pdfExport: defineAsyncComponent(() => import('@/components/tools/PdfExport.vue')),
+  clean: defineAsyncComponent(() => import('@/components/tools/PdfClean.vue')),
+  permissions: defineAsyncComponent(() => import('@/components/tools/PdfPermissions.vue')),
+  verifySignatures: defineAsyncComponent(() => import('@/components/tools/PdfVerifySignatures.vue')),
+  insertBlank: defineAsyncComponent(() => import('@/components/tools/PdfInsertBlank.vue')),
+  pruefakte: defineAsyncComponent(() => import('@/components/tools/PdfPruefakte.vue')),
+  qualityCheck: defineAsyncComponent(() => import('@/components/tools/PdfQualityCheck.vue')),
+  aiAssistant: defineAsyncComponent(() => import('@/components/tools/PdfAiAssistant.vue')),
+  officeToPdf: defineAsyncComponent(() => import('@/components/tools/OfficeToPdf.vue')),
+  wordToPdf: defineAsyncComponent(() => import('@/components/tools/WordToPdf.vue')),
+  wordMerge: defineAsyncComponent(() => import('@/components/tools/WordMerge.vue')),
+  wordDiff: defineAsyncComponent(() => import('@/components/tools/WordDiff.vue')),
+  wordMeta: defineAsyncComponent(() => import('@/components/tools/WordMetadata.vue')),
+  excelMeta: defineAsyncComponent(() => import('@/components/tools/ExcelMetadata.vue')),
 }
 
 const TILE = 'bg-gray-100 dark:bg-gray-700/60'

@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -79,6 +80,157 @@ _LATIN1_MAP = str.maketrans(
 
 def _latin1_safe(text: str) -> str:
     return text.translate(_LATIN1_MAP).encode("latin-1", "replace").decode("latin-1")
+
+
+# ── Schrifteinbettung für die Textbearbeitung ─────────────────
+# Die eingebauten Basis-14-Schriften können nur Latin-1; damit gingen bisher
+# Zeichen wie „—" oder „✓" verloren. Stattdessen werden echte TrueType-Dateien
+# eingebettet: Liberation ist metrisch kompatibel zu Arial/Times/Courier (das
+# Layout bleibt also ähnlich), DejaVu deckt deutlich mehr Zeichen ab und dient
+# als Rückfall. Fehlen beide, greift wieder Basis-14 mit Latin-1-Ersetzung.
+
+_FONT_DIRS = (
+    "/usr/share/fonts/truetype/liberation",
+    "/usr/share/fonts/truetype/dejavu",
+    "/usr/share/fonts/truetype/liberation2",
+)
+
+# (Familie, fett, kursiv) → Dateiname in bevorzugter Reihenfolge
+_FONT_FILES: dict[tuple[str, bool, bool], tuple[str, ...]] = {
+    ("sans", False, False): ("LiberationSans-Regular.ttf", "DejaVuSans.ttf"),
+    ("sans", True, False): ("LiberationSans-Bold.ttf", "DejaVuSans-Bold.ttf"),
+    ("sans", False, True): ("LiberationSans-Italic.ttf", "DejaVuSans-Oblique.ttf"),
+    ("sans", True, True): ("LiberationSans-BoldItalic.ttf", "DejaVuSans-BoldOblique.ttf"),
+    ("serif", False, False): ("LiberationSerif-Regular.ttf", "DejaVuSerif.ttf"),
+    ("serif", True, False): ("LiberationSerif-Bold.ttf", "DejaVuSerif-Bold.ttf"),
+    ("serif", False, True): ("LiberationSerif-Italic.ttf", "DejaVuSerif-Italic.ttf"),
+    ("serif", True, True): ("LiberationSerif-BoldItalic.ttf", "DejaVuSerif-BoldItalic.ttf"),
+    ("mono", False, False): ("LiberationMono-Regular.ttf", "DejaVuSansMono.ttf"),
+    ("mono", True, False): ("LiberationMono-Bold.ttf", "DejaVuSansMono-Bold.ttf"),
+    ("mono", False, True): ("LiberationMono-Italic.ttf", "DejaVuSansMono-Oblique.ttf"),
+    ("mono", True, True): (
+        "LiberationMono-BoldItalic.ttf",
+        "DejaVuSansMono-BoldOblique.ttf",
+    ),
+}
+
+_UNICODE_FALLBACKS = ("DejaVuSans.ttf", "DejaVuSerif.ttf")
+
+
+@lru_cache(maxsize=64)
+def _font_path(filename: str) -> str | None:
+    for directory in _FONT_DIRS:
+        candidate = Path(directory) / filename
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+@lru_cache(maxsize=32)
+def _font_covers(path: str, text: str) -> bool:
+    """Deckt die Schrift alle Zeichen ab? (Leerraum bleibt außen vor)"""
+    if not PYMUPDF_AVAILABLE:
+        return False
+    try:
+        font = fitz.Font(fontfile=path)
+    except Exception:
+        return False
+    return all(font.has_glyph(ord(ch)) for ch in set(text) if not ch.isspace())
+
+
+def classify_font(font_name: str) -> tuple[str, bool, bool]:
+    """Schriftname aus dem PDF auf (Familie, fett, kursiv) abbilden."""
+    name = (font_name or "").lower()
+    bold = "bold" in name or "black" in name or "heavy" in name or ",b" in name
+    italic = "italic" in name or "oblique" in name or ",i" in name
+    if any(k in name for k in ("courier", "mono", "consol")):
+        family = "mono"
+    elif any(k in name for k in ("times", "serif", "georgia", "garamond", "book", "roman")):
+        family = "serif"
+    else:
+        family = "sans"
+    return family, bold, italic
+
+
+def select_font_file(font_name: str, text: str) -> str | None:
+    """Passende einbettbare Schriftdatei — None, wenn keine gefunden wurde."""
+    key = classify_font(font_name)
+    for filename in _FONT_FILES.get(key, ()):
+        path = _font_path(filename)
+        if path and _font_covers(path, text):
+            return path
+    # Stil beibehalten war nicht möglich: breiteste Abdeckung gewinnt
+    for filename in _UNICODE_FALLBACKS:
+        path = _font_path(filename)
+        if path and _font_covers(path, text):
+            return path
+    # Keine vollständige Abdeckung: beste vorhandene Schrift trotzdem nutzen
+    for filename in _FONT_FILES.get(key, ()) + _UNICODE_FALLBACKS:
+        path = _font_path(filename)
+        if path:
+            return path
+    return None
+
+
+# ── Musterbasierte Schwärzung ─────────────────────────────────
+# Bewusst konservativ formuliert: lieber ein Treffer weniger als eine falsche
+# Schwärzung. Die Vorschau zeigt jede Fundstelle vor dem unumkehrbaren Schritt.
+
+
+@dataclass(frozen=True)
+class RedactionPattern:
+    label: str
+    regex: str
+    hint: str
+
+
+REDACTION_PATTERNS: dict[str, RedactionPattern] = {
+    "iban": RedactionPattern(
+        "IBAN",
+        r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4})+(?:\s?[A-Z0-9]{1,3})?\b",
+        "Kontonummern, auch in Vierergruppen geschrieben",
+    ),
+    "email": RedactionPattern(
+        "E-Mail-Adresse",
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+        "Adressen in Anschreiben und Verteilern",
+    ),
+    "telefon": RedactionPattern(
+        "Telefonnummer",
+        r"(?:\+49|0)\s?(?:\d{2,5}[\s/-]?){1,3}\d{2,8}",
+        "deutsche Rufnummern mit Vorwahl",
+    ),
+    "steuer_id": RedactionPattern(
+        "Steuer-Identifikationsnummer",
+        r"\b\d{11}\b",
+        "11-stellige Steuer-ID — prüfen, sonst werden lange Zahlen mitgeschwärzt",
+    ),
+    "ust_id": RedactionPattern(
+        "Umsatzsteuer-Identifikationsnummer",
+        r"\bDE\s?\d{9}\b",
+        "USt-IdNr. der Begünstigten",
+    ),
+    "kreditkarte": RedactionPattern(
+        "Kreditkartennummer",
+        r"\b(?:\d{4}[\s-]?){3}\d{4}\b",
+        "16-stellige Kartennummern",
+    ),
+    "geburtsdatum": RedactionPattern(
+        "Datum (TT.MM.JJJJ)",
+        r"\b(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:19|20)\d{2}\b",
+        "z.B. Geburtsdaten — trifft alle Datumsangaben dieses Formats",
+    ),
+    "ip_adresse": RedactionPattern(
+        "IP-Adresse",
+        r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
+        "IPv4-Adressen aus Protokollauszügen",
+    ),
+    "aktenzeichen": RedactionPattern(
+        "Aktenzeichen",
+        r"\b[A-Z]{1,4}[-/ ]?\d{1,6}[-/]\d{2,4}\b",
+        "Muster wie AZ-1234/26 — vor dem Schwärzen prüfen",
+    ),
+}
 
 
 # ── Formular-Designer: Feldtypen ──────────────────────────────
@@ -327,6 +479,130 @@ class PdfExtrasService:
             )
         except Exception as e:
             return _fail(f"Formular ausfüllen fehlgeschlagen: {e}")
+
+    # ── Musterbasierte Schwärzung ─────────────────────────────
+
+    def _line_groups(self, page) -> list[tuple[str, list[tuple[int, int]], list]]:
+        """Zeilen einer Seite als (Text, Zeichen-Spannen je Wort, Wort-Rechtecke).
+
+        Regex-Treffer werden über die Zeichen-Spannen auf Wörter und damit auf
+        Rechtecke zurückgeführt — so werden auch Muster gefunden, die über
+        Leerzeichen laufen (z.B. eine IBAN in Vierergruppen).
+        """
+        lines: dict[tuple[int, int], list] = {}
+        for word in page.get_text("words"):
+            lines.setdefault((word[5], word[6]), []).append(word)
+        result = []
+        for key in sorted(lines):
+            words = sorted(lines[key], key=lambda w: w[7])
+            text_parts: list[str] = []
+            spans: list[tuple[int, int]] = []
+            pos = 0
+            for w in words:
+                token = w[4]
+                spans.append((pos, pos + len(token)))
+                text_parts.append(token)
+                pos += len(token) + 1  # Trennzeichen
+            result.append((" ".join(text_parts), spans, words))
+        return result
+
+    def find_pattern_matches(
+        self,
+        file_content: bytes,
+        patterns: list[str],
+        terms: list[str] | None = None,
+        case_sensitive: bool = False,
+        whole_word: bool = True,
+    ) -> tuple[list[dict], dict[str, int]] | None:
+        """Alle Fundstellen mit Seite, Text und Rechteck — Basis für Vorschau
+        und Schwärzung. None, wenn PyMuPDF fehlt."""
+        if not PYMUPDF_AVAILABLE:
+            return None
+        compiled: list[tuple[str, re.Pattern]] = []
+        flags = 0 if case_sensitive else re.IGNORECASE
+        for key in patterns:
+            spec = REDACTION_PATTERNS.get(key)
+            if spec:
+                compiled.append((key, re.compile(spec.regex, flags)))
+        for term in terms or []:
+            term = term.strip()
+            if not term:
+                continue
+            escaped = re.escape(term)
+            if whole_word:
+                escaped = rf"(?<!\w){escaped}(?!\w)"
+            compiled.append((f"begriff:{term}", re.compile(escaped, flags)))
+
+        findings: list[dict] = []
+        counts: dict[str, int] = {}
+        doc = fitz.open(stream=file_content, filetype="pdf")
+        try:
+            for pno in range(doc.page_count):
+                page = doc[pno]
+                for line_text, spans, words in self._line_groups(page):
+                    for key, rx in compiled:
+                        for match in rx.finditer(line_text):
+                            start, end = match.span()
+                            hit_rects = [
+                                fitz.Rect(w[:4])
+                                for (s, e), w in zip(spans, words)
+                                if s < end and e > start
+                            ]
+                            if not hit_rects:
+                                continue
+                            box = hit_rects[0]
+                            for r in hit_rects[1:]:
+                                box |= r
+                            findings.append(
+                                {
+                                    "pattern": key,
+                                    "page": pno + 1,
+                                    "text": match.group(0),
+                                    "rect": [round(v, 2) for v in box],
+                                }
+                            )
+                            counts[key] = counts.get(key, 0) + 1
+        finally:
+            doc.close()
+        return findings, counts
+
+    def redact_patterns(
+        self,
+        file_content: bytes,
+        patterns: list[str],
+        terms: list[str] | None = None,
+        case_sensitive: bool = False,
+        whole_word: bool = True,
+    ) -> PdfToolResult:
+        """Fundstellen der gewählten Muster/Begriffe unwiderruflich entfernen."""
+        found = self.find_pattern_matches(
+            file_content, patterns, terms, case_sensitive, whole_word
+        )
+        if found is None:
+            return _fail("PyMuPDF nicht verfügbar")
+        findings, counts = found
+        if not findings:
+            return _fail("Keine Fundstellen für die gewählten Muster")
+        try:
+            doc = fitz.open(stream=file_content, filetype="pdf")
+            by_page: dict[int, list] = {}
+            for f in findings:
+                by_page.setdefault(f["page"], []).append(fitz.Rect(*f["rect"]))
+            for pno, rects in by_page.items():
+                page = doc[pno - 1]
+                for rect in rects:
+                    page.add_redact_annot(rect, fill=(0, 0, 0))
+                page.apply_redactions()
+            out = doc.tobytes(garbage=3, deflate=True)
+            doc.close()
+            return PdfToolResult(
+                success=True,
+                output_format="pdf",
+                file_content=out,
+                metadata={"redactions": len(findings), "by_pattern": counts},
+            )
+        except Exception as e:
+            return _fail(f"Schwärzung fehlgeschlagen: {e}")
 
     # ── Formulardaten als CSV ─────────────────────────────────
 
@@ -775,6 +1051,8 @@ class PdfExtrasService:
         try:
             doc = fitz.open(stream=file_content, filetype="pdf")
             warnings: list[str] = []
+            embedded_fonts: set[str] = set()
+            fallbacks = 0
 
             # 1. Alle Originalbereiche pro Seite entfernen (weiße Redaction)
             by_page: dict[int, list[dict]] = {}
@@ -799,10 +1077,32 @@ class PdfExtrasService:
                 page.apply_redactions()
 
                 # 2. Neuen Text in die Boxen setzen (Auto-Shrink bei Überlauf)
-                for edit in page_edits:
-                    text = _latin1_safe(str(edit.get("text", "")))
-                    if not text.strip():
+                for idx, edit in enumerate(page_edits):
+                    original = str(edit.get("text", ""))
+                    if not original.strip():
                         continue  # leerer Text = Block nur entfernen
+
+                    # Schrift des Originalblocks fortführen und einbetten
+                    font_file = select_font_file(str(edit.get("font", "")), original)
+                    if font_file:
+                        text = original
+                        alias = f"E{page_num}_{idx}"
+                        try:
+                            page.insert_font(fontname=alias, fontfile=font_file)
+                            fontname = alias
+                            embedded_fonts.add(Path(font_file).stem)
+                        except Exception:
+                            fontname, text = "helv", _latin1_safe(original)
+                            fallbacks += 1
+                    else:
+                        fontname, text = "helv", _latin1_safe(original)
+                        fallbacks += 1
+                    if fontname == "helv" and text != original:
+                        warnings.append(
+                            f"Seite {page_num}: keine einbettbare Schrift gefunden — "
+                            "Sonderzeichen wurden ersetzt"
+                        )
+
                     b = edit.get("bbox", {})
                     r = fitz.Rect(
                         float(b.get("x0", 0)) * rect.width,
@@ -815,7 +1115,7 @@ class PdfExtrasService:
                     placed = False
                     while size >= 5:
                         leftover = page.insert_textbox(
-                            r, text, fontsize=size, fontname="helv", color=rgb, align=0
+                            r, text, fontsize=size, fontname=fontname, color=rgb, align=0
                         )
                         if leftover >= 0:
                             placed = True
@@ -825,7 +1125,7 @@ class PdfExtrasService:
                         # letzter Versuch: minimal klein, Box leicht vergrößert
                         bigger = fitz.Rect(r.x0, r.y0, r.x1, min(r.y1 + 14, rect.height))
                         page.insert_textbox(
-                            bigger, text, fontsize=5, fontname="helv", color=rgb, align=0
+                            bigger, text, fontsize=5, fontname=fontname, color=rgb, align=0
                         )
                         warnings.append(
                             f"Seite {page_num}: Text passte nicht vollständig in die Box"
@@ -837,7 +1137,11 @@ class PdfExtrasService:
                 success=True,
                 output_format="pdf",
                 file_content=out,
-                metadata={"edits": len(edits)},
+                metadata={
+                    "edits": len(edits),
+                    "fonts_embedded": sorted(embedded_fonts),
+                    "fallback_blocks": fallbacks,
+                },
                 warnings=warnings,
             )
         except Exception as e:
