@@ -48,6 +48,28 @@
       </label>
     </div>
 
+    <!-- Serienbefüllung / CSV -->
+    <div v-if="fields.length" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Daten als CSV (Serienbefüllung)</h3>
+      <p class="text-sm text-gray-500 dark:text-gray-400">
+        Feldwerte als CSV exportieren oder viele Formulare auf einmal aus einer CSV-Tabelle
+        befüllen — eine Zeile ergibt ein PDF (Spalte <code>dateiname</code> bestimmt den Namen).
+      </p>
+      <div class="flex flex-wrap gap-2">
+        <button class="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 hover:border-primary-400" :disabled="csvBusy" @click="exportCsv(false)">
+          Werte als CSV
+        </button>
+        <button class="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 hover:border-primary-400" :disabled="csvBusy" @click="exportCsv(true)">
+          Leere CSV-Vorlage
+        </button>
+        <button class="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 hover:border-primary-400" :disabled="csvBusy" @click="csvInput?.click()">
+          Aus CSV befüllen…
+        </button>
+        <input ref="csvInput" type="file" accept=".csv,.txt" class="hidden" @change="fillFromCsv" />
+      </div>
+      <p v-if="csvSummary" class="text-sm text-green-700 dark:text-green-300">{{ csvSummary }}</p>
+    </div>
+
     <div v-if="done" class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-700 dark:text-green-300">
       Formular ausgefüllt, Datei heruntergeladen.
     </div>
@@ -68,7 +90,7 @@
 import { ref, watch } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
 import { useToolRun } from '@/composables/useToolRun'
-import { apiPost } from '@/lib/api'
+import { apiPost, downloadBlob } from '@/lib/api'
 
 defineEmits<{ (e: 'back'): void }>()
 
@@ -87,6 +109,9 @@ const values = ref<Record<string, unknown>>({})
 const flatten = ref(false)
 const loadingFields = ref(false)
 const fieldsLoaded = ref(false)
+const csvInput = ref<HTMLInputElement | null>(null)
+const csvBusy = ref(false)
+const csvSummary = ref('')
 
 watch(file, async (f) => {
   fields.value = []
@@ -119,5 +144,54 @@ async function apply() {
   fd.append('values', JSON.stringify(values.value))
   fd.append('flatten', String(flatten.value))
   await run('/api/pdf-extras/form/fill', fd, file.value.name.replace(/\.pdf$/i, '_ausgefuellt.pdf'))
+}
+
+async function exportCsv(template: boolean) {
+  if (!file.value) return
+  csvBusy.value = true
+  error.value = null
+  csvSummary.value = ''
+  try {
+    const fd = new FormData()
+    fd.append('file', file.value)
+    fd.append('template', String(template))
+    const resp = await apiPost('/api/pdf-extras/form/export-csv', fd)
+    const suffix = template ? '_vorlage.csv' : '_formulardaten.csv'
+    await downloadBlob(resp, file.value.name.replace(/\.pdf$/i, suffix))
+    csvSummary.value = template
+      ? 'CSV-Vorlage heruntergeladen — Zeilen ergänzen und wieder einlesen.'
+      : `${resp.headers.get('X-Fields') || '0'} Feldwerte als CSV heruntergeladen.`
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : 'CSV-Export fehlgeschlagen'
+  } finally {
+    csvBusy.value = false
+  }
+}
+
+async function fillFromCsv(e: Event) {
+  const input = e.target as HTMLInputElement
+  const csv = input.files?.[0]
+  input.value = ''
+  if (!csv || !file.value) return
+  csvBusy.value = true
+  error.value = null
+  csvSummary.value = ''
+  try {
+    const fd = new FormData()
+    fd.append('file', file.value)
+    fd.append('data', csv)
+    fd.append('flatten', String(flatten.value))
+    const resp = await apiPost('/api/pdf-extras/form/fill-csv', fd)
+    const rows = Number(resp.headers.get('X-Rows') || '0')
+    await downloadBlob(resp, rows > 1 ? 'formulare.zip' : 'formular.pdf')
+    const warnings = Number(resp.headers.get('X-Warnings') || '0')
+    csvSummary.value =
+      `${rows} Formular(e) befüllt und heruntergeladen` +
+      (warnings ? ` — ${warnings} Hinweis(e), siehe hinweise.txt im ZIP.` : '.')
+  } catch (err: unknown) {
+    error.value = err instanceof Error ? err.message : 'Serienbefüllung fehlgeschlagen'
+  } finally {
+    csvBusy.value = false
+  }
 }
 </script>

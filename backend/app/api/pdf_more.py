@@ -173,11 +173,21 @@ async def set_permissions(
 
 
 @router.post("/verify-signatures")
-def verify_signatures(file: UploadFile = File(...)):
+def verify_signatures(
+    file: UploadFile = File(...),
+    trust_anchors: UploadFile | None = File(
+        None, description="Optional: Vertrauensanker (PEM/DER) für die Kettenprüfung"
+    ),
+):
     """Sync-Endpoint (Threadpool): Kryptoprüfung kann CPU-lastig sein."""
     content = file.file.read()
     _validate_pdf(file, content)
-    result = get_pdf_more().verify_signatures(content)
+    anchors: bytes | None = None
+    if trust_anchors is not None and trust_anchors.filename:
+        anchors = trust_anchors.file.read()
+        if len(anchors) > 2 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Vertrauensanker-Datei zu groß (max 2 MB)")
+    result = get_pdf_more().verify_signatures(content, trust_anchors=anchors)
     if not result.success:
         status = 503 if "nicht verfügbar" in (result.error or "") else 500
         raise HTTPException(status_code=status, detail=result.error)
@@ -259,6 +269,40 @@ def quality_check(file: UploadFile = File(...)):
     return result.metadata
 
 
+# ── Bilder auflisten und ersetzen ─────────────────────────────
+
+
+@router.post("/images/list")
+def list_images(file: UploadFile = File(...)):
+    """Alle Bilder mit Vorschau auflisten (Sync-Endpoint: rendert Vorschauen)."""
+    content = file.file.read()
+    _validate_pdf(file, content)
+    result = get_pdf_more().list_images(content)
+    if not result.success:
+        raise HTTPException(status_code=500, detail=result.error)
+    return result.metadata
+
+
+@router.post("/images/replace")
+def replace_image(
+    file: UploadFile = File(...),
+    xref: int = Form(..., ge=1, description="Referenz aus /images/list"),
+    image: UploadFile = File(..., description="Neues Bild (PNG/JPG)"),
+):
+    content = file.file.read()
+    _validate_pdf(file, content)
+    if not image.filename or not image.filename.lower().endswith((".png", ".jpg", ".jpeg")):
+        raise HTTPException(status_code=400, detail="Bild muss PNG oder JPG sein")
+    image_content = image.file.read()
+    if len(image_content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Bild zu groß (max 20 MB)")
+    result = get_pdf_more().replace_image(content, xref, image_content)
+    if not result.success:
+        status = 404 if "nicht gefunden" in (result.error or "") else 500
+        raise HTTPException(status_code=status, detail=result.error)
+    return _pdf_response(result.file_content, f"{_name(file)}_bild.pdf")
+
+
 # ── Lokale KI (nur bei konfiguriertem PDFAPP_LLM_URL) ─────────
 
 
@@ -287,6 +331,47 @@ def ai_ask(
     content = file.file.read()
     _validate_pdf(file, content)
     result = get_pdf_more().ai_ask(content, question, mode="ask")
+    if not result.success:
+        status = 503 if "LLM" in (result.error or "") else 422
+        raise HTTPException(status_code=status, detail=result.error)
+    return result.metadata
+
+
+@router.post("/ai/translate")
+def ai_translate(
+    file: UploadFile = File(...),
+    target_language: str = Form("Englisch", max_length=60),
+):
+    """Dokumenttext mit dem lokalen LLM übersetzen (Entwurfsqualität)."""
+    content = file.file.read()
+    _validate_pdf(file, content)
+    result = get_pdf_more().ai_ask(
+        content, "", mode="translate", target_language=target_language
+    )
+    if not result.success:
+        status = 503 if "LLM" in (result.error or "") else 422
+        raise HTTPException(status_code=status, detail=result.error)
+    return result.metadata
+
+
+@router.post("/ai/keywords")
+def ai_keywords(file: UploadFile = File(...)):
+    """Schlagwörter zum Dokument (lokales LLM)."""
+    content = file.file.read()
+    _validate_pdf(file, content)
+    result = get_pdf_more().ai_ask(content, "", mode="keywords")
+    if not result.success:
+        status = 503 if "LLM" in (result.error or "") else 422
+        raise HTTPException(status_code=status, detail=result.error)
+    return result.metadata
+
+
+@router.post("/ai/outline")
+def ai_outline(file: UploadFile = File(...)):
+    """Gliederungsvorschlag zum Dokument (lokales LLM)."""
+    content = file.file.read()
+    _validate_pdf(file, content)
+    result = get_pdf_more().ai_ask(content, "", mode="outline")
     if not result.success:
         status = 503 if "LLM" in (result.error or "") else 422
         raise HTTPException(status_code=status, detail=result.error)

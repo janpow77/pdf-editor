@@ -67,6 +67,7 @@ class PdfMoreService:
             "insert_blank": PYMUPDF_AVAILABLE,
             "pruefakte": PYMUPDF_AVAILABLE,
             "quality_check": PYMUPDF_AVAILABLE,
+            "image_replace": PYMUPDF_AVAILABLE,
             "ai": bool(settings.llm_url),
         }
 
@@ -274,9 +275,27 @@ class PdfMoreService:
 
     # ── Signaturprüfung mit Bericht ───────────────────────────
 
-    def verify_signatures(self, file_content: bytes) -> PdfToolResult:
+    def verify_signatures(
+        self, file_content: bytes, trust_anchors: bytes | None = None
+    ) -> PdfToolResult:
+        """Signaturen prüfen; mit optionalen Vertrauensankern (PEM/DER) wird
+        zusätzlich die Vertrauenskette bewertet."""
         if not PYHANKO_VALIDATION_AVAILABLE:
             return _fail("pyHanko nicht verfügbar", "json")
+        validation_context = None
+        anchor_count = 0
+        if trust_anchors:
+            try:
+                from pyhanko.keys import load_certs_from_pemder_data
+                from pyhanko_certvalidator import ValidationContext
+
+                roots = list(load_certs_from_pemder_data(trust_anchors))
+                if not roots:
+                    return _fail("Keine Zertifikate in der Vertrauensanker-Datei gefunden", "json")
+                anchor_count = len(roots)
+                validation_context = ValidationContext(trust_roots=roots, allow_fetching=False)
+            except Exception:
+                return _fail("Vertrauensanker konnten nicht gelesen werden (PEM/DER?)", "json")
         try:
             reader = _HankoReader(io.BytesIO(file_content))
             sigs = reader.embedded_signatures
@@ -292,10 +311,12 @@ class PdfMoreService:
                 try:
                     status = _validate_sig(
                         sig,
+                        signer_validation_context=validation_context,
                         key_usage_settings=KeyUsageConstraints(key_usage=set()),
                     )
                     cert = status.signing_cert
                     subject = cert.subject.human_friendly if cert else "unbekannt"
+                    trusted = bool(getattr(status, "trusted", False))
                     entry.update(
                         {
                             "signer": subject,
@@ -303,9 +324,17 @@ class PdfMoreService:
                             "valid_cms": bool(status.valid),
                             "coverage": str(status.coverage),
                             "signing_time": str(status.signer_reported_dt or ""),
-                            "trusted": bool(getattr(status, "trusted", False)),
+                            "trusted": trusted,
                             "hinweis": (
-                                "Integrität geprüft. Vertrauenskette ohne konfigurierte "
+                                (
+                                    "Integrität und Vertrauenskette gegen die hochgeladenen "
+                                    f"Vertrauensanker ({anchor_count}) geprüft."
+                                    if trusted
+                                    else "Integrität geprüft; Vertrauenskette führt NICHT auf "
+                                    "die hochgeladenen Vertrauensanker zurück."
+                                )
+                                if validation_context
+                                else "Integrität geprüft. Vertrauenskette ohne hinterlegte "
                                 "Vertrauensanker nicht bewertbar."
                             ),
                         }
@@ -424,6 +453,101 @@ class PdfMoreService:
         except Exception as e:
             return _fail(f"Qualitätsprüfung fehlgeschlagen: {e}", "json")
 
+    # ── Bilder im PDF auflisten und ersetzen ──────────────────
+
+    MAX_IMAGES = 60
+
+    def list_images(self, file_content: bytes) -> PdfToolResult:
+        """Alle Bilder mit Position, Größe und Vorschau (base64-PNG)."""
+        if not PYMUPDF_AVAILABLE:
+            return _fail("PyMuPDF nicht verfügbar", "json")
+        try:
+            import base64
+
+            doc = fitz.open(stream=file_content, filetype="pdf")
+            images: list[dict] = []
+            seen: set[int] = set()
+            for pno in range(doc.page_count):
+                page = doc[pno]
+                prect = page.rect
+                for info in page.get_image_info(xrefs=True):
+                    xref = int(info.get("xref", 0))
+                    if not xref or xref in seen or len(images) >= self.MAX_IMAGES:
+                        continue
+                    seen.add(xref)
+                    bbox = info.get("bbox", (0, 0, 0, 0))
+                    preview = ""
+                    try:
+                        pix = fitz.Pixmap(doc, xref)
+                        if pix.n - pix.alpha >= 4:  # CMYK → RGB
+                            pix = fitz.Pixmap(fitz.csRGB, pix)
+                        scale = min(1.0, 160 / max(pix.width, pix.height, 1))
+                        if scale < 1.0:
+                            pix = fitz.Pixmap(
+                                pix,
+                                max(1, int(pix.width * scale)),
+                                max(1, int(pix.height * scale)),
+                                None,
+                            )
+                        preview = base64.b64encode(pix.tobytes("png")).decode()
+                    except Exception:
+                        preview = ""  # exotische Farbräume/Masken: ohne Vorschau anzeigen
+                    images.append(
+                        {
+                            "xref": xref,
+                            "page": pno + 1,
+                            "width": int(info.get("width", 0)),
+                            "height": int(info.get("height", 0)),
+                            "x0": round(bbox[0] / prect.width, 4) if prect.width else 0,
+                            "y0": round(bbox[1] / prect.height, 4) if prect.height else 0,
+                            "x1": round(bbox[2] / prect.width, 4) if prect.width else 0,
+                            "y1": round(bbox[3] / prect.height, 4) if prect.height else 0,
+                            "preview": preview,
+                        }
+                    )
+            count = len(images)
+            doc.close()
+            return PdfToolResult(
+                success=True,
+                output_format="json",
+                metadata={"images": images, "count": count},
+            )
+        except Exception as e:
+            return _fail(f"Bilder lesen fehlgeschlagen: {e}", "json")
+
+    def replace_image(
+        self, file_content: bytes, xref: int, image_content: bytes
+    ) -> PdfToolResult:
+        """Ein vorhandenes Bild durch ein neues ersetzen (Position bleibt)."""
+        if not PYMUPDF_AVAILABLE:
+            return _fail("PyMuPDF nicht verfügbar")
+        try:
+            doc = fitz.open(stream=file_content, filetype="pdf")
+            known = {
+                int(i.get("xref", 0))
+                for pno in range(doc.page_count)
+                for i in doc[pno].get_image_info(xrefs=True)
+            }
+            if xref not in known:
+                doc.close()
+                return _fail("Bild nicht gefunden (falsche Referenz?)")
+            target_page = next(
+                pno
+                for pno in range(doc.page_count)
+                if xref in {int(i.get("xref", 0)) for i in doc[pno].get_image_info(xrefs=True)}
+            )
+            doc[target_page].replace_image(xref, stream=image_content)
+            out = doc.tobytes(garbage=3, deflate=True)
+            doc.close()
+            return PdfToolResult(
+                success=True,
+                output_format="pdf",
+                file_content=out,
+                metadata={"xref": xref, "page": target_page + 1},
+            )
+        except Exception as e:
+            return _fail(f"Bild ersetzen fehlgeschlagen: {e}")
+
     # ── Lokale KI (OpenAI-kompatibler Endpoint, z.B. ai-router) ──
 
     def _extract_for_ai(self, file_content: bytes, max_chars: int = 60000) -> str:
@@ -440,11 +564,21 @@ class PdfMoreService:
         doc.close()
         return "\n".join(parts)[: max_chars + 200]
 
-    def ai_ask(self, file_content: bytes, question: str, mode: str = "ask") -> PdfToolResult:
-        """Zusammenfassen oder Frage beantworten — ausschließlich lokales LLM,
-        Inhalte werden transient übertragen und nicht gespeichert."""
+    AI_MODES = ("summary", "ask", "translate", "keywords", "outline")
+
+    def ai_ask(
+        self,
+        file_content: bytes,
+        question: str,
+        mode: str = "ask",
+        target_language: str = "Englisch",
+    ) -> PdfToolResult:
+        """Zusammenfassen, fragen, übersetzen, verschlagworten oder gliedern —
+        ausschließlich lokales LLM, Inhalte transient und ohne Speicherung."""
         if not settings.llm_url:
             return _fail("Kein lokales LLM konfiguriert", "json")
+        if mode not in self.AI_MODES:
+            return _fail(f"Unbekannter KI-Modus '{mode}'", "json")
         text = self._extract_for_ai(file_content)
         if not text.strip():
             return _fail("Dokument enthält keinen extrahierbaren Text (OCR nötig?)", "json")
@@ -453,6 +587,29 @@ class PdfMoreService:
                 "Du bist ein präziser Dokument-Assistent. Fasse das PDF strukturiert "
                 "auf Deutsch zusammen (Kernaussagen, wichtige Zahlen, offene Punkte). "
                 "Erfinde nichts."
+            )
+            user = f"Dokumentinhalt:\n\n{text}"
+        elif mode == "translate":
+            lang = (target_language or "Englisch").strip()[:60]
+            system = (
+                f"Du bist ein präziser Fachübersetzer. Übersetze den Dokumenttext nach "
+                f"{lang}. Behalte Struktur, Absätze, Zahlen, Eigennamen und Aktenzeichen "
+                "unverändert bei. Gib ausschließlich die Übersetzung aus, ohne Kommentar."
+            )
+            user = f"Dokumentinhalt:\n\n{text}"
+        elif mode == "keywords":
+            system = (
+                "Du bist ein Dokumentar. Nenne 8 bis 15 Schlagwörter zum Dokument auf "
+                "Deutsch, jeweils eine Zeile mit vorangestelltem Bindestrich, ohne "
+                "Nummerierung und ohne Erläuterung. Nur Begriffe, die im Dokument "
+                "belegt sind."
+            )
+            user = f"Dokumentinhalt:\n\n{text}"
+        elif mode == "outline":
+            system = (
+                "Du bist ein Dokument-Assistent. Erstelle eine hierarchische Gliederung "
+                "des Dokuments auf Deutsch (maximal drei Ebenen, Markdown-Listenform) "
+                "mit Seitenangabe je Punkt in Klammern. Erfinde keine Abschnitte."
             )
             user = f"Dokumentinhalt:\n\n{text}"
         else:

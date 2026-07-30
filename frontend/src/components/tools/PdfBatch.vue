@@ -39,6 +39,8 @@
           <option value="pdfa">PDF/A</option>
           <option value="watermark">Wasserzeichen</option>
           <option value="clean">Bereinigen (Metadaten entfernen)</option>
+          <option value="sign">Digital signieren (Stapelsignatur)</option>
+          <option value="rename">Umbenennen</option>
         </select>
       </div>
 
@@ -83,6 +85,19 @@
       <p v-else-if="operation === 'clean'" class="text-sm text-gray-500 dark:text-gray-400">
         Entfernt Metadaten, JavaScript, eingebettete Dateien und versteckte Inhalte aus allen Dateien.
       </p>
+      <div v-else-if="operation === 'sign'" class="space-y-2">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Zertifikat (.p12/.pfx)</label>
+        <input ref="certInput" type="file" accept=".p12,.pfx" class="text-sm text-gray-600 dark:text-gray-300" @change="onCert" />
+        <input v-model="passphrase" type="password" placeholder="Zertifikats-Passwort" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+        <input v-model="params.reason" type="text" placeholder="Grund (optional)" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+        <p class="text-xs text-gray-400">Zertifikat und Passwort werden nur für diesen Lauf verwendet und nicht gespeichert.</p>
+      </div>
+      <div v-else-if="operation === 'rename'" class="grid grid-cols-3 gap-3">
+        <input v-model="params.pattern" type="text" placeholder="{name} oder AKTE-{n}_{name}" class="col-span-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+        <input v-model.number="params.start" type="number" min="0" placeholder="Startnummer" class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+        <input v-model.number="params.rename_digits" type="number" min="1" max="8" placeholder="Stellen" title="Stellen der Nummer" class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+        <p class="col-span-3 text-xs text-gray-400">Platzhalter: <code>{name}</code> = ursprünglicher Name, <code>{n}</code> = fortlaufende Nummer.</p>
+      </div>
     </div>
 
     <div v-if="summary" class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-700 dark:text-green-300">
@@ -91,7 +106,7 @@
 
     <button
       v-if="files.length"
-      :disabled="loading || (operation === 'protect' && !params.password)"
+      :disabled="loading || (operation === 'protect' && !params.password) || (operation === 'sign' && !certificate)"
       class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
       @click="apply"
     >
@@ -122,8 +137,18 @@ const params = reactive<Record<string, unknown>>({
   text: 'ENTWURF',
   opacity: 0.3,
   font_size: 60,
+  pattern: 'AKTE-{n}_{name}',
+  rename_digits: 3,
+  reason: '',
 })
 const summary = ref('')
+const certInput = ref<HTMLInputElement | null>(null)
+const certificate = ref<File | null>(null)
+const passphrase = ref('')
+
+function onCert(e: Event) {
+  certificate.value = (e.target as HTMLInputElement).files?.[0] ?? null
+}
 
 function addFiles(list: FileList | File[]) {
   for (const f of Array.from(list)) {
@@ -145,7 +170,14 @@ async function apply() {
   const fd = new FormData()
   for (const f of files.value) fd.append('files', f)
   fd.append('operation', operation.value)
-  fd.append('params', JSON.stringify(params))
+  // Umbenennen hat eine eigene Stellenzahl (Bates nutzt "digits")
+  const payload =
+    operation.value === 'rename' ? { ...params, digits: params.rename_digits } : { ...params }
+  fd.append('params', JSON.stringify(payload))
+  if (operation.value === 'sign' && certificate.value) {
+    fd.append('certificate', certificate.value)
+    fd.append('passphrase', passphrase.value)
+  }
   const resp = await run('/api/pdf-extras/batch', fd, 'batch_ergebnisse.zip')
   if (resp) {
     const ok = resp.headers.get('X-Batch-Ok') || '0'

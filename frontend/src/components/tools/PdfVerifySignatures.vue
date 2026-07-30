@@ -13,6 +13,17 @@
 
     <FileDrop v-model="file" />
 
+    <div v-if="file" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-2">
+      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        Vertrauensanker (optional, PEM/CRT)
+      </label>
+      <input type="file" accept=".pem,.crt,.cer,.der" class="text-sm text-gray-600 dark:text-gray-300" @change="onAnchors" />
+      <p class="text-xs text-gray-400">
+        Mit hinterlegten Wurzelzertifikaten wird zusätzlich geprüft, ob die Signatur auf
+        eine vertrauenswürdige Stelle zurückführt. Ohne Anker bleibt nur die Integritätsprüfung.
+      </p>
+    </div>
+
     <div v-if="report" class="space-y-3">
       <div v-if="report.count === 0" class="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg text-sm text-yellow-800 dark:text-yellow-300">
         Dieses PDF enthält keine digitalen Signaturen.
@@ -40,6 +51,8 @@
             <dt class="text-gray-400">Signiert am</dt><dd>{{ sig.signing_time || 'unbekannt' }}</dd>
             <dt class="text-gray-400">CMS gültig</dt><dd>{{ sig.valid_cms ? 'ja' : 'nein' }}</dd>
             <dt class="text-gray-400">Abdeckung</dt><dd>{{ sig.coverage }}</dd>
+            <dt class="text-gray-400">Vertrauenskette</dt>
+            <dd>{{ anchors ? (sig.trusted ? 'vertrauenswürdig' : 'nicht bestätigt') : 'nicht bewertet' }}</dd>
           </dl>
           <p class="text-xs text-gray-400">{{ sig.hinweis }}</p>
         </template>
@@ -83,9 +96,15 @@ interface Report {
 }
 
 const file = ref<File | null>(null)
+const anchors = ref<File | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const report = ref<Report | null>(null)
+
+function onAnchors(e: Event) {
+  anchors.value = (e.target as HTMLInputElement).files?.[0] ?? null
+  report.value = null
+}
 
 async function apply() {
   if (!file.value) return
@@ -95,6 +114,7 @@ async function apply() {
   try {
     const fd = new FormData()
     fd.append('file', file.value)
+    if (anchors.value) fd.append('trust_anchors', anchors.value)
     const resp = await apiPost('/api/pdf-more/verify-signatures', fd)
     report.value = (await resp.json()) as Report
   } catch (e: unknown) {

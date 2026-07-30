@@ -7,8 +7,10 @@ PDF/A-Konvertierung (Ghostscript). Alles in-memory; PDF/A nutzt wie die
 LibreOffice-Konvertierung ein automatisch gelöschtes TemporaryDirectory.
 """
 
+import csv
 import io
 import logging
+import re
 import shutil
 import subprocess
 import tempfile
@@ -106,6 +108,97 @@ def _field_name_safe(name: str, fallback: str) -> str:
     cleaned = (name or "").strip().translate(_FIELD_NAME_FORBIDDEN)
     cleaned = "".join(ch for ch in cleaned if ch.isprintable()).strip()
     return (cleaned or fallback)[:120]
+
+
+# ── Formular-Berechnung, -Formatierung und -Prüfung ───────────
+# Es wird bewusst KEIN freies JavaScript übernommen: der Designer liefert nur
+# eine Rechenart bzw. einen arithmetischen Ausdruck über Feldnamen, das Skript
+# baut dieser Service. Sonst wäre die App ein bequemer Weg, beliebiges
+# JavaScript in fremde PDFs zu schreiben.
+CALC_KINDS = {"sum": "SUM", "product": "PRD", "average": "AVG", "min": "MIN", "max": "MAX"}
+FORMAT_KINDS = ("none", "number", "currency", "percent")
+
+_FORMULA_TOKEN = re.compile(r"[A-Za-zÄÖÜäöüß_][A-Za-zÄÖÜäöüß0-9_]*|\d+(?:[.,]\d+)?|[-+*/()]|\s+")
+
+
+def _js_string(value: str) -> str:
+    """Zeichenkette für die Einbettung in erzeugtes PDF-JavaScript maskieren."""
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\r", " ").replace("\n", " ")
+
+
+def _build_format_script(fmt: dict) -> str:
+    kind = str(fmt.get("kind", "none")).lower()
+    if kind not in FORMAT_KINDS or kind == "none":
+        return ""
+    decimals = max(0, min(6, int(fmt.get("decimals", 2))))
+    if kind == "percent":
+        return f"AFPercent_Format({decimals}, 0);"
+    currency = _js_string(str(fmt.get("currency", "€"))[:8]) if kind == "currency" else ""
+    # sepStyle 3 = 1.234,56 (deutsches Format), negStyle 0 = Minuszeichen
+    if kind == "currency":
+        return f'AFNumber_Format({decimals}, 3, 0, 0, " {currency}", false);'
+    return f'AFNumber_Format({decimals}, 3, 0, 0, "", false);'
+
+
+def _build_calc_script(calc: dict, known_names: set[str]) -> tuple[str, str]:
+    """(Skript, Fehlermeldung) — leeres Skript heißt: keine Berechnung."""
+    kind = str(calc.get("kind", "")).lower()
+    if not kind or kind == "none":
+        return "", ""
+    if kind in CALC_KINDS:
+        names = [str(n).strip() for n in (calc.get("fields") or []) if str(n).strip()]
+        unknown = [n for n in names if n not in known_names]
+        if not names:
+            return "", "Berechnung ohne Quellfelder"
+        if unknown:
+            return "", f"Berechnung verweist auf unbekannte Felder: {', '.join(unknown)}"
+        array = ", ".join(f'"{_js_string(n)}"' for n in names)
+        return f'AFSimple_Calc("{CALC_KINDS[kind]}", new Array({array}));', ""
+    if kind != "formula":
+        return "", f"Unbekannte Rechenart '{kind}'"
+
+    formula = str(calc.get("formula", "")).strip()
+    if not formula:
+        return "", "Formel ist leer"
+    if len(formula) > 200:
+        return "", "Formel ist zu lang (max. 200 Zeichen)"
+    parts: list[str] = []
+    used: list[str] = []
+    pos = 0
+    while pos < len(formula):
+        m = _FORMULA_TOKEN.match(formula, pos)
+        if not m:
+            return "", f"Unerlaubtes Zeichen in Formel: '{formula[pos]}'"
+        token = m.group(0)
+        pos = m.end()
+        if token.isspace():
+            parts.append(" ")
+        elif token[0].isdigit():
+            parts.append(token.replace(",", "."))
+        elif token in "+-*/()":
+            parts.append(token)
+        else:
+            if token not in known_names:
+                return "", f"Formel verweist auf unbekanntes Feld '{token}'"
+            used.append(token)
+            parts.append(f'(Number(this.getField("{_js_string(token)}").value) || 0)')
+    if not used:
+        return "", "Formel enthält kein Feld"
+    return f"event.value = {''.join(parts)};", ""
+
+
+def _build_validate_script(rule: dict) -> str:
+    lo, hi = rule.get("min"), rule.get("max")
+    has_lo = lo is not None and str(lo) != ""
+    has_hi = hi is not None and str(hi) != ""
+    if not has_lo and not has_hi:
+        return ""
+    lo_v = float(lo) if has_lo else 0
+    hi_v = float(hi) if has_hi else 0
+    return (
+        f"AFRange_Validate({str(has_lo).lower()}, {lo_v}, "
+        f"{str(has_hi).lower()}, {hi_v});"
+    )
 
 
 class PdfExtrasService:
@@ -235,6 +328,143 @@ class PdfExtrasService:
         except Exception as e:
             return _fail(f"Formular ausfüllen fehlgeschlagen: {e}")
 
+    # ── Formulardaten als CSV ─────────────────────────────────
+
+    def export_field_values_csv(self, file_content: bytes) -> PdfToolResult:
+        """Feldwerte als CSV (Semikolon, UTF-8-BOM → Excel-tauglich)."""
+        fields_result = self.get_form_fields(file_content)
+        if not fields_result.success:
+            return _fail(fields_result.error or "Formularfelder lesen fehlgeschlagen", "csv")
+        fields = (fields_result.metadata or {}).get("fields", [])
+        if not fields:
+            return _fail("PDF enthält keine Formularfelder", "csv")
+        buf = io.StringIO()
+        writer = csv.writer(buf, delimiter=";", lineterminator="\r\n")
+        writer.writerow(["feldname", "typ", "seite", "wert", "auswahlwerte"])
+        for f in fields:
+            writer.writerow(
+                [
+                    f.get("name", ""),
+                    f.get("designer_type", f.get("type", "")),
+                    f.get("page", ""),
+                    str(f.get("value", "")).replace("\n", " "),
+                    ", ".join(f.get("options") or []),
+                ]
+            )
+        return PdfToolResult(
+            success=True,
+            output_format="csv",
+            file_content=buf.getvalue().encode("utf-8-sig"),
+            metadata={"fields": len(fields)},
+        )
+
+    def export_values_template_csv(self, file_content: bytes) -> PdfToolResult:
+        """Vorlage für die Serienbefüllung: Kopfzeile mit allen Feldnamen."""
+        fields_result = self.get_form_fields(file_content)
+        if not fields_result.success:
+            return _fail(fields_result.error or "Formularfelder lesen fehlgeschlagen", "csv")
+        names = [f.get("name", "") for f in (fields_result.metadata or {}).get("fields", [])]
+        if not names:
+            return _fail("PDF enthält keine Formularfelder", "csv")
+        buf = io.StringIO()
+        writer = csv.writer(buf, delimiter=";", lineterminator="\r\n")
+        writer.writerow(["dateiname"] + names)
+        writer.writerow(["formular_1"] + ["" for _ in names])
+        return PdfToolResult(
+            success=True,
+            output_format="csv",
+            file_content=buf.getvalue().encode("utf-8-sig"),
+            metadata={"fields": len(names)},
+        )
+
+    MAX_CSV_ROWS = 200
+
+    def fill_from_csv(
+        self, file_content: bytes, csv_content: bytes, flatten: bool = False
+    ) -> PdfToolResult:
+        """Serienbefüllung: eine Zeile = ein ausgefülltes PDF.
+
+        Kopfzeile enthält die Feldnamen; die optionale Spalte `dateiname`
+        bestimmt den Namen der Ausgabedatei. Mehrere Zeilen ergeben ein ZIP.
+        """
+        import zipfile
+
+        try:
+            text = csv_content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            try:
+                text = csv_content.decode("cp1252")
+            except UnicodeDecodeError:
+                return _fail("CSV-Datei ist weder UTF-8 noch Windows-1252", "zip")
+        # Trennzeichen aus der Kopfzeile bestimmen (deutsche Exporte nutzen ";")
+        header_line = text.splitlines()[0] if text.strip() else ""
+        counts = {d: header_line.count(d) for d in (";", ",", "\t")}
+        delimiter = max(counts, key=lambda d: counts[d]) if any(counts.values()) else ";"
+        rows = list(csv.DictReader(io.StringIO(text), delimiter=delimiter))
+        if not rows:
+            return _fail("CSV enthält keine Datenzeilen", "zip")
+        if len(rows) > self.MAX_CSV_ROWS:
+            return _fail(f"Maximal {self.MAX_CSV_ROWS} Datenzeilen pro Aufruf", "zip")
+
+        available = {
+            f.get("name")
+            for f in (self.get_form_fields(file_content).metadata or {}).get("fields", [])
+        }
+        if not available:
+            return _fail("PDF enthält keine Formularfelder", "zip")
+        headers = [h for h in (rows[0].keys()) if h and h.lower() != "dateiname"]
+        unknown = [h for h in headers if h not in available]
+        warnings = (
+            [f"Spalten ohne passendes Feld ignoriert: {', '.join(unknown)}"] if unknown else []
+        )
+
+        outputs: list[tuple[str, bytes]] = []
+        for i, row in enumerate(rows, start=1):
+            values = {k: v for k, v in row.items() if k in available and v not in (None, "")}
+            result = self.fill_form(file_content, values, flatten=flatten)
+            if not result.success:
+                warnings.append(f"Zeile {i}: {result.error}")
+                continue
+            raw_name = (row.get("dateiname") or row.get("Dateiname") or f"formular_{i}").strip()
+            safe = re.sub(r'[\\/:*?"<>|\r\n]+', "_", raw_name)[:100] or f"formular_{i}"
+            outputs.append((f"{safe}.pdf", result.file_content))
+
+        if not outputs:
+            return PdfToolResult(
+                success=False,
+                output_format="zip",
+                error="Keine Zeile konnte verarbeitet werden",
+                warnings=warnings,
+            )
+        if len(outputs) == 1:
+            name, data = outputs[0]
+            return PdfToolResult(
+                success=True,
+                output_format="pdf",
+                file_content=data,
+                metadata={"rows": 1, "filename": name},
+                warnings=warnings,
+            )
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            seen: dict[str, int] = {}
+            for name, data in outputs:
+                if name in seen:
+                    seen[name] += 1
+                    name = name.replace(".pdf", f"_{seen[name]}.pdf")
+                else:
+                    seen[name] = 1
+                zf.writestr(name, data)
+            if warnings:
+                zf.writestr("hinweise.txt", "\n".join(warnings))
+        return PdfToolResult(
+            success=True,
+            output_format="zip",
+            file_content=buf.getvalue(),
+            metadata={"rows": len(outputs)},
+            warnings=warnings,
+        )
+
     # ── Formular-Designer: Felder anlegen ─────────────────────
 
     def create_form_fields(
@@ -263,6 +493,25 @@ class PdfExtrasService:
             }
             created = 0
 
+            # Durchlauf 1: endgültige Feldnamen festlegen. Berechnungen dürfen
+            # nur auf Namen zeigen, die es hinterher wirklich gibt.
+            final_names: dict[int, str] = {}
+            for idx, spec in enumerate(fields):
+                name = _field_name_safe(str(spec.get("name", "")), f"feld_{idx + 1}")
+                if name in used_names:
+                    suffix = 2
+                    while f"{name}_{suffix}" in used_names:
+                        suffix += 1
+                    warnings.append(
+                        f"Feld {idx + 1}: Name '{name}' bereits vergeben → '{name}_{suffix}'"
+                    )
+                    name = f"{name}_{suffix}"
+                used_names.add(name)
+                final_names[idx] = name
+            known_names = set(used_names)
+            scripted = False
+
+            # Durchlauf 2: Widgets anlegen
             for idx, spec in enumerate(fields):
                 label = f"Feld {idx + 1}"
                 try:
@@ -290,16 +539,7 @@ class PdfExtrasService:
                         warnings.append(f"{label}: zu klein (mindestens 8 × 8 Punkte)")
                         continue
 
-                    name = _field_name_safe(str(spec.get("name", "")), f"feld_{idx + 1}")
-                    if name in used_names:
-                        suffix = 2
-                        while f"{name}_{suffix}" in used_names:
-                            suffix += 1
-                        warnings.append(
-                            f"{label}: Name '{name}' bereits vergeben → '{name}_{suffix}'"
-                        )
-                        name = f"{name}_{suffix}"
-                    used_names.add(name)
+                    name = final_names[idx]
 
                     widget = fitz.Widget()
                     widget.field_name = name
@@ -343,6 +583,33 @@ class PdfExtrasService:
                     else:  # signature
                         widget.field_type = fitz.PDF_WIDGET_TYPE_SIGNATURE
 
+                    # Formatierung / Berechnung / Wertebereich (nur Textfelder)
+                    if ftype in ("text", "textarea"):
+                        fmt = spec.get("format") or {}
+                        if isinstance(fmt, dict):
+                            script = _build_format_script(fmt)
+                            if script:
+                                widget.script_format = script
+                                scripted = True
+                        calc = spec.get("calc") or {}
+                        if isinstance(calc, dict):
+                            script, problem = _build_calc_script(calc, known_names)
+                            if problem:
+                                warnings.append(f"{label}: {problem} — Feld ohne Berechnung")
+                            elif script:
+                                widget.script_calc = script
+                                # Rechenfelder sind standardmäßig schreibgeschützt,
+                                # damit Eingaben das Ergebnis nicht überschreiben
+                                if spec.get("calc_readonly", True):
+                                    flags |= fitz.PDF_FIELD_IS_READ_ONLY
+                                scripted = True
+                        rule = spec.get("validate") or {}
+                        if isinstance(rule, dict):
+                            script = _build_validate_script(rule)
+                            if script:
+                                widget.script_change = script
+                                scripted = True
+
                     if flags:
                         widget.field_flags = flags
                     page.add_widget(widget)
@@ -358,6 +625,10 @@ class PdfExtrasService:
                     error="Kein Feld konnte angelegt werden",
                     warnings=warnings,
                 )
+            if scripted:
+                # Viewer sollen die Darstellung nach Berechnung/Formatierung
+                # selbst neu aufbauen
+                doc.need_appearances(True)
             out = doc.tobytes(garbage=3, deflate=True)
             doc.close()
             return PdfToolResult(
@@ -680,10 +951,16 @@ class PdfExtrasService:
         "pdfa",
         "watermark",
         "clean",
+        "sign",
+        "rename",
     )
 
     def batch_apply(
-        self, files: list[tuple[str, bytes]], operation: str, params: dict
+        self,
+        files: list[tuple[str, bytes]],
+        operation: str,
+        params: dict,
+        certificate: tuple[bytes, str] | None = None,
     ) -> PdfToolResult:
         """Eine Operation auf mehrere Dateien anwenden, Ergebnis als ZIP.
 
@@ -752,6 +1029,34 @@ class PdfExtrasService:
 
                         result = get_pdf_more().clean_pdf(content)
                         suffix = "_bereinigt"
+                    elif operation == "sign":
+                        if not certificate:
+                            errors.append(f"{filename}: kein Zertifikat übergeben")
+                            continue
+                        p12, passphrase = certificate
+                        result = self.sign_digital(
+                            content,
+                            p12,
+                            passphrase,
+                            reason=params.get("reason", ""),
+                            location=params.get("location", ""),
+                            tsa_url=params.get("tsa_url", ""),
+                        )
+                        suffix = "_signiert"
+                    elif operation == "rename":
+                        # Nur umbenennen: Inhalt unverändert ins ZIP
+                        pattern = str(params.get("pattern", "{name}"))[:120]
+                        digits = max(1, min(8, int(params.get("digits", 3))))
+                        start = int(params.get("start", 1))
+                        new_base = (
+                            pattern.replace("{name}", base)
+                            .replace("{n}", f"{start + ok:0{digits}d}")
+                            .strip()
+                        )
+                        new_base = re.sub(r'[\\/:*?"<>|\r\n]+', "_", new_base)[:100] or base
+                        zf.writestr(f"{new_base}.pdf", content)
+                        ok += 1
+                        continue
                     else:  # pdfa
                         result = self.convert_pdfa(
                             content, level=params.get("level", "2b")

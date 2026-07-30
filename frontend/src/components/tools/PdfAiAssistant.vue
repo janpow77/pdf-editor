@@ -38,6 +38,24 @@
           class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white"
         ></textarea>
       </div>
+      <div v-else-if="mode === 'translate'">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Zielsprache</label>
+        <input
+          v-model="targetLanguage"
+          type="text"
+          maxlength="60"
+          list="sprachen"
+          class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white"
+        />
+        <datalist id="sprachen">
+          <option value="Englisch" />
+          <option value="Französisch" />
+          <option value="Italienisch" />
+          <option value="Spanisch" />
+          <option value="Polnisch" />
+          <option value="Deutsch" />
+        </datalist>
+      </div>
     </div>
 
     <div v-if="answer" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-2">
@@ -55,7 +73,7 @@
       class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
       @click="apply"
     >
-      {{ loading ? 'KI arbeitet…' : mode === 'summary' ? 'Zusammenfassen' : 'Frage stellen' }}
+      {{ loading ? 'KI arbeitet…' : modes.find((m) => m.value === mode)?.label }}
     </button>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
   </div>
@@ -68,18 +86,24 @@ import { apiPost } from '@/lib/api'
 
 defineEmits<{ (e: 'back'): void }>()
 
+type AiMode = 'summary' | 'ask' | 'translate' | 'keywords' | 'outline'
+
 const file = ref<File | null>(null)
-const mode = ref<'summary' | 'ask'>('summary')
+const mode = ref<AiMode>('summary')
 const question = ref('')
+const targetLanguage = ref('Englisch')
 const answer = ref('')
 const model = ref('')
 const loading = ref(false)
 const error = ref<string | null>(null)
 const copied = ref(false)
 
-const modes = [
-  { value: 'summary' as const, label: 'Zusammenfassen' },
-  { value: 'ask' as const, label: 'Frage stellen' },
+const modes: { value: AiMode; label: string }[] = [
+  { value: 'summary', label: 'Zusammenfassen' },
+  { value: 'ask', label: 'Frage stellen' },
+  { value: 'translate', label: 'Übersetzen' },
+  { value: 'keywords', label: 'Schlagwörter' },
+  { value: 'outline', label: 'Gliederung' },
 ]
 
 async function apply() {
@@ -94,6 +118,13 @@ async function apply() {
     if (mode.value === 'ask') {
       url = '/api/pdf-more/ai/ask'
       fd.append('question', question.value.trim())
+    } else if (mode.value === 'translate') {
+      url = '/api/pdf-more/ai/translate'
+      fd.append('target_language', targetLanguage.value.trim() || 'Englisch')
+    } else if (mode.value === 'keywords') {
+      url = '/api/pdf-more/ai/keywords'
+    } else if (mode.value === 'outline') {
+      url = '/api/pdf-more/ai/outline'
     }
     const resp = await apiPost(url, fd)
     const body = (await resp.json()) as { answer: string; model: string }

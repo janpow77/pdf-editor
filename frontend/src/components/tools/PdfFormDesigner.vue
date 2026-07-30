@@ -169,6 +169,78 @@
                 <input v-model="selected.readonly" type="checkbox" class="rounded" /> Nur lesbar
               </label>
             </div>
+
+            <!-- Berechnung, Format, Wertebereich (nur Textfelder) -->
+            <details v-if="selected.type === 'text' || selected.type === 'textarea'" class="border-t border-gray-100 dark:border-gray-700 pt-3">
+              <summary class="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                Berechnung &amp; Format
+                <span v-if="selected.calc_kind !== 'none' || selected.format_kind !== 'none'" class="ml-1 text-xs text-primary-600">aktiv</span>
+              </summary>
+              <div class="mt-3 space-y-3">
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Zahlenformat</label>
+                  <div class="flex gap-2">
+                    <select v-model="selected.format_kind" class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1.5 text-sm text-gray-900 dark:text-white">
+                      <option value="none">kein Format</option>
+                      <option value="number">Zahl (1.234,56)</option>
+                      <option value="currency">Währung</option>
+                      <option value="percent">Prozent</option>
+                    </select>
+                    <input v-model.number="selected.format_decimals" type="number" min="0" max="6" title="Nachkommastellen" class="w-16 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1.5 text-sm text-gray-900 dark:text-white" />
+                  </div>
+                  <input v-if="selected.format_kind === 'currency'" v-model="selected.format_currency" type="text" maxlength="8" placeholder="EUR" class="mt-2 w-24 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1.5 text-sm text-gray-900 dark:text-white" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Berechnung</label>
+                  <select v-model="selected.calc_kind" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1.5 text-sm text-gray-900 dark:text-white">
+                    <option value="none">keine</option>
+                    <option value="sum">Summe der Felder</option>
+                    <option value="product">Produkt der Felder</option>
+                    <option value="average">Mittelwert der Felder</option>
+                    <option value="min">Minimum</option>
+                    <option value="max">Maximum</option>
+                    <option value="formula">Formel</option>
+                  </select>
+                </div>
+                <div v-if="['sum','product','average','min','max'].includes(selected.calc_kind)">
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Quellfelder (anklicken)</label>
+                  <div class="flex flex-wrap gap-1">
+                    <button
+                      v-for="n in otherFieldNames"
+                      :key="n"
+                      class="px-2 py-0.5 rounded text-xs border"
+                      :class="calcFieldList.includes(n)
+                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                        : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'"
+                      @click="toggleCalcField(n)"
+                    >
+                      {{ n }}
+                    </button>
+                  </div>
+                  <p v-if="!otherFieldNames.length" class="text-xs text-gray-400">Erst weitere Felder anlegen.</p>
+                </div>
+                <div v-else-if="selected.calc_kind === 'formula'">
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Formel (nur Feldnamen und + − × ÷)</label>
+                  <input v-model="selected.calc_formula" type="text" placeholder="netto * 1,19" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-white" />
+                  <p class="mt-1 text-xs text-gray-400">Verfügbar: {{ otherFieldNames.join(', ') || '—' }}</p>
+                </div>
+                <label v-if="selected.calc_kind !== 'none'" class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input v-model="selected.calc_readonly" type="checkbox" class="rounded" /> Ergebnis schreibgeschützt
+                </label>
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Zulässiger Wertebereich</label>
+                  <div class="flex items-center gap-2">
+                    <input v-model="selected.validate_min" type="number" placeholder="min" class="w-24 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1.5 text-sm text-gray-900 dark:text-white" />
+                    <span class="text-gray-400">bis</span>
+                    <input v-model="selected.validate_max" type="number" placeholder="max" class="w-24 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1.5 text-sm text-gray-900 dark:text-white" />
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">
+                  Berechnung, Format und Wertebereich werden als PDF-Aktionen hinterlegt und
+                  von Acrobat &amp; Co. ausgeführt — einfache Browser-Vorschauen zeigen sie nicht.
+                </p>
+              </div>
+            </details>
             <div class="flex gap-2 pt-1">
               <button class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300" @click="duplicateSelected">Duplizieren</button>
               <button class="px-3 py-1.5 text-sm rounded-lg border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" @click="removeSelected">Feld löschen</button>
@@ -254,6 +326,16 @@ interface DesignerField {
   y0: number
   x1: number
   y1: number
+  // Berechnung / Format / Wertebereich (nur Textfelder)
+  format_kind: 'none' | 'number' | 'currency' | 'percent'
+  format_decimals: number
+  format_currency: string
+  calc_kind: 'none' | 'sum' | 'product' | 'average' | 'min' | 'max' | 'formula'
+  calc_fields: string
+  calc_formula: string
+  calc_readonly: boolean
+  validate_min: string
+  validate_max: string
 }
 
 interface ApiField {
@@ -318,6 +400,24 @@ function typeIcon(t: FieldType): string {
   return fieldTypes.find((x) => x.value === t)?.icon ?? '▭'
 }
 
+// Andere Felder als mögliche Rechenquellen (Textfelder mit Namen)
+const otherFieldNames = computed(() =>
+  fields.value
+    .filter((f) => f.id !== selectedId.value && f.name.trim() && ['text', 'textarea'].includes(f.type))
+    .map((f) => f.name.trim()),
+)
+const calcFieldList = computed(() =>
+  (selected.value?.calc_fields ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+)
+
+function toggleCalcField(name: string) {
+  const s = selected.value
+  if (!s) return
+  const list = calcFieldList.value
+  const next = list.includes(name) ? list.filter((n) => n !== name) : [...list, name]
+  s.calc_fields = next.join(', ')
+}
+
 // ── Layout: lokal speichern (localStorage + JSON-Datei) ──────
 
 function serializeLayout() {
@@ -373,6 +473,21 @@ function normalizeField(raw: Record<string, unknown>): DesignerField | null {
     y0: clamp01(num(raw.y0, 0.1)),
     x1: clamp01(num(raw.x1, 0.4)),
     y1: clamp01(num(raw.y1, 0.14)),
+    format_kind: (['number', 'currency', 'percent'].includes(String(raw.format_kind))
+      ? String(raw.format_kind)
+      : 'none') as DesignerField['format_kind'],
+    format_decimals: Math.max(0, Math.min(6, num(raw.format_decimals, 2))),
+    format_currency: String(raw.format_currency ?? 'EUR'),
+    calc_kind: (['sum', 'product', 'average', 'min', 'max', 'formula'].includes(String(raw.calc_kind))
+      ? String(raw.calc_kind)
+      : 'none') as DesignerField['calc_kind'],
+    calc_fields: Array.isArray(raw.calc_fields)
+      ? (raw.calc_fields as unknown[]).map(String).join(', ')
+      : String(raw.calc_fields ?? ''),
+    calc_formula: String(raw.calc_formula ?? ''),
+    calc_readonly: raw.calc_readonly === undefined ? true : Boolean(raw.calc_readonly),
+    validate_min: raw.validate_min === undefined || raw.validate_min === null ? '' : String(raw.validate_min),
+    validate_max: raw.validate_max === undefined || raw.validate_max === null ? '' : String(raw.validate_max),
   }
 }
 
@@ -572,6 +687,15 @@ function onUp() {
     y0: r4(y0),
     x1: r4(x1),
     y1: r4(y1),
+    format_kind: 'none',
+    format_decimals: 2,
+    format_currency: 'EUR',
+    calc_kind: 'none',
+    calc_fields: '',
+    calc_formula: '',
+    calc_readonly: true,
+    validate_min: '',
+    validate_max: '',
   })
   selectedId.value = fields.value[fields.value.length - 1].id
   restoredHint.value = ''
@@ -639,6 +763,23 @@ function payload() {
     y0: f.y0,
     x1: f.x1,
     y1: f.y1,
+    format:
+      f.format_kind === 'none'
+        ? {}
+        : { kind: f.format_kind, decimals: f.format_decimals, currency: f.format_currency },
+    calc:
+      f.calc_kind === 'none'
+        ? {}
+        : {
+            kind: f.calc_kind,
+            fields: f.calc_fields.split(',').map((n) => n.trim()).filter(Boolean),
+            formula: f.calc_formula,
+          },
+    calc_readonly: f.calc_readonly,
+    validate:
+      f.validate_min === '' && f.validate_max === ''
+        ? {}
+        : { min: f.validate_min === '' ? null : Number(f.validate_min), max: f.validate_max === '' ? null : Number(f.validate_max) },
   }))
 }
 

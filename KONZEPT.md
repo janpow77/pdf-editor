@@ -131,10 +131,46 @@ Dropdown, Liste, Signaturfeld.
 - **Robustheit**: Feldnamen werden für AcroForm saniert (Punkt/Klammern/
   Steuerzeichen → `_`), Namenskollisionen erhalten Suffixe, fehlerhafte
   Einzelfelder brechen den Vorgang nicht ab (Ergebnis + `warnings`).
+- **Berechnung, Format, Wertebereich**: pro Textfeld Summe/Produkt/Mittelwert/
+  Minimum/Maximum über ausgewählte Felder oder eine Formel über Feldnamen;
+  Zahl-, Währungs- und Prozentformat mit deutschen Trennzeichen; Min/Max-Prüfung.
+  Umgesetzt als PDF-Aktionen (`AFSimple_Calc`, `AFNumber_Format`,
+  `AFRange_Validate`); PyMuPDF pflegt die Berechnungsreihenfolge `/CO`, zusätzlich
+  wird `NeedAppearances` gesetzt. Rechenfelder sind standardmäßig schreibgeschützt.
+  **Sicherheitsentscheidung**: freies JavaScript wird nicht übernommen — der
+  Dienst kompiliert das Skript selbst aus einer geprüften Formel (nur Feldnamen,
+  Zahlen, Grundrechenarten, Klammern, max. 200 Zeichen). Sonst wäre die App ein
+  bequemer Weg, beliebiges JS in fremde PDFs zu schreiben; ein Regressionstest
+  hält typische Angriffsformeln (`app.alert`, `submitForm`, `eval`) fest.
+  Ausgeführt werden die Aktionen vom Viewer (Acrobat & Co.) — das UI sagt das.
+- **CSV**: Feldwerte exportieren (Semikolon, UTF-8-BOM → Excel), leere Vorlage
+  mit allen Feldnamen erzeugen und **Serienbefüllung** aus CSV — eine Zeile
+  ergibt ein PDF, die Spalte `dateiname` bestimmt den Namen, mehrere Zeilen
+  kommen als ZIP (max. 200 Zeilen, unbekannte Spalten werden als Hinweis
+  gemeldet statt still verworfen).
 - **Grenze (dokumentiert)**: Optionsfelder/Radio-Gruppen fehlen — PyMuPDF 1.28
   kann mehrere Radio-Widgets derselben Gruppe nicht anlegen („bad xref") und
   liefert keine getrennten On-States; das UI verweist auf Dropdown bzw.
-  Kontrollkästchen. Offen bleibt der CSV-Export der Felddaten.
+  Kontrollkästchen.
+
+### Konzept-Endausbau (2026-07-30) — umgesetzt
+
+Alle übrigen Katalogpunkte ohne Speicher-/Cloud-Konflikt:
+
+- **Stapelsignatur** und **Umbenennen** als Batch-Operationen (Zertifikat gilt
+  für den ganzen Lauf, Muster `{name}`/`{n}` mit einstellbarer Stellenzahl).
+- **Signaturprüfung mit Vertrauensankern**: eigene Wurzelzertifikate (PEM/DER)
+  hochladbar; erst damit wird die Vertrauenskette bewertet, sonst weist der
+  Bericht sie ehrlich als „nicht bewertet" aus.
+- **Bild ersetzen**: alle Bilder mit Vorschau, Seite und Pixelmaß auflisten,
+  eines auswählen und austauschen — Position und Layout bleiben erhalten.
+- **KI-Modi erweitert**: neben Zusammenfassen und Fragen jetzt Übersetzen (freie
+  Zielsprache), Schlagwörter und Gliederungsvorschlag — weiterhin ausschließlich
+  über das lokale LLM.
+
+Was bewusst offen bleibt (Zusammenarbeit/DMS/Cloud, Live-Webseiten→PDF wegen
+SSRF, QES/EU-Trusted-Lists, XFA, Handschrift-OCR, PDF→PowerPoint/EPUB,
+SDK/Plugin-System), steht mit Begründung in MODULKATALOG_2026.md.
 
 ### Optionale Konten — vorgezogen und umgesetzt
 
@@ -288,6 +324,10 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | F11 | PDF→Word valides DOCX; `/api/pdf-convert/status` im Container `tabula: true` | `test_pdf_converter.py` + Container-curl | ✅ automatisiert |
 | F12 | Formular-Designer: alle 6 Feldtypen landen als AcroForm im PDF (Typ, Auswahlwerte, Flags, Position maßstabsgetreu), erzeugte Felder sind mit „Formular ausfüllen" befüllbar | `test_form_designer.py` (10 Fälle) + Browser-E2E mit Feld-Prüfung im erzeugten PDF | ✅ automatisiert + live geprüft |
 | F13 | Layout lokal: Autosave in localStorage, JSON-Datei-Export, Import von JSON und von vorhandenen PDF-Feldern — ohne jede Server-Speicherung | Browser-E2E (11 Schritte: ziehen → autosave → prüfen → JSON speichern → erzeugen → leeren → importieren → PDF-Felder übernehmen) | ✅ live geprüft |
+| F14 | Formular-Berechnungen: Rechen-, Format- und Prüfaktion stehen normkonform im PDF (inkl. `/CO`), Rechenfeld schreibgeschützt | `test_form_advanced.py` + Browser-E2E mit Auslesen der Aktionen aus dem erzeugten PDF | ✅ automatisiert + live geprüft |
+| F15 | Kein freies JavaScript im PDF: `app.alert`, `submitForm`, `eval` u.ä. werden abgelehnt, Feld bleibt ohne Skript | `test_form_advanced.py::test_formula_rejects_javascript` | ✅ automatisiert |
+| F16 | CSV: Werte-Export, Vorlage, Serienbefüllung (Zeile → PDF, `dateiname`, ZIP ab zwei Zeilen, 200-Zeilen-Grenze, Hinweis bei unbekannten Spalten) | `test_form_advanced.py` (7 Fälle) + Browser-E2E mit Prüfung der befüllten Werte im ZIP | ✅ automatisiert + live geprüft |
+| F17 | Stapelsignatur und Umbenennen im Batch; Bild ersetzen behält Position; Vertrauensanker liefern echtes Vertrauensurteil | `test_form_advanced.py` + Browser-E2E (Umbenennen, Bildaustausch im PDF nachgemessen) | ✅ automatisiert + live geprüft |
 | D1 | Keine Datei-Persistenz nach Verarbeitung | Dateisystem-Diff vor/nach 7-Operationen-Serie | ✅ live geprüft (0 neue Dateien) |
 | D2 | users-Tabelle nur E-Mail/Hash/Rolle/Flags/Prefs/Zeitstempel — keine IP | `\d users` + Code-Review models.py | ✅ per Modell |
 | D3 | Mail-Adresse nie in Logs (Erfolg + Fehlerpfade) | Log-Grep nach Testversand gegen Debug-SMTP | ✅ live geprüft (0 Treffer, SMTP-Gegenprobe positiv) |
@@ -313,6 +353,7 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | 1.6c | Restpunkte: TOC-Editor, Async-Jobs, E-Mail-Verifikation, Passwort-Reset, Turnstile, Alembic | ✅ |
 | 1.6d | Modulkatalog-Ausbau: Office→PDF, Exporte (MD/HTML/JSON/CSV), Bereinigen, Rechte, Signaturprüfung, TSA, Prüfakte, Qualitätsprüfung, lokale KI, Rolodex-Dashboard | ✅ |
 | 1.6e | Formular-Designer (Felder aufziehen, Prüflauf, Layout lokal speichern + importieren, Übernahme vorhandener Felder) | ✅ |
+| 1.6f | Endausbau: Formular-Berechnungen/Format/Wertebereich, CSV-Export + Serienbefüllung, Stapelsignatur, Umbenennen, Vertrauensanker, Bild ersetzen, KI-Modi | ✅ |
 | 1.7 | Anbieterdaten eintragen, SMTP-Zugang konfigurieren, Tunnel anlegen, Erst-Deploy | offen |
 | 1.8 | Repo-Extraktion + CI (ghcr-Images, Smoke-Test-Gate) | offen |
-| 2 | Verbleibende Katalog-Lücken ohne Speicher-Konflikt: Formular-CSV-Export, Batch-Signierung, KI-Übersetzung/Schlagwörter, Vertrauensanker für Signaturprüfung | offen |
+| 2 | Plattform-Entscheidung: Zusammenarbeit/DMS/Cloud nur als getrenntes Opt-in-Modul mit Dokumentablage — oder dem Ökosystem überlassen und die App als dessen Verarbeitungs-API positionieren (Empfehlung) | offen |

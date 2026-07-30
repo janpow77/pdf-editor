@@ -149,6 +149,7 @@ import PdfFormFill from '@/components/tools/PdfFormFill.vue'
 import PdfFormDesigner from '@/components/tools/PdfFormDesigner.vue'
 import PdfPdfa from '@/components/tools/PdfPdfa.vue'
 import PdfSignImage from '@/components/tools/PdfSignImage.vue'
+import PdfImageReplace from '@/components/tools/PdfImageReplace.vue'
 import PdfAnnotate from '@/components/tools/PdfAnnotate.vue'
 import PdfSignDigital from '@/components/tools/PdfSignDigital.vue'
 import PdfScanOptimize from '@/components/tools/PdfScanOptimize.vue'
@@ -207,6 +208,7 @@ const toolComponents: Record<string, Component> = {
   formDesigner: markRaw(PdfFormDesigner),
   pdfa: markRaw(PdfPdfa),
   signImage: markRaw(PdfSignImage),
+  imageReplace: markRaw(PdfImageReplace),
   annotate: markRaw(PdfAnnotate),
   signDigital: markRaw(PdfSignDigital),
   scanOptimize: markRaw(PdfScanOptimize),
@@ -262,6 +264,7 @@ const pdfTools = computed<Tool[]>(() => [
   { id: 'formDesigner', label: 'Formular-Designer', desc: 'Felder anlegen, Layout lokal speichern', icon: '🧩', color: TILE },
   { id: 'formFill', label: 'Formular ausfüllen', desc: 'AcroForm-Felder', icon: '📋', color: TILE },
   { id: 'signImage', label: 'Unterschrift', desc: 'Bild-Signatur einfügen', icon: '✍️', color: TILE },
+  { id: 'imageReplace', label: 'Bild ersetzen', desc: 'Logo/Grafik austauschen', icon: '🖌️', color: TILE },
   { id: 'pdfa', label: 'PDF/A', desc: 'Archivformat', icon: '🗄️', color: TILE },
   { id: 'flatten', label: 'Einbrennen', desc: 'Anmerkungen fixieren', icon: '🔥', color: TILE },
   { id: 'signDigital', label: 'Digital signieren', desc: 'Mit Zertifikat (PAdES)', icon: '🔏', color: TILE },

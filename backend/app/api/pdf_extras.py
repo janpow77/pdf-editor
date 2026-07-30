@@ -92,6 +92,69 @@ async def form_fill(
     )
 
 
+@router.post("/form/export-csv")
+async def form_export_csv(
+    file: UploadFile = File(...),
+    template: bool = Form(
+        False, description="Statt der Werte eine leere Vorlage für die Serienbefüllung"
+    ),
+):
+    """Formularfelder als CSV (Semikolon, UTF-8-BOM — Excel-tauglich)."""
+    content = await file.read()
+    _validate_pdf(file, content)
+    service = get_pdf_extras()
+    result = (
+        service.export_values_template_csv(content)
+        if template
+        else service.export_field_values_csv(content)
+    )
+    if not result.success:
+        raise HTTPException(status_code=422, detail=result.error)
+    suffix = "_vorlage" if template else "_formulardaten"
+    return StreamingResponse(
+        io.BytesIO(result.file_content),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{_safe_name(_name(file))}{suffix}.csv"',
+            "X-Fields": str((result.metadata or {}).get("fields", 0)),
+        },
+    )
+
+
+@router.post("/form/fill-csv")
+async def form_fill_csv(
+    file: UploadFile = File(...),
+    data: UploadFile = File(..., description="CSV mit Kopfzeile aus Feldnamen"),
+    flatten: bool = Form(False),
+):
+    """Serienbefüllung: eine CSV-Zeile ergibt ein ausgefülltes PDF."""
+    content = await file.read()
+    _validate_pdf(file, content)
+    if not data.filename or not data.filename.lower().endswith((".csv", ".txt")):
+        raise HTTPException(status_code=400, detail="Datenquelle muss eine CSV-Datei sein")
+    csv_content = await data.read()
+    if len(csv_content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="CSV-Datei zu groß (max 5 MB)")
+    result = get_pdf_extras().fill_from_csv(content, csv_content, flatten=flatten)
+    if not result.success:
+        raise HTTPException(status_code=422, detail=result.error)
+    meta = result.metadata or {}
+    headers = {
+        "X-Rows": str(meta.get("rows", 0)),
+        "X-Warnings": str(len(result.warnings or [])),
+    }
+    if result.output_format == "pdf":
+        return _pdf_response(result.file_content, str(meta.get("filename", "formular.pdf")), headers)
+    return StreamingResponse(
+        io.BytesIO(result.file_content),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="formulare.zip"',
+            **headers,
+        },
+    )
+
+
 @router.post("/form/create")
 async def form_create(
     file: UploadFile = File(...),
@@ -312,9 +375,16 @@ def scan_optimize(
 def batch_apply(
     files: list[UploadFile] = File(...),
     operation: str = Form(
-        ..., description="compress | rotate | protect | bates | pdfa | watermark | clean"
+        ...,
+        description=(
+            "compress | rotate | protect | bates | pdfa | watermark | clean | sign | rename"
+        ),
     ),
     params: str = Form("{}", description="JSON-Objekt mit Operations-Parametern"),
+    certificate: UploadFile | None = File(
+        None, description="Nur für operation=sign: PKCS#12-Zertifikat (.p12/.pfx)"
+    ),
+    passphrase: str = Form("", description="Nur für operation=sign: Zertifikats-Passwort"),
 ):
     """Eine Operation auf viele Dateien anwenden — Ergebnis als ZIP."""
     if len(files) < 1:
@@ -341,7 +411,20 @@ def batch_apply(
         _validate_pdf(f, content)
         file_data.append((f.filename or f"datei_{len(file_data)}.pdf", content))
 
-    result = get_pdf_extras().batch_apply(file_data, operation, params_dict)
+    cert: tuple[bytes, str] | None = None
+    if operation == "sign":
+        if certificate is None or not certificate.filename:
+            raise HTTPException(
+                status_code=400, detail="Für die Stapelsignatur wird ein Zertifikat benötigt"
+            )
+        if not certificate.filename.lower().endswith((".p12", ".pfx")):
+            raise HTTPException(status_code=400, detail="Zertifikat muss .p12/.pfx sein")
+        p12 = certificate.file.read()
+        if len(p12) > 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Zertifikatsdatei zu groß")
+        cert = (p12, passphrase)
+
+    result = get_pdf_extras().batch_apply(file_data, operation, params_dict, certificate=cert)
     if not result.success:
         raise HTTPException(status_code=422, detail=result.error)
     meta = result.metadata or {}
