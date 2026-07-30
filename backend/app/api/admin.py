@@ -12,7 +12,9 @@ from app.api.deps import require_admin
 from app.config import settings
 from app.db import get_db
 from app.models import User, UserRole
-from app.schemas_auth import AdminUserResponse, AdminUserUpdate
+from app.schemas_auth import AdminUserResponse, AdminUserUpdate, ToolAccessUpdate
+from app.tool_access import get_login_required_tools, set_login_required_tools
+from app.tool_catalog import TOOL_CATALOG, TOOL_IDS
 
 router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(require_admin)])
 
@@ -107,3 +109,35 @@ def get_config():
         "mail_max_attachment_mb": settings.mail_max_attachment_mb,
         "preferences_max_bytes": settings.preferences_max_bytes,
     }
+
+
+# ── Werkzeug-Freigabe ─────────────────────────────────────────
+
+
+@router.get("/tool-access")
+def get_tool_access():
+    """Alle Werkzeuge mit dem Kennzeichen, ob sie eine Anmeldung verlangen."""
+    restricted = get_login_required_tools(force=True)
+    return {
+        "tools": [
+            {
+                "id": t.id,
+                "label": t.label,
+                "group": t.group,
+                "login_required": t.id in restricted,
+            }
+            for t in TOOL_CATALOG
+        ],
+        "login_required": sorted(restricted),
+    }
+
+
+@router.put("/tool-access")
+def update_tool_access(payload: ToolAccessUpdate):
+    """Liste der Werkzeuge setzen, die eine Anmeldung verlangen.
+
+    Unbekannte IDs werden verworfen; eine leere Liste hebt alle Sperren auf.
+    """
+    unknown = sorted(set(payload.login_required) - TOOL_IDS)
+    saved = set_login_required_tools(payload.login_required)
+    return {"login_required": sorted(saved), "ignored": unknown}

@@ -3,7 +3,7 @@
 import re
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 def _validate_password(v: str) -> str:
@@ -72,3 +72,9 @@ class AdminUserUpdate(BaseModel):
 
 class AccountDelete(BaseModel):
     password: str
+
+
+class ToolAccessUpdate(BaseModel):
+    """Werkzeuge, die nur angemeldeten Nutzern offenstehen (Werkzeug-IDs)."""
+
+    login_required: list[str] = Field(default_factory=list, max_length=200)

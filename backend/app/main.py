@@ -26,9 +26,10 @@ from app.api import (
     pdf_more,
     pdf_tools,
 )
-from app.api.deps import attach_upload_limits
+from app.api.deps import attach_upload_limits, enforce_tool_access
 from app.config import settings
 from app.ratelimit import RateTierMiddleware, limiter
+from app.tool_access import get_login_required_tools, set_db_available
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -102,6 +103,7 @@ async def lifespan(app: FastAPI):
             "(JWT wäre fälschbar). Anonyme Nutzung läuft weiter."
         )
         app.state.db_available = False
+        set_db_available(False)
         yield
         return
 
@@ -110,11 +112,13 @@ async def lifespan(app: FastAPI):
         _ensure_user_columns(app_db.engine)
         seed_admin()
         app.state.db_available = True
+        set_db_available(True)
     except OperationalError:
         logger.warning(
             "Datenbank nicht erreichbar — Benutzerkonten deaktiviert, anonyme Nutzung läuft weiter"
         )
         app.state.db_available = False
+        set_db_available(False)
     yield
 
 
@@ -163,6 +167,8 @@ async def health(request: Request):
         "accounts": bool(getattr(request.app.state, "db_available", False)),
         "turnstile_site_key": settings.turnstile_site_key or None,
         "account_flows": bool(settings.smtp_host and settings.public_base_url),
+        # Werkzeuge, die der Betreiber auf angemeldete Nutzer beschränkt hat
+        "login_required_tools": sorted(get_login_required_tools()),
         "features": {
             **get_pdf_tools().check_features(),
             **get_pdf_extras().check_features(),
@@ -172,7 +178,8 @@ async def health(request: Request):
 
 
 # Datei-Router bekommen die gestuften Upload-Limits (anonym vs. angemeldet)
-_limit_deps = [Depends(attach_upload_limits)]
+# und die Werkzeug-Freigabe (vom Admin gesperrte Werkzeuge → 403 ohne Login)
+_limit_deps = [Depends(attach_upload_limits), Depends(enforce_tool_access)]
 app.include_router(pdf_tools.router, prefix="/api", dependencies=_limit_deps)
 app.include_router(pdf_editor.router, prefix="/api", dependencies=_limit_deps)
 app.include_router(pdf_converter.router, prefix="/api", dependencies=_limit_deps)

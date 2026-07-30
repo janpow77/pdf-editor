@@ -172,13 +172,44 @@ Was bewusst offen bleibt (Zusammenarbeit/DMS/Cloud, Live-Webseiten→PDF wegen
 SSRF, QES/EU-Trusted-Lists, XFA, Handschrift-OCR, PDF→PowerPoint/EPUB,
 SDK/Plugin-System), steht mit Begründung in MODULKATALOG_2026.md.
 
+### Werkzeug-Freigabe durch den Administrator (2026-07-30) — umgesetzt
+
+Der Betreiber entscheidet im Admin-Bereich pro Werkzeug, ob es allen offensteht
+oder eine Anmeldung verlangt. Auslieferungszustand: **nichts beschränkt.**
+
+- **Oberfläche**: beschränkte Kacheln erscheinen für nicht angemeldete Besucher
+  ausgegraut, mit Schloss-Symbol und „Nur mit Anmeldung" statt der
+  Beschreibung — im Raster wie in der Rolodex-Ansicht. Ein Klick führt auf die
+  Anmeldeseite, die erklärt, warum. Der Hinweisbanner zählt die gesperrten
+  Werkzeuge, damit die Aussage „keine Registrierung erforderlich" nicht
+  unbemerkt falsch wird.
+- **Durchsetzung serverseitig**: Ausgrauen allein wäre wirkungslos (jeder könnte
+  die API direkt aufrufen). Eine Router-Dependency ordnet jeden Request über
+  einen Werkzeug-Katalog (`app/tool_catalog.py`) einem Werkzeug zu und
+  beantwortet gesperrte Aufrufe ohne Anmeldung mit **403**. Werkzeuge mit
+  mehreren Endpunkten (z.B. Schützen/Entsperren, KI-Modi) sind vollständig
+  gesperrt; gemeinsam genutzte Vorschau-Endpunkte (Thumbnails, Metadaten lesen,
+  Formularfelder lesen) gehören zu keinem Werkzeug und bleiben offen.
+- **Speicherung**: eine Zeile in `app_settings` (JSON-Liste der Werkzeug-IDs),
+  keine personenbezogenen Daten; Alembic-Migration `0002`.
+- **Kein DB-Zugriff pro Anfrage**: die Liste liegt im Prozess-Cache und wird
+  höchstens alle 30 Sekunden nachgeladen, bei Admin-Änderungen sofort. Ohne
+  Datenbank wird gar nicht gelesen.
+- **Fail-open bewusst**: ist die Datenbank nicht erreichbar, sperrt nichts. Ohne
+  DB kann sich niemand anmelden — eine Sperre wäre dann eine Sperre für alle.
+- **Konsistenz-Test**: ein pytest-Fall vergleicht die Werkzeug-IDs des Backends
+  mit den Kacheln in `ToolGrid.vue`, ein zweiter prüft, dass jeder Katalog-Pfad
+  einer echten Route entspricht. Damit kann die Zuordnung nicht unbemerkt
+  auseinanderlaufen.
+
 ### Optionale Konten — vorgezogen und umgesetzt
 
 Ursprünglich Phase 3, auf Nutzerwunsch vorgezogen. Grundsätze (alle eingehalten):
 
-- Anonyme Nutzung bleibt vollwertig — kein Feature-Gating hinter Login; ohne
-  erreichbare Datenbank läuft die App automatisch rein anonym weiter
-  (`/api/health` → `accounts: false`).
+- Anonyme Nutzung bleibt im Auslieferungszustand vollwertig — kein Feature-Gating
+  hinter Login; ohne erreichbare Datenbank läuft die App automatisch rein anonym
+  weiter (`/api/health` → `accounts: false`). Der Betreiber kann einzelne
+  Werkzeuge bewusst auf Angemeldete beschränken (siehe „Werkzeug-Freigabe").
 - Ausdrückliche Einwilligung per Pflicht-Checkbox bei der Registrierung; die
   Datenschutzerklärung ist differenziert (ohne Konto wird nichts gespeichert; mit
   Konto nur E-Mail, bcrypt-Hash, Einstellungen, Zeitstempel).
@@ -328,10 +359,12 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | F15 | Kein freies JavaScript im PDF: `app.alert`, `submitForm`, `eval` u.ä. werden abgelehnt, Feld bleibt ohne Skript | `test_form_advanced.py::test_formula_rejects_javascript` | ✅ automatisiert |
 | F16 | CSV: Werte-Export, Vorlage, Serienbefüllung (Zeile → PDF, `dateiname`, ZIP ab zwei Zeilen, 200-Zeilen-Grenze, Hinweis bei unbekannten Spalten) | `test_form_advanced.py` (7 Fälle) + Browser-E2E mit Prüfung der befüllten Werte im ZIP | ✅ automatisiert + live geprüft |
 | F17 | Stapelsignatur und Umbenennen im Batch; Bild ersetzen behält Position; Vertrauensanker liefern echtes Vertrauensurteil | `test_form_advanced.py` + Browser-E2E (Umbenennen, Bildaustausch im PDF nachgemessen) | ✅ automatisiert + live geprüft |
+| F18 | Werkzeug-Freigabe: Admin sperrt Werkzeuge; anonym → Kachel ausgegraut mit Anmelde-Hinweis, API antwortet 403; angemeldet nutzbar; Aufheben wirkt sofort | `test_tool_access.py` (15 Fälle) + Browser-E2E (9 Schritte, inkl. direktem API-Aufruf aus der Seite) | ✅ automatisiert + live geprüft |
+| F19 | Katalog-Konsistenz: Backend-Werkzeug-IDs = Kacheln der Oberfläche; jeder Katalog-Pfad ist eine echte Route; gemeinsame Vorschau-Endpunkte bleiben frei | `test_tool_access.py::test_catalog_matches_frontend_tiles` / `::test_catalog_paths_exist_in_app` / `::test_shared_preview_endpoint_stays_open` | ✅ automatisiert |
 | D1 | Keine Datei-Persistenz nach Verarbeitung | Dateisystem-Diff vor/nach 7-Operationen-Serie | ✅ live geprüft (0 neue Dateien) |
 | D2 | users-Tabelle nur E-Mail/Hash/Rolle/Flags/Prefs/Zeitstempel — keine IP | `\d users` + Code-Review models.py | ✅ per Modell |
 | D3 | Mail-Adresse nie in Logs (Erfolg + Fehlerpfade) | Log-Grep nach Testversand gegen Debug-SMTP | ✅ live geprüft (0 Treffer, SMTP-Gegenprobe positiv) |
-| D4 | Anonym ohne DB-Zugriff; App läuft bei gestopptem Postgres weiter | Live-Test mit nicht erreichbarer DB | ✅ live geprüft (accounts:false, Register 503, Merge 200) |
+| D4 | Anonyme Verarbeitung ohne DB-Zugriff; App läuft bei gestopptem Postgres weiter. Einzige DB-Berührung im anonymen Pfad ist das Nachladen der Werkzeug-Freigabe (max. alle 30 s, ohne DB gar nicht, fail-open) | Live-Test mit nicht erreichbarer DB + `test_tool_access.py::test_without_database_nothing_is_restricted` | ✅ live geprüft (accounts:false, Register 503, Merge 200) |
 | D5 | Registrierung nur mit Pflicht-Checkbox + Datenschutz-Link | Browser-Prüfung RegisterView | ✅ umgesetzt |
 | D6 | Hinweis konsistent (Banner/Badge/Footer + Konto-Absatz) | Review der vier Hinweis-Stellen | ✅ umgesetzt |
 | S1 | Anonyme Regression: Tools ohne Login byte-identisch | Smoke-Tests unverändert grün | ✅ automatisiert |

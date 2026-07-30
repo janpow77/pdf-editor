@@ -10,6 +10,11 @@ Admin wird per Env-Variablen (`PDFAPP_ADMIN_EMAIL`/`PDFAPP_ADMIN_PASSWORD`) beim
 angelegt; Admin-Bereich unter `/admin`. Konten liegen in PostgreSQL — ohne erreichbare
 Datenbank läuft die App automatisch im rein anonymen Modus weiter.
 
+Im Admin-Bereich lässt sich außerdem pro Werkzeug festlegen, ob es **nur angemeldeten
+Nutzern** offensteht (Auslieferungszustand: nichts beschränkt). Beschränkte Werkzeuge
+erscheinen für anonyme Besucher ausgegraut mit Hinweis auf die Anmeldung und werden
+serverseitig mit HTTP 403 abgewiesen — nicht nur in der Oberfläche versteckt.
+
 Konzept, Phasenplan, Soll-Kriterien und Datenschutz-Details: [KONZEPT.md](./KONZEPT.md)
 
 ## Quickstart (lokal)

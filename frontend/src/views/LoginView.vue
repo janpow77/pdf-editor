@@ -1,8 +1,15 @@
 <template>
   <div class="max-w-md mx-auto px-4 py-12">
     <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Anmelden</h1>
+    <div
+      v-if="requestedTool"
+      class="mb-4 p-3 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-700 rounded-lg text-sm text-primary-800 dark:text-primary-300"
+    >
+      Das gewählte Werkzeug hat der Betreiber auf angemeldete Nutzer beschränkt.
+      Nach der Anmeldung steht es zur Verfügung — ein Konto ist kostenlos.
+    </div>
     <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
-      Ein Konto ist optional — alle Werkzeuge funktionieren auch ohne Anmeldung.
+      Ein Konto ist optional — die meisten Werkzeuge funktionieren auch ohne Anmeldung.
       Angemeldet gelten höhere Limits und Ihre gespeicherten Einstellungen.
     </p>
 
@@ -54,12 +61,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { login } from '@/lib/auth'
 
 const router = useRouter()
 const route = useRoute()
+// Von einer gesperrten Werkzeug-Kachel hierher geleitet?
+const requestedTool = computed(() => (route.query.werkzeug as string | undefined) || '')
 const email = ref('')
 const password = ref('')
 const loading = ref(false)

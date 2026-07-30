@@ -47,3 +47,22 @@ class User(Base):
     @property
     def is_locked(self) -> bool:
         return bool(self.locked_until and self.locked_until > datetime.utcnow())
+
+
+class AppSetting(Base):
+    """Betreiber-Einstellungen als Schlüssel/Wert-Paare (JSON).
+
+    Aktuell genutzt für `login_required_tools` — die vom Administrator
+    gepflegte Liste der Werkzeuge, die nur angemeldeten Nutzern offenstehen.
+    Enthält bewusst keine personenbezogenen Daten.
+    """
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), default=dict
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )

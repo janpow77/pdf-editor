@@ -4,13 +4,15 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import SessionLocal, get_db
 from app.models import User, UserRole
 from app.security import decode_token, oauth2_scheme
+from app.tool_access import get_login_required_tools
+from app.tool_catalog import resolve_tool
 
 
 def _resolve_user(token: str, db: Session) -> User:
@@ -68,6 +70,30 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Nur für Administratoren")
     return user
+
+
+async def enforce_tool_access(
+    request: Request, user: User | None = Depends(get_optional_user)
+) -> None:
+    """Router-Dependency: vom Administrator gesperrte Werkzeuge sind ohne
+    Anmeldung nicht nutzbar.
+
+    Die Sperre wird hier serverseitig durchgesetzt — das Ausgrauen in der
+    Oberfläche ist nur Komfort und ließe sich umgehen. Gemeinsame Vorschau-
+    Endpunkte (Thumbnails, Metadaten lesen …) gehören zu keinem Werkzeug und
+    bleiben offen.
+    """
+    if user is not None:
+        return
+    tool_id = resolve_tool(request.url.path)
+    if tool_id and tool_id in get_login_required_tools():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Dieses Werkzeug steht nur angemeldeten Nutzern zur Verfügung. "
+                "Bitte melden Sie sich an — ein Konto ist kostenlos."
+            ),
+        )
 
 
 @dataclass

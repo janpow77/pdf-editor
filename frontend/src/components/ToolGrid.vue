@@ -35,16 +35,33 @@
             <button
               v-for="tool in section.tools"
               :key="tool.id"
-              class="flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
-                     rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-gray-300 dark:hover:border-gray-500
-                     transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 group"
-              @click="activeTool = tool.id"
+              class="relative flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
+                     rounded-xl shadow-sm transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 group"
+              :class="isLocked(tool.id)
+                ? 'opacity-60 hover:border-primary-300'
+                : 'hover:shadow-md hover:-translate-y-0.5 hover:border-gray-300 dark:hover:border-gray-500'"
+              :title="isLocked(tool.id) ? LOCK_HINT : tool.desc"
+              @click="openTool(tool.id)"
             >
-              <div class="w-10 h-10 rounded-lg flex items-center justify-center text-xl" :class="tool.color">
+              <span
+                v-if="isLocked(tool.id)"
+                class="absolute top-1.5 right-2 text-xs text-gray-400 dark:text-gray-500"
+                aria-hidden="true"
+              >🔒</span>
+              <div
+                class="w-10 h-10 rounded-lg flex items-center justify-center text-xl"
+                :class="[tool.color, isLocked(tool.id) ? 'grayscale' : '']"
+              >
                 {{ tool.icon }}
               </div>
-              <span class="text-sm font-medium text-gray-900 dark:text-white text-center">{{ tool.label }}</span>
-              <span class="text-xs text-gray-500 dark:text-gray-400 text-center">{{ tool.desc }}</span>
+              <span
+                class="text-sm font-medium text-center"
+                :class="isLocked(tool.id) ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'"
+              >{{ tool.label }}</span>
+              <span v-if="isLocked(tool.id)" class="text-xs text-primary-600 dark:text-primary-400 text-center">
+                Nur mit Anmeldung
+              </span>
+              <span v-else class="text-xs text-gray-500 dark:text-gray-400 text-center">{{ tool.desc }}</span>
             </button>
           </div>
         </div>
@@ -76,15 +93,28 @@
                    bg-white dark:bg-gray-800 border rounded-2xl shadow-lg
                    transition-all duration-300 ease-out will-change-transform
                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-            :class="i === rolodexIndex ? 'border-primary-400 dark:border-primary-500' : 'border-gray-200 dark:border-gray-700'"
+            :class="[
+              i === rolodexIndex ? 'border-primary-400 dark:border-primary-500' : 'border-gray-200 dark:border-gray-700',
+              isLocked(tool.id) ? 'opacity-70' : '',
+            ]"
             :style="cardStyle(i)"
-            @click="i === rolodexIndex ? (activeTool = tool.id) : (rolodexIndex = i)"
+            :title="isLocked(tool.id) ? LOCK_HINT : tool.desc"
+            @click="i === rolodexIndex ? openTool(tool.id) : (rolodexIndex = i)"
           >
-            <div class="w-14 h-14 rounded-xl flex items-center justify-center text-3xl" :class="tool.color">
+            <div
+              class="w-14 h-14 rounded-xl flex items-center justify-center text-3xl"
+              :class="[tool.color, isLocked(tool.id) ? 'grayscale' : '']"
+            >
               {{ tool.icon }}
             </div>
-            <span class="text-base font-semibold text-gray-900 dark:text-white text-center">{{ tool.label }}</span>
-            <span class="text-xs text-gray-500 dark:text-gray-400 text-center">{{ tool.desc }}</span>
+            <span
+              class="text-base font-semibold text-center"
+              :class="isLocked(tool.id) ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'"
+            >{{ tool.label }}</span>
+            <span v-if="isLocked(tool.id)" class="text-xs text-primary-600 dark:text-primary-400 text-center">
+              🔒 Nur mit Anmeldung
+            </span>
+            <span v-else class="text-xs text-gray-500 dark:text-gray-400 text-center">{{ tool.desc }}</span>
             <span class="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500">{{ tool.section }}</span>
           </button>
         </div>
@@ -123,7 +153,9 @@
 
 <script setup lang="ts">
 import { computed, markRaw, onMounted, ref, type Component } from 'vue'
+import { useRouter } from 'vue-router'
 import { apiGetJson } from '@/lib/api'
+import { isAuthenticated } from '@/lib/auth'
 import PdfMerge from '@/components/tools/PdfMerge.vue'
 import PdfSplit from '@/components/tools/PdfSplit.vue'
 import PdfRotate from '@/components/tools/PdfRotate.vue'
@@ -181,6 +213,23 @@ interface Tool {
 
 const activeTool = ref<string | null>(null)
 const aiAvailable = ref(false)
+// Werkzeuge, die der Betreiber auf angemeldete Nutzer beschränkt hat
+const lockedTools = ref<Set<string>>(new Set())
+const router = useRouter()
+
+const LOCK_HINT = 'Dieses Werkzeug steht nur angemeldeten Nutzern zur Verfügung — Konto ist kostenlos.'
+
+function isLocked(id: string): boolean {
+  return lockedTools.value.has(id) && !isAuthenticated.value
+}
+
+function openTool(id: string) {
+  if (isLocked(id)) {
+    router.push({ path: '/login', query: { werkzeug: id } })
+    return
+  }
+  activeTool.value = id
+}
 
 const toolComponents: Record<string, Component> = {
   merge: markRaw(PdfMerge),
@@ -350,10 +399,15 @@ function cardStyle(i: number): Record<string, string> {
 
 onMounted(async () => {
   try {
-    const health = await apiGetJson<{ features?: Record<string, boolean> }>('/api/health')
+    const health = await apiGetJson<{
+      features?: Record<string, boolean>
+      login_required_tools?: string[]
+    }>('/api/health')
     aiAvailable.value = Boolean(health.features?.ai)
+    lockedTools.value = new Set(health.login_required_tools ?? [])
   } catch {
     aiAvailable.value = false
+    lockedTools.value = new Set()
   }
 })
 </script>
