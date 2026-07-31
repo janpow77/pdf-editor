@@ -90,13 +90,13 @@
         <input ref="certInput" type="file" accept=".p12,.pfx" class="text-sm text-gray-600 dark:text-gray-300" @change="onCert" />
         <input v-model="passphrase" type="password" placeholder="Zertifikats-Passwort" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
         <input v-model="params.reason" type="text" placeholder="Grund (optional)" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-        <p class="text-xs text-gray-400">Zertifikat und Passwort werden nur für diesen Lauf verwendet und nicht gespeichert.</p>
+        <p class="text-xs text-gray-600 dark:text-gray-400">Zertifikat und Passwort werden nur für diesen Lauf verwendet und nicht gespeichert.</p>
       </div>
       <div v-else-if="operation === 'rename'" class="grid grid-cols-3 gap-3">
         <input v-model="params.pattern" type="text" placeholder="{name} oder AKTE-{n}_{name}" class="col-span-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
         <input v-model.number="params.start" type="number" min="0" placeholder="Startnummer" class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
         <input v-model.number="params.rename_digits" type="number" min="1" max="8" placeholder="Stellen" title="Stellen der Nummer" class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-        <p class="col-span-3 text-xs text-gray-400">Platzhalter: <code>{name}</code> = ursprünglicher Name, <code>{n}</code> = fortlaufende Nummer.</p>
+        <p class="col-span-3 text-xs text-gray-600 dark:text-gray-400">Platzhalter: <code>{name}</code> = ursprünglicher Name, <code>{n}</code> = fortlaufende Nummer.</p>
       </div>
     </div>
 

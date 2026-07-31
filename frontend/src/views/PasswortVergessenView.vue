@@ -29,7 +29,7 @@
     </form>
 
     <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">
-      <RouterLink to="/login" class="text-primary-600 dark:text-primary-400 hover:underline">Zurück zur Anmeldung</RouterLink>
+      <RouterLink to="/login" class="text-primary-700 dark:text-primary-400 underline hover:no-underline">Zurück zur Anmeldung</RouterLink>
     </p>
   </div>
 </template>

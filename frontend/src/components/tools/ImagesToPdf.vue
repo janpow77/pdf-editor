@@ -19,7 +19,7 @@
       <input ref="fileInput" type="file" accept="image/*" multiple class="hidden" @change="onFileSelect" />
       <p class="text-gray-500 dark:text-gray-400 mb-2">Bilder hierher ziehen oder</p>
       <button class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm" @click="($refs.fileInput as HTMLInputElement).click()">Bilder auswählen</button>
-      <p class="text-xs text-gray-400 mt-2">PNG, JPG, GIF, BMP, TIFF, WebP</p>
+      <p class="text-xs text-gray-600 dark:text-gray-400 mt-2">PNG, JPG, GIF, BMP, TIFF, WebP</p>
     </div>
 
     <!-- Preview grid -->

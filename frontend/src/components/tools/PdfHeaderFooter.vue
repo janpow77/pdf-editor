@@ -8,7 +8,7 @@
     <FileDrop v-model="file" />
 
     <div v-if="file" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <p class="text-xs text-gray-400">Platzhalter: {page}, {total}, {date}, {title}</p>
+      <p class="text-xs text-gray-600 dark:text-gray-400">Platzhalter: {page}, {total}, {date}, {title}</p>
       <div class="grid grid-cols-3 gap-3">
         <input v-model="fields.header_left" placeholder="Kopf links" class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
         <input v-model="fields.header_center" placeholder="Kopf Mitte" class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />

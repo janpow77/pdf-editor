@@ -45,7 +45,7 @@
             >
               <span
                 v-if="isLocked(tool.id)"
-                class="absolute top-1.5 right-2 text-xs text-gray-400 dark:text-gray-500"
+                class="absolute top-1.5 right-2 text-xs text-gray-600 dark:text-gray-400"
                 aria-hidden="true"
               >🔒</span>
               <div
@@ -115,7 +115,7 @@
               🔒 Nur mit Anmeldung
             </span>
             <span v-else class="text-xs text-gray-500 dark:text-gray-400 text-center">{{ tool.desc }}</span>
-            <span class="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500">{{ tool.section }}</span>
+            <span class="text-[10px] uppercase tracking-wider text-gray-600 dark:text-gray-400">{{ tool.section }}</span>
           </button>
         </div>
 
@@ -143,7 +143,7 @@
             →
           </button>
         </div>
-        <p class="text-center text-xs text-gray-400 dark:text-gray-500 mt-2">
+        <p class="text-center text-xs text-gray-600 dark:text-gray-400 mt-2">
           Pfeiltasten oder Mausrad zum Blättern · Klick auf die mittlere Karte öffnet das Werkzeug
         </p>
       </div>
@@ -154,8 +154,8 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref, type Component } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiGetJson } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
+import { getHealth } from '@/lib/health'
 
 interface Tool {
   id: string
@@ -347,7 +347,10 @@ function cardStyle(i: number): Record<string, string> {
   const scale = offset === 0 ? 1 : Math.max(0.7, 1 - abs * 0.1)
   return {
     transform: `translate(-50%, -50%) translateX(${translateX}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`,
-    opacity: String(Math.max(0.25, 1 - abs * 0.22)),
+    // Bewusst kein Ausblenden per opacity: die Tiefe entsteht über Skalierung,
+    // Drehung und z-Index. Ein Fade würde den Textkontrast der hinteren Karten
+    // unter die 4,5:1-Schwelle der BITV drücken (axe-Befund color-contrast).
+    opacity: '1',
     zIndex: String(100 - abs),
     cursor: offset === 0 ? 'pointer' : 'ew-resize',
   }
@@ -355,10 +358,7 @@ function cardStyle(i: number): Record<string, string> {
 
 onMounted(async () => {
   try {
-    const health = await apiGetJson<{
-      features?: Record<string, boolean>
-      login_required_tools?: string[]
-    }>('/api/health')
+    const health = await getHealth()
     aiAvailable.value = Boolean(health.features?.ai)
     lockedTools.value = new Set(health.login_required_tools ?? [])
   } catch {

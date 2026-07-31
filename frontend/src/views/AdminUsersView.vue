@@ -32,7 +32,7 @@
               <td class="py-2 pr-4 text-gray-500">{{ u.last_login ? new Date(u.last_login).toLocaleString('de-DE') : '—' }}</td>
               <td class="py-2 space-x-2 whitespace-nowrap">
                 <button
-                  class="text-primary-600 dark:text-primary-400 hover:underline"
+                  class="text-primary-700 dark:text-primary-400 underline hover:no-underline"
                   @click="toggleActive(u)"
                 >
                   {{ u.is_active ? 'Deaktivieren' : 'Aktivieren' }}
@@ -70,8 +70,8 @@
         <div v-for="group in toolGroups" :key="group.name">
           <div class="flex items-center gap-3 mb-2">
             <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ group.name }}</h3>
-            <button class="text-xs text-primary-600 hover:underline" @click="setGroup(group, true)">alle sperren</button>
-            <button class="text-xs text-primary-600 hover:underline" @click="setGroup(group, false)">alle freigeben</button>
+            <button class="text-xs text-primary-700 dark:text-primary-400 underline hover:no-underline" @click="setGroup(group, true)">alle sperren</button>
+            <button class="text-xs text-primary-700 dark:text-primary-400 underline hover:no-underline" @click="setGroup(group, false)">alle freigeben</button>
           </div>
           <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1">
             <label
@@ -126,6 +126,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { apiGetJson, apiJson } from '@/lib/api'
+import { invalidateHealth } from '@/lib/health'
 
 interface ToolAccessEntry {
   id: string
@@ -236,6 +237,10 @@ async function saveToolAccess() {
     restricted.value = new Set(saved)
     savedRestricted.value = new Set(saved)
     toolsSaved.value = true
+    // Kachelraster und Hinweisleiste lesen die Freigabe aus dem Health-Cache —
+    // nach dem Speichern muss der verworfen werden, sonst zeigt die Übersicht
+    // bis zu einer Minute den alten Stand.
+    invalidateHealth()
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Speichern fehlgeschlagen'
   } finally {

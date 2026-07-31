@@ -1,5 +1,14 @@
 <template>
   <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+    <!-- Sprunglink: erstes fokussierbares Element, sichtbar nur bei Tastaturfokus -->
+    <a
+      href="#hauptinhalt"
+      class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-2 focus:left-2
+             focus:px-4 focus:py-2 focus:rounded-lg focus:bg-primary-600 focus:text-white focus:shadow-lg"
+      @click="focusMain"
+    >
+      Zum Hauptinhalt springen
+    </a>
     <header class="sticky top-0 z-30 border-b border-gray-200/70 dark:border-gray-700/70 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md">
       <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
         <RouterLink to="/" class="flex items-center gap-2 font-semibold text-gray-900 dark:text-white">
@@ -37,7 +46,7 @@
       </div>
     </header>
 
-    <main class="flex-1">
+    <main id="hauptinhalt" ref="mainEl" tabindex="-1" class="flex-1">
       <RouterView />
     </main>
 
@@ -53,6 +62,13 @@ import { fetchMe, isAdmin, isAuthenticated, logout, user } from '@/lib/auth'
 
 const router = useRouter()
 const menuOpen = ref(false)
+const mainEl = ref<HTMLElement | null>(null)
+
+// Der Sprung per Anker verschiebt nur den Scroll — den Fokus muss man
+// selbst setzen, sonst landet die nächste Tab-Taste wieder in der Kopfzeile.
+function focusMain() {
+  mainEl.value?.focus()
+}
 
 onMounted(() => {
   if (isAuthenticated.value) fetchMe()

@@ -133,9 +133,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
-import PdfViewer from '@/components/PdfViewer.vue'
+// pdf.js wiegt rund 370 kB. Als asynchrone Komponente erscheint die
+// Werkzeug-Oberfläche sofort; der Viewer wird parallel nachgeladen und
+// erst gebraucht, wenn tatsächlich ein Dokument geöffnet ist.
+const PdfViewer = defineAsyncComponent(() => import('@/components/PdfViewer.vue'))
 import WorkSessionBar from '@/components/WorkSessionBar.vue'
 import { apiPost, downloadBlob } from '@/lib/api'
 

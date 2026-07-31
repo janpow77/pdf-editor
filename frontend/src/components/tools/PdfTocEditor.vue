@@ -10,7 +10,7 @@
     <template v-if="file">
       <div class="flex items-center gap-2 flex-wrap bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3">
         <span class="text-sm text-gray-700 dark:text-gray-300 truncate">{{ file.name }}</span>
-        <span class="text-xs text-gray-400">{{ entries.length }} Einträge</span>
+        <span class="text-xs text-gray-600 dark:text-gray-400">{{ entries.length }} Einträge</span>
         <span class="flex-1"></span>
         <button class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-500" :disabled="busy" @click="autoDetect">
           Automatisch erkennen
@@ -53,8 +53,8 @@
                 <input v-model.number="e.page" type="number" min="1" class="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-gray-900 dark:text-white" />
               </td>
               <td class="py-1.5 px-3 whitespace-nowrap space-x-2">
-                <button class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30" :disabled="i === 0" title="nach oben" @click="move(i, -1)">↑</button>
-                <button class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30" :disabled="i === entries.length - 1" title="nach unten" @click="move(i, 1)">↓</button>
+                <button class="text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30" :disabled="i === 0" title="nach oben" @click="move(i, -1)">↑</button>
+                <button class="text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30" :disabled="i === entries.length - 1" title="nach unten" @click="move(i, 1)">↓</button>
                 <button class="text-red-500 hover:text-red-700" title="entfernen" @click="entries.splice(i, 1)">✕</button>
               </td>
             </tr>

@@ -17,6 +17,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.offload import run_cpu
 from app.api.deps import current_limits
 from app.services.pdf_tools_service import get_pdf_tools
 
@@ -231,7 +232,7 @@ async def get_thumbnails(
                 status_code=400, detail="Maximal 50 Thumbnails pro Anfrage"
             )
 
-        thumbnails = service.get_thumbnails(content, page_list, max_width)
+        thumbnails = await run_cpu(service.get_thumbnails, content, page_list, max_width)
         thumbnails = {k: v for k, v in thumbnails.items() if int(k) in page_list}
 
         return {"thumbnails": thumbnails, "count": len(thumbnails)}
@@ -277,7 +278,7 @@ async def merge_pdfs(
             )
 
     service = get_pdf_tools()
-    result = service.merge_pdfs(file_data, selections)
+    result = await run_cpu(service.merge_pdfs, file_data, selections)
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
@@ -299,7 +300,7 @@ async def split_pdf(
     _validate_pdf(file, content)
 
     service = get_pdf_tools()
-    result = service.split_pdf(content, mode=mode, ranges=ranges, every_n=every_n)
+    result = await run_cpu(service.split_pdf, content, mode=mode, ranges=ranges, every_n=every_n)
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
@@ -336,7 +337,7 @@ async def rotate_pages(
             )
 
     service = get_pdf_tools()
-    result = service.rotate_pages(content, rot_dict)
+    result = await run_cpu(service.rotate_pages, content, rot_dict)
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
@@ -359,7 +360,7 @@ async def pdf_to_images(
     dpi = max(72, min(600, dpi))
 
     service = get_pdf_tools()
-    result = service.pdf_to_images(content, pages=pages, fmt=format, dpi=dpi)
+    result = await run_cpu(service.pdf_to_images, content, pages=pages, fmt=format, dpi=dpi)
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
@@ -381,7 +382,7 @@ async def protect_pdf(
     _validate_pdf(file, content)
 
     service = get_pdf_tools()
-    result = service.protect_pdf(content, password, owner_password)
+    result = await run_cpu(service.protect_pdf, content, password, owner_password)
 
     if not result.success:
         status = 400 if "passwortgeschützt" in (result.error or "") else 500
@@ -401,7 +402,7 @@ async def unlock_pdf(
     _validate_pdf(file, content)
 
     service = get_pdf_tools()
-    result = service.unlock_pdf(content, password)
+    result = await run_cpu(service.unlock_pdf, content, password)
 
     if not result.success:
         status = 400 if result.error == "Falsches Passwort" else 500
@@ -424,7 +425,7 @@ async def compress_pdf(
         quality = "medium"
 
     service = get_pdf_tools()
-    result = service.compress_pdf(content, quality=quality)
+    result = await run_cpu(service.compress_pdf, content, quality=quality)
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
@@ -479,7 +480,7 @@ async def add_watermark(
     opacity = max(0.0, min(1.0, opacity))
 
     service = get_pdf_tools()
-    result = service.add_watermark(
+    result = await run_cpu(service.add_watermark,
         content,
         text=text,
         image_content=image_content,
@@ -530,7 +531,7 @@ async def images_to_pdf(
         file_data.append((f.filename, content))
 
     service = get_pdf_tools()
-    result = service.images_to_pdf(
+    result = await run_cpu(service.images_to_pdf,
         file_data, page_size=page_size, orientation=orientation
     )
 
@@ -563,7 +564,7 @@ async def page_operations(
         )
 
     service = get_pdf_tools()
-    result = service.page_operations(content, order)
+    result = await run_cpu(service.page_operations, content, order)
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
@@ -581,7 +582,7 @@ async def read_metadata(
     _validate_pdf(file, content)
 
     service = get_pdf_tools()
-    result = service.get_metadata(content)
+    result = await run_cpu(service.get_metadata, content)
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
@@ -610,7 +611,7 @@ async def set_metadata(
     _validate_pdf(file, content)
 
     service = get_pdf_tools()
-    result = service.set_metadata(
+    result = await run_cpu(service.set_metadata,
         content,
         title=title,
         author=author,
@@ -638,7 +639,7 @@ async def word_to_pdf(
     _validate_docx(file, content)
 
     service = get_pdf_tools()
-    result = service.word_to_pdf(content, filename=file.filename or "document.docx")
+    result = await run_cpu(service.word_to_pdf, content, filename=file.filename or "document.docx")
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
@@ -674,7 +675,7 @@ async def word_merge(
         file_data.append((f.filename or f"doc_{len(file_data)}.docx", content))
 
     service = get_pdf_tools()
-    result = service.merge_word_docs(file_data, add_page_break=add_page_break)
+    result = await run_cpu(service.merge_word_docs, file_data, add_page_break=add_page_break)
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
@@ -694,7 +695,7 @@ async def word_diff(
     _validate_docx(file_b, content_b)
 
     service = get_pdf_tools()
-    result = service.diff_word_docs(
+    result = await run_cpu(service.diff_word_docs,
         content_a,
         content_b,
         file_a_name=file_a.filename or "Dokument A",
@@ -716,7 +717,7 @@ async def read_word_metadata(
     _validate_docx(file, content)
 
     service = get_pdf_tools()
-    result = service.get_word_metadata(content)
+    result = await run_cpu(service.get_word_metadata, content)
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
@@ -746,7 +747,7 @@ async def set_word_metadata(
     _validate_docx(file, content)
 
     service = get_pdf_tools()
-    result = service.set_word_metadata(
+    result = await run_cpu(service.set_word_metadata,
         content,
         title=title,
         author=author,
@@ -775,7 +776,7 @@ async def read_excel_metadata(
     _validate_xlsx(file, content)
 
     service = get_pdf_tools()
-    result = service.get_excel_metadata(content)
+    result = await run_cpu(service.get_excel_metadata, content)
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
@@ -805,7 +806,7 @@ async def set_excel_metadata(
     _validate_xlsx(file, content)
 
     service = get_pdf_tools()
-    result = service.set_excel_metadata(
+    result = await run_cpu(service.set_excel_metadata,
         content,
         title=title,
         creator=creator,

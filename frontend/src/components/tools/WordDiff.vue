@@ -17,7 +17,7 @@
         @drop.prevent="onDropA"
       >
         <input ref="fileInputA" type="file" accept=".docx,.doc" class="hidden" @change="(e: Event) => fileA = (e.target as HTMLInputElement).files?.[0] || null" />
-        <p class="text-xs text-gray-400 mb-1">Dokument A (Original)</p>
+        <p class="text-xs text-gray-600 dark:text-gray-400 mb-1">Dokument A (Original)</p>
         <div v-if="!fileA">
           <button class="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700" @click="($refs.fileInputA as HTMLInputElement).click()">Auswählen</button>
         </div>
@@ -33,7 +33,7 @@
         @drop.prevent="onDropB"
       >
         <input ref="fileInputB" type="file" accept=".docx,.doc" class="hidden" @change="(e: Event) => fileB = (e.target as HTMLInputElement).files?.[0] || null" />
-        <p class="text-xs text-gray-400 mb-1">Dokument B (Geändert)</p>
+        <p class="text-xs text-gray-600 dark:text-gray-400 mb-1">Dokument B (Geändert)</p>
         <div v-if="!fileB">
           <button class="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700" @click="($refs.fileInputB as HTMLInputElement).click()">Auswählen</button>
         </div>
@@ -110,13 +110,13 @@
             'text-gray-600 dark:text-gray-400': change.type === 'equal',
           }"
         >
-          <span class="text-xs text-gray-400 mr-2 inline-block w-10">
+          <span class="text-xs text-gray-600 dark:text-gray-400 mr-2 inline-block w-10">
             {{ change.type === 'added' ? '+' : change.type === 'removed' ? '-' : ' ' }}
             {{ change.line_a || change.line_b || '' }}
           </span>
           {{ change.text || '(leer)' }}
         </div>
-        <div v-if="filteredChanges.length === 0" class="p-8 text-center text-gray-400">
+        <div v-if="filteredChanges.length === 0" class="p-8 text-center text-gray-600 dark:text-gray-400">
           Keine Unterschiede für diesen Filter
         </div>
       </div>

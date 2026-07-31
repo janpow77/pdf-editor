@@ -24,8 +24,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { apiGetJson } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
+import { getHealth } from '@/lib/health'
 
 // Nur für anonyme Besucher relevant: wie viele Werkzeuge hat der Betreiber
 // auf angemeldete Nutzer beschränkt?
@@ -34,7 +34,7 @@ const restrictedCount = ref(0)
 onMounted(async () => {
   if (isAuthenticated.value) return
   try {
-    const health = await apiGetJson<{ login_required_tools?: string[] }>('/api/health')
+    const health = await getHealth()
     restrictedCount.value = (health.login_required_tools ?? []).length
   } catch {
     restrictedCount.value = 0

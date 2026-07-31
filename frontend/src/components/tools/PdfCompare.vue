@@ -31,7 +31,7 @@
             class="hidden"
             @change="(e: Event) => onSelectFile(e, 'A')"
           />
-          <p class="text-xs text-gray-400 mb-2">Version A (Original)</p>
+          <p class="text-xs text-gray-600 dark:text-gray-400 mb-2">Version A (Original)</p>
           <div v-if="!fileA">
             <p class="text-gray-500 dark:text-gray-400 mb-2 text-sm">PDF hierher ziehen oder</p>
             <button
@@ -64,7 +64,7 @@
             class="hidden"
             @change="(e: Event) => onSelectFile(e, 'B')"
           />
-          <p class="text-xs text-gray-400 mb-2">Version B (Geaendert)</p>
+          <p class="text-xs text-gray-600 dark:text-gray-400 mb-2">Version B (Geaendert)</p>
           <div v-if="!fileB">
             <p class="text-gray-500 dark:text-gray-400 mb-2 text-sm">PDF hierher ziehen oder</p>
             <button
@@ -188,7 +188,7 @@
           >
             <div class="flex items-center gap-2">
               <svg
-                class="w-4 h-4 text-gray-400 transition-transform"
+                class="w-4 h-4 text-gray-600 dark:text-gray-400 transition-transform"
                 :class="{ 'rotate-90': expandedPages.has(pd.page) }"
                 fill="none" stroke="currentColor" viewBox="0 0 24 24"
               >
@@ -219,7 +219,7 @@
             </div>
             <div
               v-if="!pd.changes || pd.changes.length === 0"
-              class="py-4 text-center text-xs text-gray-400"
+              class="py-4 text-center text-xs text-gray-600 dark:text-gray-400"
             >
               Keine Textunterschiede auf dieser Seite
             </div>
@@ -228,7 +228,7 @@
 
         <div
           v-if="!result.page_diffs || result.page_diffs.length === 0"
-          class="py-8 text-center text-gray-400"
+          class="py-8 text-center text-gray-600 dark:text-gray-400"
         >
           Keine Seitenvergleiche verfuegbar
         </div>
@@ -287,7 +287,7 @@
                   class="w-full h-auto"
                   alt="Version A"
                 />
-                <div v-else class="py-12 text-center text-xs text-gray-400">
+                <div v-else class="py-12 text-center text-xs text-gray-600 dark:text-gray-400">
                   Kein Bild verfuegbar
                 </div>
               </div>
@@ -311,7 +311,7 @@
                   class="w-full h-auto"
                   alt="Version B"
                 />
-                <div v-else class="py-12 text-center text-xs text-gray-400">
+                <div v-else class="py-12 text-center text-xs text-gray-600 dark:text-gray-400">
                   Kein Bild verfuegbar
                 </div>
               </div>
@@ -329,7 +329,7 @@
           </div>
         </div>
 
-        <div v-else class="py-12 text-center text-gray-400">
+        <div v-else class="py-12 text-center text-gray-600 dark:text-gray-400">
           <p class="text-sm">Keine visuellen Daten verfuegbar.</p>
           <p class="text-xs mt-1">
             Fuehren Sie den Vergleich mit aktiviertem "Visuellen Vergleich" erneut durch.
@@ -405,7 +405,7 @@
           </div>
           <div
             v-if="!result.page_diffs || result.page_diffs.length === 0"
-            class="py-6 text-center text-xs text-gray-400"
+            class="py-6 text-center text-xs text-gray-600 dark:text-gray-400"
           >
             Keine Seitendaten verfuegbar
           </div>
@@ -625,7 +625,7 @@ function changeClass(type: string): string {
     case 'added':
       return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
     case 'skip':
-      return 'text-gray-400 dark:text-gray-600 italic'
+      return 'text-gray-600 dark:text-gray-600 italic'
     default:
       return 'text-gray-700 dark:text-gray-300'
   }

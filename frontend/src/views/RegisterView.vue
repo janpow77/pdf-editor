@@ -28,7 +28,7 @@
           autocomplete="new-password"
           class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
-        <p class="mt-1 text-xs text-gray-400">
+        <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">
           Mindestens 12 Zeichen mit Groß-/Kleinbuchstaben, Zahl und Sonderzeichen.
         </p>
       </div>
@@ -37,7 +37,7 @@
         <input v-model="consent" type="checkbox" required class="mt-0.5 rounded" />
         <span>
           Ich habe die
-          <RouterLink to="/datenschutz" class="text-primary-600 dark:text-primary-400 hover:underline">Datenschutzerklärung</RouterLink>
+          <RouterLink to="/datenschutz" class="text-primary-700 dark:text-primary-400 underline hover:no-underline">Datenschutzerklärung</RouterLink>
           gelesen und bin mit der Speicherung meiner E-Mail-Adresse und
           Konto-Einstellungen einverstanden.
         </span>
@@ -60,7 +60,7 @@
 
     <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">
       Bereits ein Konto?
-      <RouterLink to="/login" class="text-primary-600 dark:text-primary-400 hover:underline">Anmelden</RouterLink>
+      <RouterLink to="/login" class="text-primary-700 dark:text-primary-400 underline hover:no-underline">Anmelden</RouterLink>
     </p>
   </div>
 </template>
@@ -68,8 +68,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { apiGetJson } from '@/lib/api'
 import { register } from '@/lib/auth'
+import { getHealth } from '@/lib/health'
 
 const router = useRouter()
 const email = ref('')
@@ -85,7 +85,7 @@ const turnstileBox = ref<HTMLElement | null>(null)
 
 onMounted(async () => {
   try {
-    const health = await apiGetJson<{ turnstile_site_key: string | null }>('/api/health')
+    const health = await getHealth()
     if (!health.turnstile_site_key) return
     turnstileSiteKey.value = health.turnstile_site_key
     await new Promise<void>((resolve, reject) => {

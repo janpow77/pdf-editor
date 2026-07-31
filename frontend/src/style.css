@@ -1,3 +1,32 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  /* BITV 2.0 / WCAG 2.1 — 2.3.3 „Animation aus Interaktionen":
+     Wer im Betriebssystem reduzierte Bewegung eingestellt hat, bekommt
+     keine Kartenrotation, kein Slide, kein Auto-Scroll. Die Anwendung
+     bleibt vollständig bedienbar, nur ohne Bewegungseffekte. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Sichtbarer Fokus für Tastaturnutzung — überall, auch dort, wo eine
+     Komponente den Browser-Default überschreibt. */
+  :focus-visible {
+    outline: 2px solid theme('colors.primary.600');
+    outline-offset: 2px;
+  }
+
+  /* Ziel des Sprunglinks darf keinen Fokusring erzwingen (tabindex="-1"). */
+  main:focus {
+    outline: none;
+  }
+}

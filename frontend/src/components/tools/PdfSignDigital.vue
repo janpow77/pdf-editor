@@ -32,7 +32,7 @@
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Zeitstempel-Dienst (optional, RFC 3161)</label>
         <input v-model="tsaUrl" type="url" placeholder="https://freetsa.org/tsr" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-        <p class="mt-1 text-xs text-gray-400">Fügt der Signatur einen qualifizierten Zeitstempel eines TSA-Servers hinzu.</p>
+        <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">Fügt der Signatur einen qualifizierten Zeitstempel eines TSA-Servers hinzu.</p>
       </div>
     </div>
 

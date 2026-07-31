@@ -95,8 +95,9 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiGetJson, apiJson } from '@/lib/api'
+import { apiJson } from '@/lib/api'
 import { deleteAccount, loadPreferences, preferences, savePreferences, user } from '@/lib/auth'
+import { getHealth } from '@/lib/health'
 
 const router = useRouter()
 const ocrLanguage = ref('deu')
@@ -126,7 +127,7 @@ async function requestVerification() {
 
 onMounted(async () => {
   try {
-    const health = await apiGetJson<{ account_flows: boolean }>('/api/health')
+    const health = await getHealth()
     flowsAvailable.value = health.account_flows
   } catch { /* Hinweis dann einfach ausblenden */ }
   await loadPreferences()

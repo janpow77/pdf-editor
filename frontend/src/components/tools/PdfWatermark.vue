@@ -56,7 +56,7 @@
           <div>
             <label class="block text-xs text-gray-500 mb-1">Transparenz</label>
             <input v-model.number="opacity" type="range" min="0.05" max="1" step="0.05" class="w-full" />
-            <span class="text-xs text-gray-400">{{ Math.round(opacity * 100) }}%</span>
+            <span class="text-xs text-gray-600 dark:text-gray-400">{{ Math.round(opacity * 100) }}%</span>
           </div>
         </div>
       </div>
@@ -70,7 +70,7 @@
         <div>
           <label class="block text-xs text-gray-500 mb-1">Transparenz</label>
           <input v-model.number="opacity" type="range" min="0.05" max="1" step="0.05" class="w-full" />
-          <span class="text-xs text-gray-400">{{ Math.round(opacity * 100) }}%</span>
+          <span class="text-xs text-gray-600 dark:text-gray-400">{{ Math.round(opacity * 100) }}%</span>
         </div>
       </div>
 

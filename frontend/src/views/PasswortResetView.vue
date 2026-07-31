@@ -17,7 +17,7 @@
           autocomplete="new-password"
           class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white"
         />
-        <p class="mt-1 text-xs text-gray-400">Mindestens 12 Zeichen mit Groß-/Kleinbuchstaben, Zahl und Sonderzeichen.</p>
+        <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">Mindestens 12 Zeichen mit Groß-/Kleinbuchstaben, Zahl und Sonderzeichen.</p>
       </div>
 
       <div v-if="done" class="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-700 dark:text-green-300">

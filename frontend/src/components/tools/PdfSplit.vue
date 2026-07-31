@@ -50,7 +50,7 @@
           class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
           placeholder="z.B. 1-3;4-6;7-10"
         />
-        <p class="text-xs text-gray-400 mt-1">Jeder Bereich wird eine separate Datei. Gesamt: {{ pageCount }} Seiten</p>
+        <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">Jeder Bereich wird eine separate Datei. Gesamt: {{ pageCount }} Seiten</p>
       </div>
 
       <div v-if="mode === 'every_n'">
@@ -62,7 +62,7 @@
           :max="pageCount"
           class="w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
         />
-        <p class="text-xs text-gray-400 mt-1">Ergibt {{ Math.ceil(pageCount / everyN) }} Teile</p>
+        <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">Ergibt {{ Math.ceil(pageCount / everyN) }} Teile</p>
       </div>
     </div>
 

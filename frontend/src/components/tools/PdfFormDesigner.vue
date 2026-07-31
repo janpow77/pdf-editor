@@ -131,7 +131,7 @@
           <div v-if="selected" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
             <div class="flex items-center justify-between">
               <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Feld-Eigenschaften</h3>
-              <span class="text-xs text-gray-400">Seite {{ selected.page }}</span>
+              <span class="text-xs text-gray-600 dark:text-gray-400">Seite {{ selected.page }}</span>
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Feldname (technisch)</label>
@@ -221,12 +221,12 @@
                       {{ n }}
                     </button>
                   </div>
-                  <p v-if="!otherFieldNames.length" class="text-xs text-gray-400">Erst weitere Felder anlegen.</p>
+                  <p v-if="!otherFieldNames.length" class="text-xs text-gray-600 dark:text-gray-400">Erst weitere Felder anlegen.</p>
                 </div>
                 <div v-else-if="selected.calc_kind === 'formula'">
                   <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Formel (nur Feldnamen und + − × ÷)</label>
                   <input v-model="selected.calc_formula" type="text" placeholder="netto * 1,19" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-white" />
-                  <p class="mt-1 text-xs text-gray-400">Verfügbar: {{ otherFieldNames.join(', ') || '—' }}</p>
+                  <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">Verfügbar: {{ otherFieldNames.join(', ') || '—' }}</p>
                 </div>
                 <label v-if="selected.calc_kind !== 'none'" class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                   <input v-model="selected.calc_readonly" type="checkbox" class="rounded" /> Ergebnis schreibgeschützt
@@ -235,11 +235,11 @@
                   <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Zulässiger Wertebereich</label>
                   <div class="flex items-center gap-2">
                     <input v-model="selected.validate_min" type="number" placeholder="min" class="w-24 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1.5 text-sm text-gray-900 dark:text-white" />
-                    <span class="text-gray-400">bis</span>
+                    <span class="text-gray-600 dark:text-gray-400">bis</span>
                     <input v-model="selected.validate_max" type="number" placeholder="max" class="w-24 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1.5 text-sm text-gray-900 dark:text-white" />
                   </div>
                 </div>
-                <p class="text-xs text-gray-400">
+                <p class="text-xs text-gray-600 dark:text-gray-400">
                   Berechnung, Format und Wertebereich werden als PDF-Aktionen hinterlegt und
                   von Acrobat &amp; Co. ausgeführt — einfache Browser-Vorschauen zeigen sie nicht.
                 </p>
@@ -266,7 +266,7 @@
                 @click="jumpTo(f)"
               >
                 <span class="truncate">{{ typeIcon(f.type) }} {{ f.name }}</span>
-                <span class="shrink-0 text-xs text-gray-400">S. {{ f.page }}</span>
+                <span class="shrink-0 text-xs text-gray-600 dark:text-gray-400">S. {{ f.page }}</span>
               </li>
             </ul>
           </div>
@@ -287,7 +287,7 @@
         {{ summary }}
       </div>
 
-      <p class="text-xs text-gray-400 dark:text-gray-500">
+      <p class="text-xs text-gray-600 dark:text-gray-400">
         Hinweis: Optionsfelder (Radio-Gruppen) werden nicht unterstützt — nutzen Sie
         stattdessen ein Auswahlfeld (Dropdown) oder mehrere Kontrollkästchen.
       </p>
@@ -306,9 +306,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
-import PdfViewer from '@/components/PdfViewer.vue'
+// pdf.js wiegt rund 370 kB. Als asynchrone Komponente erscheint die
+// Werkzeug-Oberfläche sofort; der Viewer wird parallel nachgeladen und
+// erst gebraucht, wenn tatsächlich ein Dokument geöffnet ist.
+const PdfViewer = defineAsyncComponent(() => import('@/components/PdfViewer.vue'))
 import WorkSessionBar from '@/components/WorkSessionBar.vue'
 import { apiPost, downloadBlob } from '@/lib/api'
 

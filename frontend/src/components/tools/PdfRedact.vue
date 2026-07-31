@@ -58,7 +58,7 @@
             />
             <span>
               {{ p.label }}
-              <span class="block text-xs text-gray-400">{{ p.hint }}</span>
+              <span class="block text-xs text-gray-600 dark:text-gray-400">{{ p.hint }}</span>
             </span>
           </label>
         </div>
@@ -99,10 +99,10 @@
         <ul class="text-sm text-gray-700 dark:text-gray-300 max-h-56 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
           <li v-for="(f, i) in preview.findings" :key="i" class="py-1 flex justify-between gap-3">
             <span class="font-mono truncate">{{ f.text }}</span>
-            <span class="shrink-0 text-xs text-gray-400">{{ patternLabel(f.pattern) }} · S. {{ f.page }}</span>
+            <span class="shrink-0 text-xs text-gray-600 dark:text-gray-400">{{ patternLabel(f.pattern) }} · S. {{ f.page }}</span>
           </li>
         </ul>
-        <p v-if="preview.truncated" class="text-xs text-gray-400">
+        <p v-if="preview.truncated" class="text-xs text-gray-600 dark:text-gray-400">
           Nur die ersten 500 Fundstellen werden aufgelistet — geschwärzt werden alle.
         </p>
       </template>

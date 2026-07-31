@@ -36,9 +36,9 @@
       <li v-for="r in results" :key="r.id" class="py-2 flex items-center justify-between gap-2 text-sm">
         <span class="truncate text-gray-700 dark:text-gray-300">{{ r.name }}</span>
         <span class="flex items-center gap-3 shrink-0">
-          <span class="text-xs text-gray-400">{{ formatSize(r.blob.size) }}</span>
+          <span class="text-xs text-gray-600 dark:text-gray-400">{{ formatSize(r.blob.size) }}</span>
           <button
-            class="text-gray-400 hover:text-red-500"
+            class="text-gray-600 dark:text-gray-400 hover:text-red-500"
             :aria-label="`${r.name} entfernen`"
             @click="removeResult(r.id)"
           >
@@ -48,7 +48,7 @@
       </li>
     </ul>
 
-    <p class="text-xs text-gray-400">
+    <p class="text-xs text-gray-600 dark:text-gray-400">
       Die Liste existiert nur in Ihrem Browser und wird beim Neuladen der Seite geleert.
     </p>
 

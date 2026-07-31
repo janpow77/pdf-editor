@@ -12,7 +12,7 @@
       <button class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700" @click="($refs.fileInput as HTMLInputElement).click()">
         Word-Datei auswählen
       </button>
-      <p class="text-xs text-gray-400 mt-2">.docx / .doc</p>
+      <p class="text-xs text-gray-600 dark:text-gray-400 mt-2">.docx / .doc</p>
     </div>
 
     <!-- Metadata Form -->

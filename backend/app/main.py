@@ -28,6 +28,7 @@ from app.api import (
 )
 from app.api.deps import attach_upload_limits, enforce_tool_access
 from app.config import settings
+from app.compression import JsonGZipMiddleware
 from app.ratelimit import RateTierMiddleware, limiter
 from app.tool_access import get_login_required_tools, set_db_available
 
@@ -133,6 +134,11 @@ app = FastAPI(
 # der slowapi-Limiter bedient nur die per-Route-Dekoratoren.
 app.state.limiter = limiter
 app.add_middleware(RateTierMiddleware)
+# Textantworten komprimieren — Textextraktion, Formularfeld-Listen und
+# Qualitätsberichte werden dadurch um ein Vielfaches kleiner. PDFs, Bilder
+# und Office-Dateien bleiben unangetastet: deren Inhalt ist bereits
+# komprimiert, ein zweiter Durchlauf kostet nur CPU (siehe JsonGZipMiddleware).
+app.add_middleware(JsonGZipMiddleware, minimum_size=1024)
 
 if settings.cors_origins:
     app.add_middleware(

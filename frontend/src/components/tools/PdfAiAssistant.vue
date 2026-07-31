@@ -61,10 +61,10 @@
     <div v-if="answer" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-2">
       <div class="flex items-center justify-between">
         <span class="text-sm font-medium text-gray-900 dark:text-white">Antwort</span>
-        <button class="text-xs text-gray-400 hover:text-primary-600" @click="copyAnswer">{{ copied ? 'Kopiert ✓' : 'Kopieren' }}</button>
+        <button class="text-xs text-gray-600 dark:text-gray-400 hover:text-primary-600" @click="copyAnswer">{{ copied ? 'Kopiert ✓' : 'Kopieren' }}</button>
       </div>
       <p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ answer }}</p>
-      <p class="text-xs text-gray-400">KI-generiert ({{ model }}) — bitte fachlich prüfen.</p>
+      <p class="text-xs text-gray-600 dark:text-gray-400">KI-generiert ({{ model }}) — bitte fachlich prüfen.</p>
     </div>
 
     <button

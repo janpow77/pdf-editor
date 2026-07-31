@@ -9,6 +9,7 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.offload import run_cpu
 from app.services.pdf_converter_service import get_pdf_converter
 
 router = APIRouter(prefix="/pdf-convert", tags=["PDF Converter"])
@@ -104,7 +105,7 @@ async def get_pdf_info(
 
     try:
         service = get_pdf_converter()
-        info = service.get_pdf_info(content)
+        info = await run_cpu(service.get_pdf_info, content)
         return PdfInfoResponse(**info)
 
     except Exception as e:
@@ -140,10 +141,10 @@ async def get_thumbnails(
         # Parse page specification
         page_list = None
         if pages:
-            info = service.get_pdf_info(content)
+            info = await run_cpu(service.get_pdf_info, content)
             page_list = service.parse_page_range(pages, info["page_count"])
 
-        thumbnails = service.get_page_thumbnails(content, page_list, max_width)
+        thumbnails = await run_cpu(service.get_page_thumbnails, content, page_list, max_width)
 
         return {"thumbnails": thumbnails, "count": len(thumbnails)}
 
@@ -178,10 +179,10 @@ async def preview_tables(
         # Parse page specification
         page_list = None
         if pages:
-            info = service.get_pdf_info(content)
+            info = await run_cpu(service.get_pdf_info, content)
             page_list = service.parse_page_range(pages, info["page_count"])
 
-        result = service.get_table_preview(content, page_list, max_rows)
+        result = await run_cpu(service.get_table_preview, content, page_list, max_rows)
 
         if not result.success:
             raise HTTPException(
@@ -234,10 +235,10 @@ async def convert_to_word(
         # Parse page specification
         page_list = None
         if pages:
-            info = service.get_pdf_info(content)
+            info = await run_cpu(service.get_pdf_info, content)
             page_list = service.parse_page_range(pages, info["page_count"])
 
-        result = service.convert_to_word(content, page_list, use_ocr, ocr_language)
+        result = await run_cpu(service.convert_to_word, content, page_list, use_ocr, ocr_language)
 
         if not result.success:
             raise HTTPException(
@@ -295,10 +296,10 @@ async def convert_to_excel(
         # Parse page specification
         page_list = None
         if pages:
-            info = service.get_pdf_info(content)
+            info = await run_cpu(service.get_pdf_info, content)
             page_list = service.parse_page_range(pages, info["page_count"])
 
-        result = service.extract_tables(content, page_list, consolidate)
+        result = await run_cpu(service.extract_tables, content, page_list, consolidate)
 
         if not result.success:
             # Include table data in error response for partial results
@@ -358,10 +359,10 @@ async def preview_excel_extraction(
         # Parse page specification
         page_list = None
         if pages:
-            info = service.get_pdf_info(content)
+            info = await run_cpu(service.get_pdf_info, content)
             page_list = service.parse_page_range(pages, info["page_count"])
 
-        result = service.get_table_preview(content, page_list, max_rows=20)
+        result = await run_cpu(service.get_table_preview, content, page_list, max_rows=20)
 
         # Calculate consolidated preview if requested
         consolidated_preview = None

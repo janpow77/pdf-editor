@@ -35,7 +35,7 @@
     </div>
 
     <!-- Info text -->
-    <p v-if="file && Object.keys(thumbnails).length > 0" class="text-xs text-gray-400">
+    <p v-if="file && Object.keys(thumbnails).length > 0" class="text-xs text-gray-600 dark:text-gray-400">
       Klicken Sie auf die Rotations-Buttons an den einzelnen Seiten oder nutzen Sie die Schnellaktionen oben.
       {{ Object.keys(rotations).length }} Seite(n) werden rotiert.
     </p>

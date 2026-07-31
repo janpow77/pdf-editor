@@ -27,7 +27,7 @@
         </li>
         <li v-if="report.scan_pages_without_text.length">
           <strong>Scans ohne Textebene:</strong> Seiten {{ report.scan_pages_without_text.join(', ') }}
-          <span class="text-gray-400">— Tipp: Werkzeug „Scan optimieren" oder „OCR"</span>
+          <span class="text-gray-600 dark:text-gray-400">— Tipp: Werkzeug „Scan optimieren" oder „OCR"</span>
         </li>
         <li v-if="report.duplicate_page_pairs.length">
           <strong>Mögliche Duplikate:</strong>

@@ -16,7 +16,7 @@
     <div v-if="fields.length" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
       <div v-for="f in fields" :key="f.name" class="grid sm:grid-cols-3 gap-2 items-center">
         <label class="text-sm font-medium text-gray-700 dark:text-gray-300 truncate" :title="f.name">
-          {{ f.name }} <span class="text-xs text-gray-400">(S. {{ f.page }})</span>
+          {{ f.name }} <span class="text-xs text-gray-600 dark:text-gray-400">(S. {{ f.page }})</span>
         </label>
         <div class="sm:col-span-2">
           <input

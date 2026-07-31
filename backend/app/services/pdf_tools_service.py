@@ -11,6 +11,7 @@ import json
 import logging
 import subprocess
 import tempfile
+import threading
 import zipfile
 from dataclasses import dataclass, field
 from datetime import UTC
@@ -109,22 +110,41 @@ def _to_pdf_date(dt) -> str:
     return dt.strftime("D:%Y%m%d%H%M%S+00'00'")
 
 
+_lo_available: bool | None = None
+_lo_lock = threading.Lock()
+
+
+def _libreoffice_available() -> bool:
+    """Einmalige LibreOffice-Erkennung.
+
+    ``libreoffice --version`` startet einen Subprozess und kostet ~90 ms. Das
+    lief vorher bei jedem ``/api/health`` — also bei jedem Seitenaufruf. Die
+    Installation ändert sich zur Laufzeit des Containers nicht, deshalb wird
+    das Ergebnis prozessweit einmal ermittelt und gemerkt.
+    """
+    global _lo_available
+    if _lo_available is not None:
+        return _lo_available
+    with _lo_lock:
+        if _lo_available is None:
+            try:
+                result = subprocess.run(
+                    ["libreoffice", "--version"],
+                    capture_output=True,
+                    timeout=5,
+                )
+                _lo_available = result.returncode == 0
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                _lo_available = False
+    return _lo_available
+
+
 class PdfToolsService:
     """Service for PDF and document manipulation tools."""
 
     def check_features(self) -> dict[str, bool]:
         """Return dict of available features."""
-        # Check LibreOffice availability
-        lo_available = False
-        try:
-            result = subprocess.run(
-                ["libreoffice", "--version"],
-                capture_output=True,
-                timeout=5,
-            )
-            lo_available = result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+        lo_available = _libreoffice_available()
 
         return {
             "pymupdf": PYMUPDF_AVAILABLE,

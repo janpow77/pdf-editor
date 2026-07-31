@@ -20,6 +20,7 @@ from app.services.pdf_editor_service import get_pdf_editor
 
 router = APIRouter(prefix="/pdf-editor", tags=["PDF Editor"])
 
+from app.offload import run_cpu
 from app.api.deps import current_limits
 
 
@@ -60,7 +61,7 @@ async def read_toc(
     _validate_pdf(file, content)
 
     service = get_pdf_editor()
-    result = service.get_toc(content)
+    result = await run_cpu(service.get_toc, content)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return result.metadata
@@ -83,7 +84,7 @@ async def write_toc(
         raise HTTPException(status_code=400, detail="Ungueltiges JSON fuer entries")
 
     service = get_pdf_editor()
-    result = service.set_toc(content, toc_entries)
+    result = await run_cpu(service.set_toc, content, toc_entries)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
 
@@ -103,7 +104,7 @@ async def auto_detect_toc(
     _validate_pdf(file, content)
 
     service = get_pdf_editor()
-    result = service.auto_detect_toc(content, h1_min_size, h2_min_size, h3_min_size)
+    result = await run_cpu(service.auto_detect_toc, content, h1_min_size, h2_min_size, h3_min_size)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return result.metadata
@@ -122,7 +123,7 @@ async def get_text_blocks(
     _validate_pdf(file, content)
 
     service = get_pdf_editor()
-    result = service.get_page_text_blocks(content, page)
+    result = await run_cpu(service.get_page_text_blocks, content, page)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return result.metadata
@@ -148,7 +149,7 @@ async def apply_annotations(
         raise HTTPException(status_code=400, detail="Ungueltiges JSON fuer annotations")
 
     service = get_pdf_editor()
-    result = service.apply_annotations(content, ann_list)
+    result = await run_cpu(service.apply_annotations, content, ann_list)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
 
@@ -176,7 +177,7 @@ async def add_page_numbers(
     _validate_pdf(file, content)
 
     service = get_pdf_editor()
-    result = service.add_page_numbers(
+    result = await run_cpu(service.add_page_numbers,
         content,
         format_str=format_str,
         position=position,
@@ -213,7 +214,7 @@ async def add_header_footer(
     _validate_pdf(file, content)
 
     service = get_pdf_editor()
-    result = service.add_header_footer(
+    result = await run_cpu(service.add_header_footer,
         content,
         header_left=header_left,
         header_center=header_center,
@@ -251,7 +252,7 @@ async def insert_text(
     _validate_pdf(file, content)
 
     service = get_pdf_editor()
-    result = service.insert_text(
+    result = await run_cpu(service.insert_text,
         content,
         page_num=page,
         x=x,
@@ -282,7 +283,7 @@ async def search_text(
     _validate_pdf(file, content)
 
     service = get_pdf_editor()
-    result = service.search_text(content, search, match_case=match_case)
+    result = await run_cpu(service.search_text, content, search, match_case=match_case)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return result.metadata
@@ -309,7 +310,7 @@ async def replace_text(
             raise HTTPException(status_code=400, detail="Ungueltiges JSON fuer pages")
 
     service = get_pdf_editor()
-    result = service.search_replace_text(
+    result = await run_cpu(service.search_replace_text,
         content,
         search=search,
         replace=replace,
@@ -340,7 +341,7 @@ async def ocr_pdf(
     _validate_pdf(file, content)
 
     service = get_pdf_editor()
-    result = service.ocr_pdf(content, language=language)
+    result = await run_cpu(service.ocr_pdf, content, language=language)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
 
@@ -368,7 +369,7 @@ async def compare_pdfs(
     _validate_pdf(file_b, content_b)
 
     service = get_pdf_editor()
-    result = service.compare_pdfs(content_a, content_b, include_visual=include_visual)
+    result = await run_cpu(service.compare_pdfs, content_a, content_b, include_visual=include_visual)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return result.metadata
@@ -386,7 +387,7 @@ async def flatten_annotations(
     _validate_pdf(file, content)
 
     service = get_pdf_editor()
-    result = service.flatten_annotations(content)
+    result = await run_cpu(service.flatten_annotations, content)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
 

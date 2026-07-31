@@ -37,7 +37,7 @@
         class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300"
         @click="fitWidth()"
       >Breite anpassen</button>
-      <span v-if="loading" class="text-gray-400">rendert…</span>
+      <span v-if="loading" class="text-gray-600 dark:text-gray-400">rendert…</span>
     </div>
 
     <!-- Seitenfläche -->
@@ -49,9 +49,11 @@
         data-testid="pdf-page"
       >
         <canvas ref="canvasEl" class="block w-full h-full" />
-        <!-- Overlay in Seitenkoordinaten: Kinder rechnen mit 0–1 -->
+        <!-- Overlay in Seitenkoordinaten: Kinder rechnen mit 0–1.
+             `scale` = Bildschirmpunkte je PDF-Punkt, damit Overlays
+             Schriftgrößen maßstabsgerecht darstellen können. -->
         <div class="absolute inset-0">
-          <slot name="overlay" :width="cssWidth" :height="cssHeight" />
+          <slot name="overlay" :width="cssWidth" :height="cssHeight" :scale="zoom" />
         </div>
       </div>
     </div>

@@ -18,7 +18,7 @@
         Vertrauensanker (optional, PEM/CRT)
       </label>
       <input type="file" accept=".pem,.crt,.cer,.der" class="text-sm text-gray-600 dark:text-gray-300" @change="onAnchors" />
-      <p class="text-xs text-gray-400">
+      <p class="text-xs text-gray-600 dark:text-gray-400">
         Mit hinterlegten Wurzelzertifikaten wird zusätzlich geprüft, ob die Signatur auf
         eine vertrauenswürdige Stelle zurückführt. Ohne Anker bleibt nur die Integritätsprüfung.
       </p>
@@ -47,14 +47,14 @@
         </div>
         <template v-if="!sig.error">
           <dl class="text-sm text-gray-600 dark:text-gray-300 grid grid-cols-[auto,1fr] gap-x-4 gap-y-1">
-            <dt class="text-gray-400">Unterzeichner</dt><dd>{{ sig.signer }}</dd>
-            <dt class="text-gray-400">Signiert am</dt><dd>{{ sig.signing_time || 'unbekannt' }}</dd>
-            <dt class="text-gray-400">CMS gültig</dt><dd>{{ sig.valid_cms ? 'ja' : 'nein' }}</dd>
-            <dt class="text-gray-400">Abdeckung</dt><dd>{{ sig.coverage }}</dd>
-            <dt class="text-gray-400">Vertrauenskette</dt>
+            <dt class="text-gray-600 dark:text-gray-400">Unterzeichner</dt><dd>{{ sig.signer }}</dd>
+            <dt class="text-gray-600 dark:text-gray-400">Signiert am</dt><dd>{{ sig.signing_time || 'unbekannt' }}</dd>
+            <dt class="text-gray-600 dark:text-gray-400">CMS gültig</dt><dd>{{ sig.valid_cms ? 'ja' : 'nein' }}</dd>
+            <dt class="text-gray-600 dark:text-gray-400">Abdeckung</dt><dd>{{ sig.coverage }}</dd>
+            <dt class="text-gray-600 dark:text-gray-400">Vertrauenskette</dt>
             <dd>{{ anchors ? (sig.trusted ? 'vertrauenswürdig' : 'nicht bestätigt') : 'nicht bewertet' }}</dd>
           </dl>
-          <p class="text-xs text-gray-400">{{ sig.hinweis }}</p>
+          <p class="text-xs text-gray-600 dark:text-gray-400">{{ sig.hinweis }}</p>
         </template>
         <p v-else class="text-sm text-red-600">{{ sig.error }}</p>
       </div>

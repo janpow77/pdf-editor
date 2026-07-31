@@ -36,7 +36,7 @@
           <option value="top-center">oben Mitte</option>
         </select>
       </div>
-      <p class="col-span-2 sm:col-span-4 text-xs text-gray-400">Vorschau: {{ preview }}</p>
+      <p class="col-span-2 sm:col-span-4 text-xs text-gray-600 dark:text-gray-400">Vorschau: {{ preview }}</p>
     </div>
 
     <div v-if="done" class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-700 dark:text-green-300">

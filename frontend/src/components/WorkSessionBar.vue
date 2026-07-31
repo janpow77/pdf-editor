@@ -39,19 +39,19 @@
       </button>
       <input ref="input" type="file" accept=".zip,.pdf" class="hidden" @change="onFile" />
       <span v-if="hint" class="text-gray-500 dark:text-gray-400">{{ hint }}</span>
-      <span v-else-if="localSaved" class="text-gray-400 dark:text-gray-500">
+      <span v-else-if="localSaved" class="text-gray-600 dark:text-gray-400">
         im Browser gesichert · {{ formatSavedAt(localSaved) }}
       </span>
       <button
         v-if="localSaved"
-        class="text-xs text-gray-400 hover:text-red-600 underline"
+        class="text-xs text-gray-600 dark:text-gray-400 hover:text-red-600 underline"
         @click="discard"
       >
         Browser-Sicherung löschen
       </button>
     </div>
 
-    <p class="text-xs text-gray-400 dark:text-gray-500">
+    <p class="text-xs text-gray-600 dark:text-gray-400">
       <template v-if="blob">
         Der Arbeitsstand wird auf diesem Gerät im Browser gesichert (nicht auf dem Server).
         Für einen Wechsel des Geräts oder längere Pausen die Datei „Arbeitsstand speichern"

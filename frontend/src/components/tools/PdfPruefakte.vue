@@ -24,8 +24,8 @@
         <li v-for="(f, i) in files" :key="i" class="py-1 flex items-center justify-between gap-2">
           <span class="truncate text-gray-700 dark:text-gray-300">{{ i + 1 }}. {{ f.name }}</span>
           <span class="flex gap-1 shrink-0">
-            <button :disabled="i === 0" class="text-gray-400 hover:text-primary-600 disabled:opacity-30" @click="move(i, -1)">↑</button>
-            <button :disabled="i === files.length - 1" class="text-gray-400 hover:text-primary-600 disabled:opacity-30" @click="move(i, 1)">↓</button>
+            <button :disabled="i === 0" class="text-gray-600 dark:text-gray-400 hover:text-primary-600 disabled:opacity-30" @click="move(i, -1)">↑</button>
+            <button :disabled="i === files.length - 1" class="text-gray-600 dark:text-gray-400 hover:text-primary-600 disabled:opacity-30" @click="move(i, 1)">↓</button>
             <button class="text-red-500 hover:text-red-700" @click="files.splice(i, 1)">✕</button>
           </span>
         </li>

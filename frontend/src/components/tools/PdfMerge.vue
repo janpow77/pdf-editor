@@ -41,7 +41,7 @@
         @dragover.prevent
         @drop.prevent="reorderFile(idx)"
       >
-        <svg class="w-4 h-4 text-gray-400 cursor-grab" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-4 h-4 text-gray-600 dark:text-gray-400 cursor-grab" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
         </svg>
         <span class="text-sm text-gray-600 dark:text-gray-300 font-mono">{{ idx + 1 }}.</span>
@@ -49,15 +49,15 @@
           <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd" />
         </svg>
         <span class="flex-1 text-sm text-gray-900 dark:text-white truncate">{{ file.name }}</span>
-        <span class="text-xs text-gray-400">{{ formatSize(file.size) }}</span>
+        <span class="text-xs text-gray-600 dark:text-gray-400">{{ formatSize(file.size) }}</span>
         <button
-          class="text-gray-400 hover:text-red-500"
+          class="text-gray-600 dark:text-gray-400 hover:text-red-500"
           @click="files.splice(idx, 1)"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
       </div>
-      <p class="text-xs text-gray-400">Reihenfolge per Drag & Drop ändern</p>
+      <p class="text-xs text-gray-600 dark:text-gray-400">Reihenfolge per Drag & Drop ändern</p>
     </div>
 
     <!-- Action -->

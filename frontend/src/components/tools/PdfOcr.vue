@@ -49,7 +49,7 @@
       <div v-else class="cursor-pointer space-y-2" @click="($refs.fileInput as HTMLInputElement).click()">
         <div class="text-4xl">&#128229;</div>
         <p class="text-gray-600 dark:text-gray-400">Gescannte PDF hierher ziehen</p>
-        <p class="text-sm text-gray-400">oder klicken zum Auswaehlen</p>
+        <p class="text-sm text-gray-600 dark:text-gray-400">oder klicken zum Auswaehlen</p>
       </div>
     </div>
 
@@ -93,7 +93,7 @@
         />
       </svg>
       <p class="text-gray-600 dark:text-gray-400 font-medium">OCR wird durchgefuehrt...</p>
-      <p class="text-xs text-gray-400 dark:text-gray-500">
+      <p class="text-xs text-gray-600 dark:text-gray-400">
         Dies kann bei grossen Dokumenten einige Minuten dauern.
       </p>
     </div>

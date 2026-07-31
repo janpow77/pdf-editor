@@ -206,6 +206,31 @@ Wort-Rechtecke gefunden, damit auch eine IBAN in Vierergruppen erfasst wird.
 Weil Schwärzen unumkehrbar ist, gibt es eine **Vorschau**, die jede Fundstelle
 mit Text, Muster und Seite auflistet, bevor etwas entfernt wird.
 
+### Live-Editor: direkt auf der Seite tippen (2026-07-31) — umgesetzt
+
+Der größte verbliebene Unterschied zu Acrobat war nicht die Funktion, sondern
+die Bedienung: Text ändern hieß „Block anklicken → Dialog öffnet sich →
+Textfeld ausfüllen → vormerken". Das ist ein Formular, kein Editor.
+
+Jetzt liegt der Cursor dort, wo der Text steht. `PdfTextEditor.vue` setzt ein
+`contenteditable`-Feld exakt auf die Blockposition der gerenderten Seite —
+gleiche Schriftgröße, gleiche Farbe, gleiche Familie, skaliert mit dem Zoom.
+Dazu:
+
+- **Schwebende Leiste** am Block: Schriftgröße, Fett, Kursiv, Farbe. Fett und
+  Kursiv werden als eingebettete Bold-/Italic-Schrift übernommen, nicht
+  simuliert.
+- **Verschieben und Größe ändern** per Anfasser, in Seitenkoordinaten.
+- **Live-Vorschau**: geänderte Blöcke erscheinen sofort auf der Seite (grüner
+  Rahmen), noch bevor der Server die Datei neu schreibt.
+- **Esc oder Klick daneben** übernimmt; die Änderungsliste bleibt als
+  Kontrolle daneben stehen.
+
+Die Grenze bleibt bewusst bestehen und wird auch so benannt: Das *Schreiben*
+der geänderten Datei macht weiterhin der Server (PyMuPDF). Ein PDF im Browser
+zu schreiben hieße, eine zweite PDF-Bibliothek zu pflegen — für ein Ergebnis,
+das der Server bereits korrekt liefert.
+
 ### Bearbeitung unterbrechen und fortsetzen (2026-07-30) — umgesetzt
 
 Editoren halten einen Arbeitsstand: die Arbeitskopie des Dokuments **plus die
@@ -261,6 +286,88 @@ oder eine Anmeldung verlangt. Auslieferungszustand: **nichts beschränkt.**
   mit den Kacheln in `ToolGrid.vue`, ein zweiter prüft, dass jeder Katalog-Pfad
   einer echten Route entspricht. Damit kann die Zuordnung nicht unbemerkt
   auseinanderlaufen.
+
+### Barrierefreiheit nach BITV 2.0 (2026-07-31) — umgesetzt
+
+Für eine Anwendung der Landesverwaltung ist Barrierefreiheit keine Kür, sondern
+Pflicht (BITV 2.0, § 3 HessBGG). Geprüft wurde automatisiert mit axe-core über
+Startseite, Anmelden, Registrieren, Datenschutz, Passwort-Reset und die
+Rolodex-Ansicht — jeweils in hellem **und** dunklem Farbschema, Regelsätze
+WCAG 2.0 A/AA und 2.1 A/AA. **Ergebnis: 0 Verstöße.**
+
+Behoben wurden dabei diese echten Befunde:
+
+- **Kontrast**: Hilfetexte in `text-gray-400`/`text-gray-500` erreichten nur
+  2,4:1 bzw. 3,2:1 statt der geforderten 4,5:1. Durchgängig auf `text-gray-600`
+  mit passender Dunkelvariante angehoben (35 Dateien).
+- **Links nur durch Farbe erkennbar** (WCAG 1.4.1): Inline-Links im Fließtext
+  hatten 2,2:1 gegen den umgebenden Text. Jetzt zusätzlich unterstrichen.
+- **Rolodex**: Das Ausblenden der hinteren Karten per `opacity` drückte deren
+  Text unter die Kontrastschwelle. Die Tiefenwirkung entsteht nun allein über
+  Skalierung, Drehung und Stapelreihenfolge.
+
+Ergänzt:
+
+- **Sprunglink** „Zum Hauptinhalt springen" als erstes Tab-Ziel; er setzt den
+  Fokus tatsächlich auf `<main>` (ein reiner Anker verschiebt nur den Scroll,
+  die nächste Tab-Taste landete sonst wieder in der Kopfzeile).
+- **`prefers-reduced-motion`**: Wer im Betriebssystem reduzierte Bewegung
+  eingestellt hat, bekommt keine Kartenrotation und keine Übergänge — die
+  Anwendung bleibt vollständig bedienbar (WCAG 2.3.3).
+- **Sichtbarer Tastaturfokus** global über `:focus-visible`.
+
+Nicht abgedeckt und bewusst offen: Eine automatisierte Prüfung findet
+erfahrungsgemäß etwa die Hälfte der Barrieren. Für die Erklärung zur
+Barrierefreiheit braucht es zusätzlich einen manuellen Test mit Screenreader
+(NVDA/JAWS) — das ist eine Aufgabe der einführenden Stelle, nicht des Codes.
+
+### Geschwindigkeit (2026-07-31) — umgesetzt
+
+Gemessen vor und nach der Änderung, nicht geschätzt:
+
+| Messpunkt | vorher | nachher |
+|---|---|---|
+| `/api/health` (wird bei jedem Seitenaufruf gerufen) | 96 ms | 1,2 ms |
+| Health-Latenz während vier parallelen Zusammenführungen | bis 242 ms | 1–2 ms |
+| Werkzeug „Text bearbeiten" öffnen | ~385 kB nachgeladen | 10 kB, Oberfläche nach 128 ms bedienbar |
+| Textextraktion, 60 Seiten (Übertragung) | 113 kB | 1,2 kB |
+| Zweitbesuch der Startseite | voller Bundle-Download | 2 kB (Rest aus dem Cache) |
+
+Was dahinter steckt:
+
+1. **Erkennung der Zusatzprogramme wird gemerkt.** `check_features()` startete
+   bei **jedem** `/api/health` einen `libreoffice --version`-Subprozess. Da die
+   Startseite den Endpunkt beim Laden abfragt, kostete das jeden Besuch rund
+   90 ms. Die Installation ändert sich zur Laufzeit nicht — jetzt wird sie
+   einmal pro Prozess ermittelt.
+2. **Rechenarbeit blockiert nicht mehr die Event-Loop.** Die Datei-Endpunkte
+   sind `async def` (sie müssen `await file.read()` aufrufen), rechneten danach
+   aber synchron mit PyMuPDF. Solange ein Dokument verarbeitet wurde, wartete
+   *jede* andere Anfrage — auch die anderer Nutzerinnen und Nutzer. 45 Aufrufe
+   laufen jetzt über `app/offload.py` im Thread-Pool (PyMuPDF und pikepdf geben
+   dabei das GIL frei, es wird also echt parallel gerechnet).
+3. **Textantworten werden komprimiert, Binärdateien nicht.** `JsonGZipMiddleware`
+   komprimiert nur JSON/Text/CSV/SVG. Starlettes eingebautes `GZipMiddleware`
+   hätte auch PDFs und Bilder erfasst — die sind bereits komprimiert, ein
+   zweiter Durchlauf kostet bei einer 100-MB-Datei mehrere Sekunden CPU für
+   unter 2 % Ersparnis. Große Downloads bleiben zudem Streams und landen nie
+   vollständig im Speicher.
+4. **pdf.js lädt erst, wenn es gebraucht wird.** Der Viewer (≈370 kB) hing fest
+   in den drei Editor-Werkzeugen. Jetzt eigener Chunk plus
+   `defineAsyncComponent`: die Werkzeug-Oberfläche ist sofort da, pdf.js kommt
+   parallel und nur, wenn wirklich ein Dokument geöffnet wird.
+5. **Gehashte Assets ein Jahr im Cache, `index.html` nie.** Dazu `gzip_static`
+   mit im Build vorkomprimierten Dateien, damit nginx nicht bei jedem Abruf neu
+   komprimiert.
+6. **`/api/health` wird nicht mehr doppelt abgefragt.** Kachelraster und
+   Hinweisleiste teilen sich über `lib/health.ts` eine Anfrage (60 s gültig,
+   nach Admin-Änderungen sofort verworfen).
+
+Bewusst **nicht** gemacht: mehrere uvicorn-Worker. Die Auftragsverwaltung für
+lange Läufe (OCR, Vergleich) hält ihre Ergebnisse prozesslokal im
+Arbeitsspeicher — mit mehreren Prozessen fände die Abholung ihren Auftrag nicht
+mehr. Skalierung über Replikas erfordert vorher einen gemeinsamen Auftragsspeicher
+(im Hardening-Backlog vermerkt).
 
 ### Optionale Konten — vorgezogen und umgesetzt
 
@@ -487,6 +594,9 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | F22 | Musterschwärzung: neun Muster + Namenslisten, IBAN über Leerzeichen hinweg, Vorschau ändert nichts, Schwärzung entfernt Text und lässt Umfeld stehen | `test_redact_fonts.py` (11 Fälle) + Browser-E2E | ✅ automatisiert + live geprüft |
 | F18 | Werkzeug-Freigabe: Admin sperrt Werkzeuge; anonym → Kachel ausgegraut mit Anmelde-Hinweis, API antwortet 403; angemeldet nutzbar; Aufheben wirkt sofort | `test_tool_access.py` (15 Fälle) + Browser-E2E (9 Schritte, inkl. direktem API-Aufruf aus der Seite) | ✅ automatisiert + live geprüft |
 | F19 | Katalog-Konsistenz: Backend-Werkzeug-IDs = Kacheln der Oberfläche; jeder Katalog-Pfad ist eine echte Route; gemeinsame Vorschau-Endpunkte bleiben frei | `test_tool_access.py::test_catalog_matches_frontend_tiles` / `::test_catalog_paths_exist_in_app` / `::test_shared_preview_endpoint_stays_open` | ✅ automatisiert |
+| F25 | Live-Editor: Eingabefeld liegt in Seitenkoordinaten auf dem Textblock, Schriftgröße/Fett/Kursiv/Farbe wirken, Verschieben und Größenänderung übernehmen, Fettung landet als eingebettete Bold-Schrift im PDF | Browser-E2E `e2e_liveeditor.mjs` (9 Schritte, Positionsvergleich in px, Schriftprüfung im erzeugten PDF) | ✅ live geprüft |
+| F26 | Barrierefreiheit BITV 2.0: 0 axe-core-Verstöße (WCAG 2.0/2.1 A+AA) auf sechs Ansichten in hellem und dunklem Schema; Sprunglink ist erstes Tab-Ziel und setzt den Fokus auf den Hauptinhalt; reduzierte Bewegung wird respektiert | Browser-Audit `a11y.mjs` (axe-core, beide Farbschemata, Tastaturprüfung) | ✅ automatisiert geprüft |
+| F27 | Geschwindigkeit: `/api/health` unter 5 ms statt 96 ms; Health bleibt unter Last antwortfähig; Textantworten komprimiert, PDFs unverändert durchgereicht; Werkzeug öffnet ohne pdf.js-Download | Messläufe `perf_web.mjs` + curl-Serie vor/nach der Änderung; gesamte pytest-Suite und alle vier E2E-Suiten unverändert grün | ✅ gemessen |
 | D1 | Keine Datei-Persistenz nach Verarbeitung | Dateisystem-Diff vor/nach 7-Operationen-Serie | ✅ live geprüft (0 neue Dateien) |
 | D2 | users-Tabelle nur E-Mail/Hash/Rolle/Flags/Prefs/Zeitstempel — keine IP | `\d users` + Code-Review models.py | ✅ per Modell |
 | D3 | Mail-Adresse nie in Logs (Erfolg + Fehlerpfade) | Log-Grep nach Testversand gegen Debug-SMTP | ✅ live geprüft (0 Treffer, SMTP-Gegenprobe positiv) |

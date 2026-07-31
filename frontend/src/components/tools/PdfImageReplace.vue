@@ -35,11 +35,11 @@
             class="w-full h-20 object-contain bg-gray-50 dark:bg-gray-800 rounded"
             alt="Bildvorschau"
           />
-          <div v-else class="w-full h-20 flex items-center justify-center bg-gray-50 dark:bg-gray-800 rounded text-xs text-gray-400">
+          <div v-else class="w-full h-20 flex items-center justify-center bg-gray-50 dark:bg-gray-800 rounded text-xs text-gray-600 dark:text-gray-400">
             keine Vorschau
           </div>
           <p class="mt-1 text-xs text-gray-600 dark:text-gray-300">Seite {{ img.page }}</p>
-          <p class="text-xs text-gray-400">{{ img.width }} × {{ img.height }} px</p>
+          <p class="text-xs text-gray-600 dark:text-gray-400">{{ img.width }} × {{ img.height }} px</p>
         </button>
       </div>
     </div>
@@ -51,7 +51,7 @@
     <div v-if="selected" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-2">
       <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Neues Bild (PNG/JPG)</label>
       <input type="file" accept=".png,.jpg,.jpeg" class="text-sm text-gray-600 dark:text-gray-300" @change="onImage" />
-      <p class="text-xs text-gray-400">
+      <p class="text-xs text-gray-600 dark:text-gray-400">
         Für ein sauberes Ergebnis sollte das neue Bild dasselbe Seitenverhältnis haben.
       </p>
     </div>
