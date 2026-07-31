@@ -395,6 +395,67 @@ Analyse — betreffen den **visuellen Editor**, nicht die in Phase 1 übernommen
 - **Hetzner**: Ablage nach dem Muster von `docs/HETZNER_DEPLOY.md` — `/opt/pdf-editor/compose.yaml`, Secrets in `/etc/pdf-editor/env` (0600). Eigener Cloudflare-Tunnel bzw. zusätzliches Hostname-Mapping `pdf.flowaudit.de → http://frontend:80`.
 - **Später** (nach Repo-Extraktion): GitHub-Actions-Build nach ghcr (`…-pdf-backend`/`…-pdf-frontend`), Deploy per `docker compose pull && up -d`, Rollback über Image-Tag wie im Hauptprojekt.
 
+## 8a. Entscheidungsvorlage: Anmeldung mit der Windows-Kennung (offen)
+
+**Stand 2026-07-30 — bewusst nicht umgesetzt, Entscheidung liegt bei der IT.**
+
+### Die eine Sache, die nicht geht
+
+Eine Webseite kann die Windows-Kennung **nicht** von sich aus auslesen. Browser
+geben sie nicht an JavaScript heraus — sonst könnte jede beliebige Seite
+feststellen, wer am Rechner sitzt. Es gibt dafür keine Schnittstelle; die
+gelegentlich zitierten Auslese-Verfahren sind ActiveX-Relikte des Internet
+Explorer. „Automatisch erkennen" ist also nur über die **Authentifizierung auf
+HTTP-Ebene** möglich, nicht über Programmcode in der Anwendung.
+
+### Drei mögliche Wege
+
+| Weg | Nutzererlebnis | Voraussetzungen | Eignung |
+|---|---|---|---|
+| **1. Kerberos/SPNEGO** (Integrierte Windows-Authentifizierung) | keine Eingabe, kein Klick | Dienstkonto + SPN + Keytab im AD; Reverse-Proxy mit GSSAPI (nginx `spnego-http-auth`, Apache `mod_auth_gssapi`, IIS); domänengebundene Clients; Seite in der Intranet-Zone | nur Hausnetz — **nicht** über den Cloudflare-Tunnel |
+| **2. Entra ID (Azure AD) per OIDC** | ein Klick, danach meist ohne Eingabe (Windows-SSO über den Primary Refresh Token) | App-Registrierung im Tenant: Tenant-ID, Client-ID, Redirect-URI, Secret bzw. PKCE | funktioniert intern **und** extern, auch hinter Cloudflare |
+| **3. Proxy-Header** (`X-Remote-User`; der Proxy erledigt Weg 1 oder 2) | wie der jeweilige Proxy | App **ausschließlich** über diesen Proxy erreichbar; Proxy muss den Header von außen zwingend überschreiben | nur Intranet, mit Auflagen |
+
+### Sicherheitsauflagen
+
+- **Weg 3 ist die gefährlichste Variante**: Ist die App auch direkt erreichbar,
+  kann jeder den Header setzen und sich als beliebige Person ausgeben — inklusive
+  Administrator. Umsetzung nur mit ausdrücklichem Opt-in (eigene
+  Umgebungsvariable, Vorbild: `PDFAPP_TRUST_CF_HEADER`), Bindung an die
+  Proxy-IP und deutlicher Warnung in der Doku.
+- **Weg 2** braucht saubere Prüfung von `state`, `nonce`, Signatur, `iss`, `aud`
+  und Ablauf des ID-Tokens; die Rolle darf nicht aus dem Token übernommen
+  werden, ohne dass festgelegt ist, welche Gruppe Administratorrechte erhält.
+- Für alle Wege zu klären: Wird beim ersten Anmelden **automatisch ein Konto
+  angelegt**? Bleibt die offene Registrierung mit Passwort daneben bestehen?
+  Werden Konten anhand der E-Mail-Adresse zusammengeführt (Achtung:
+  Kontoübernahme, wenn die Adresse nicht verifiziert ist)?
+
+### Auswirkung auf das Datenschutzversprechen
+
+Keine auf die Dateiverarbeitung — die bleibt speicherfrei. Gespeichert würde
+weiterhin nur, was heute schon in `users` steht (Kennung/E-Mail, Rolle, Flags,
+Einstellungen, Zeitstempel); statt des bcrypt-Hashes käme die Kennung vom
+Identitätsanbieter. Die Datenschutzerklärung müsste den Abschnitt
+„Benutzerkonten" um den Anbieter und die übernommenen Angaben ergänzen.
+
+### Empfehlung
+
+- **Aktuelles Deployment** (Hetzner + Cloudflare, öffentlich erreichbar):
+  Weg 2 (Entra ID). Weg 1 scheidet technisch aus.
+- **Falls die App später im Hausnetz betrieben wird**: Weg 1 im Proxy plus
+  Weg 3 in der Anwendung — dann ist wirklich keine Eingabe mehr nötig.
+- Ohne Konfiguration bleiben beide Wege inaktiv, die anonyme Nutzung und die
+  bestehende Anmeldung ändern sich nicht.
+
+### Aufwand (geschätzt, wenn die Zugänge vorliegen)
+
+| Baustein | Aufwand |
+|---|---|
+| Weg 2: OIDC-Anbindung (Discovery, Authorization Code + PKCE, `state`/`nonce`, Kontoanlage/-verknüpfung, Rollenzuordnung, Tests, Anmelde-Knopf, Callback-Ansicht) | 1–2 Tage |
+| Weg 3: Header-Vertrauen inkl. IP-Bindung, Opt-in, Tests, Doku | 0,5 Tage |
+| Voraussetzung durch die IT: App-Registrierung im Tenant bzw. SPN/Keytab und Proxy-Konfiguration | nicht im Projekt |
+
 ## 9. Soll-/Zielkriterien & Prüfverfahren
 
 Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
@@ -455,3 +516,4 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | 1.7 | Anbieterdaten eintragen, SMTP-Zugang konfigurieren, Tunnel anlegen, Erst-Deploy | offen |
 | 1.8 | Repo-Extraktion + CI (ghcr-Images, Smoke-Test-Gate) | offen |
 | 2 | Plattform-Entscheidung: Zusammenarbeit/DMS/Cloud nur als getrenntes Opt-in-Modul mit Dokumentablage — oder dem Ökosystem überlassen und die App als dessen Verarbeitungs-API positionieren (Empfehlung) | offen |
+| 2a | Anmeldung mit der Windows-Kennung (SSO) — Entscheidungsvorlage in Abschnitt 8a, Umsetzung nach Klärung mit der IT | offen (bewusst) |
