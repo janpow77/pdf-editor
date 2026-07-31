@@ -54,6 +54,11 @@ export const router = createRouter({
       name: 'datenschutz',
       component: () => import('@/views/DatenschutzView.vue'),
     },
+    {
+      path: '/lizenzen',
+      name: 'lizenzen',
+      component: () => import('@/views/LizenzenView.vue'),
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

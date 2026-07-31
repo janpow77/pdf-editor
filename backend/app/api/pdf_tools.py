@@ -216,27 +216,14 @@ async def get_thumbnails(
     _validate_pdf(file, content)
 
     try:
-        import fitz
-
-        from app.services.pdf_tools_service import _parse_page_range
-
         service = get_pdf_tools()
-
-        # Seiten VOR dem Rendern bestimmen (sonst rendert der Service alles)
-        doc = fitz.open(stream=content, filetype="pdf")
-        total = doc.page_count
-        doc.close()
-        page_list = _parse_page_range(pages, total) if pages else list(range(1, total + 1))
-        if len(page_list) > 50:
-            raise HTTPException(
-                status_code=400, detail="Maximal 50 Thumbnails pro Anfrage"
-            )
-
-        thumbnails = await run_cpu(service.get_thumbnails, content, page_list, max_width)
-        thumbnails = {k: v for k, v in thumbnails.items() if int(k) in page_list}
-
+        thumbnails = await run_cpu(
+            service.thumbnails_for_spec, content, pages, max_width
+        )
         return {"thumbnails": thumbnails, "count": len(thumbnails)}
 
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:

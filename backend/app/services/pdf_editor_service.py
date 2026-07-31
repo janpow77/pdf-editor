@@ -15,12 +15,9 @@ from app.services.pdf_tools_service import PdfToolResult
 
 logger = logging.getLogger(__name__)
 
-try:
-    import fitz  # PyMuPDF
-
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
+# Fremdbibliotheken ausschließlich über app/pdf_backend.py — dort stehen
+# Import, Verfügbarkeitserkennung und Lizenzregister an einer Stelle.
+from app.pdf_backend import PYMUPDF_AVAILABLE, fitz, open_pdf  # noqa: E402
 
 try:
     import numpy as np

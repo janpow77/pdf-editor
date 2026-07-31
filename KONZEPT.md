@@ -369,6 +369,69 @@ Arbeitsspeicher — mit mehreren Prozessen fände die Abholung ihren Auftrag nic
 mehr. Skalierung über Replikas erfordert vorher einen gemeinsamen Auftragsspeicher
 (im Hardening-Backlog vermerkt).
 
+### Kapselung der Fremdbibliotheken (2026-07-31) — umgesetzt
+
+Anlass war die Frage, ob man die Fremdbibliotheken nicht selbst schreiben und
+pflegen könnte. Die ehrliche Antwort für den PDF-Kern ist nein: PyMuPDF sind
+101.000 Zeilen Python über 15 MB kompiliertem C (MuPDF); dahinter stehen rund
+tausend Seiten PDF-Spezifikation plus Schriftinterpretation, Bildkodierungen,
+Farbprofile und Verschlüsselungsverfahren. Ein selbst gebauter Parser wäre
+gegenüber diesen gehärteten Implementierungen auch sicherheitstechnisch ein
+Rückschritt — Formatparser sind das klassische Ziel für Speicherfehler.
+
+Die Abhängigkeit wird deshalb nicht vermieden, sondern **eingefasst**
+(`backend/app/pdf_backend.py`):
+
+1. **Ein Importpunkt.** Vorher importierten sechs Service-Dateien und ein
+   Router `fitz` bzw. `pikepdf` selbst, zwei davon sogar lokal innerhalb von
+   Funktionen. Jetzt: null Direktimporte außerhalb des Kapselungsmoduls, von
+   einem Test erzwungen. Ein Versionswechsel oder Austausch trifft eine Datei
+   statt sieben.
+2. **Eine Verfügbarkeitserkennung.** Statt sechs eigener
+   `try/except ImportError`-Blöcke mit eigenen Flags steht die Erkennung
+   einmal zentral, samt der externen Programme (Ghostscript, LibreOffice,
+   Tesseract, qpdf). Nebeneffekt: Der LibreOffice-Test startet gar keinen
+   Subprozess mehr, wenn das Programm nicht im PATH liegt.
+3. **Ein Register.** `DEPENDENCIES` führt zu jeder Komponente Zweck, Lizenz,
+   Quelle und möglichen Ersatz. Das Register speist `/api/licenses` und damit
+   die Lizenzseite — die Angabe kann nicht veralten, ohne dass die Funktion
+   mit veraltet.
+
+Bewusste Grenze: Das ist **keine** Fassade, die jede PyMuPDF-Funktion nachbaut.
+Die Services rufen `fitz` weiterhin direkt auf (146 Stellen). Eine vollständige
+Abstraktionsschicht wäre eine zweite Bibliothek mit eigenen Fehlern und würde
+die Abhängigkeit verstecken statt verringern. Eingefasst sind Zugang, Erkennung
+und Buchführung.
+
+Nebenbei behoben: `/pdf-tools/thumbnails` öffnete das Dokument im Router selbst,
+um die Seitenzahl zu bestimmen — Geschäftslogik in der Schnittstellenschicht,
+gegen die eigene Konvention. Das liegt jetzt in `thumbnails_for_spec()`.
+
+### Lizenzlage und Quelltextpflicht (2026-07-31) — umgesetzt
+
+**PyMuPDF und Ghostscript stehen unter „AGPL-3.0 oder kommerzielle
+Artifex-Lizenz".** Bei einer öffentlich erreichbaren Weboberfläche greift
+AGPL § 13: Wer den Dienst über das Netz nutzt, muss den vollständigen Quelltext
+erhalten können — auch ohne dass Software verteilt wird.
+
+Für dieses Vorhaben ist das eher Rückenwind als Hindernis; der Quelltext liegt
+ohnehin offen. Es ist aber eine bewusste Entscheidung mit zwei Folgen:
+
+- Die Anwendung **muss** den Quelltext benennen. Deshalb: Hinweis auf der
+  Startseite (nicht nur im Fußbereich — eine Angabe, die man erst suchen muss,
+  erfüllt die Bedingung nur formal), dauerhafter Fußzeilen-Link „Open Source",
+  Abschnitt im Impressum und eine eigene Seite `/lizenzen` mit allen 15
+  Komponenten, Lizenzen, Zweck und möglichem Ersatz.
+- Eine spätere Weitergabe an Dritte **ohne** Quelloffenlegung wäre
+  ausgeschlossen; dafür bräuchte es die kommerzielle Artifex-Lizenz.
+
+Technisch hängt der Hinweis an der Wirklichkeit, nicht an einem festen Text:
+`requires_source_disclosure()` prüft, ob eine AGPL-Komponente tatsächlich
+verfügbar ist. Würde PyMuPDF eines Tages ersetzt, verschwindet der Hinweis von
+selbst, statt als falsche Angabe stehen zu bleiben. Fehlt die Adresse
+(`PDFAPP_SOURCE_URL`), weist die Lizenzseite den Betreiber sichtbar darauf hin,
+dass die Bedingung noch nicht erfüllt ist.
+
 ### Optionale Konten — vorgezogen und umgesetzt
 
 Ursprünglich Phase 3, auf Nutzerwunsch vorgezogen. Grundsätze (alle eingehalten):
@@ -597,6 +660,9 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | F25 | Live-Editor: Eingabefeld liegt in Seitenkoordinaten auf dem Textblock, Schriftgröße/Fett/Kursiv/Farbe wirken, Verschieben und Größenänderung übernehmen, Fettung landet als eingebettete Bold-Schrift im PDF | Browser-E2E `e2e_liveeditor.mjs` (9 Schritte, Positionsvergleich in px, Schriftprüfung im erzeugten PDF) | ✅ live geprüft |
 | F26 | Barrierefreiheit BITV 2.0: 0 axe-core-Verstöße (WCAG 2.0/2.1 A+AA) auf sechs Ansichten in hellem und dunklem Schema; Sprunglink ist erstes Tab-Ziel und setzt den Fokus auf den Hauptinhalt; reduzierte Bewegung wird respektiert | Browser-Audit `a11y.mjs` (axe-core, beide Farbschemata, Tastaturprüfung) | ✅ automatisiert geprüft |
 | F27 | Geschwindigkeit: `/api/health` unter 5 ms statt 96 ms; Health bleibt unter Last antwortfähig; Textantworten komprimiert, PDFs unverändert durchgereicht; Werkzeug öffnet ohne pdf.js-Download | Messläufe `perf_web.mjs` + curl-Serie vor/nach der Änderung; gesamte pytest-Suite und alle vier E2E-Suiten unverändert grün | ✅ gemessen |
+| F28 | Kapselung: kein Direktimport von fitz/pikepdf/pymupdf außerhalb von `app/pdf_backend.py`, keine eigenen Verfügbarkeits-Flags in Services | `test_pdf_backend.py` (Quelltext-Scan über alle Module, auch lokale Importe in Funktionen) | ✅ automatisiert erzwungen |
+| F29 | Register: jede Komponente mit Zweck, Lizenz, Quelle; AGPL-Komponenten als Netzwerk-Copyleft markiert; `/api/licenses` liefert dieselbe Liste | `test_pdf_backend.py` (7 Fälle) | ✅ automatisiert |
+| F30 | Quelltextpflicht sichtbar: Hinweis auf der Startseite nennt die AGPL-Komponenten und verlinkt den Quelltext, Fußzeile auf jeder Seite, Impressum-Abschnitt, Lizenzseite mit 15 Komponenten; fehlende Adresse wird als unerfüllte Bedingung angezeigt | Browser-E2E `e2e_lizenzen.mjs` (7 Schritte) + axe-Audit über Lizenz- und Impressumsseite in beiden Farbschemata | ✅ live geprüft |
 | D1 | Keine Datei-Persistenz nach Verarbeitung | Dateisystem-Diff vor/nach 7-Operationen-Serie | ✅ live geprüft (0 neue Dateien) |
 | D2 | users-Tabelle nur E-Mail/Hash/Rolle/Flags/Prefs/Zeitstempel — keine IP | `\d users` + Code-Review models.py | ✅ per Modell |
 | D3 | Mail-Adresse nie in Logs (Erfolg + Fehlerpfade) | Log-Grep nach Testversand gegen Debug-SMTP | ✅ live geprüft (0 Treffer, SMTP-Gegenprobe positiv) |

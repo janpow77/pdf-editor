@@ -22,29 +22,18 @@ from app.services.pdf_tools_service import PdfToolResult
 
 logger = logging.getLogger(__name__)
 
-try:
-    import fitz
-
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
-
-GHOSTSCRIPT_BIN = shutil.which("gs")
-
-try:
-    from pyhanko.sign import signers as _pyhanko_signers
-
-    PYHANKO_AVAILABLE = True
-except ImportError:
-    PYHANKO_AVAILABLE = False
-
-try:
-    import ocrmypdf as _ocrmypdf
-
-    # OCRmyPDF braucht Ghostscript zur Laufzeit
-    OCRMYPDF_AVAILABLE = bool(GHOSTSCRIPT_BIN)
-except ImportError:
-    OCRMYPDF_AVAILABLE = False
+# Fremdbibliotheken ausschließlich über app/pdf_backend.py — dort stehen
+# Import, Verfügbarkeitserkennung und Lizenzregister an einer Stelle.
+from app.pdf_backend import (
+    GHOSTSCRIPT_BIN,
+    OCRMYPDF_AVAILABLE,
+    PYHANKO_AVAILABLE,
+    PYMUPDF_AVAILABLE,
+    fitz,
+    ocrmypdf as _ocrmypdf,
+    open_pdf,
+    pyhanko_signers as _pyhanko_signers,
+)
 
 
 def _hex_to_rgb(hex_color: str) -> tuple[float, float, float]:
@@ -1292,10 +1281,8 @@ class PdfExtrasService:
                         )
                         suffix = "_komprimiert"
                     elif operation == "rotate":
-                        import fitz as _fitz
-
                         angle = int(params.get("rotation", 90))
-                        with _fitz.open(stream=content, filetype="pdf") as d:
+                        with open_pdf(content) as d:
                             rotations = {p: angle for p in range(1, d.page_count + 1)}
                         result = tools.rotate_pages(content, rotations)
                         suffix = "_rotiert"
@@ -1314,9 +1301,7 @@ class PdfExtrasService:
                         )
                         if result.success:
                             # fortlaufend über alle Dateien hinweg
-                            import fitz as _fitz
-
-                            with _fitz.open(stream=content, filetype="pdf") as d:
+                            with open_pdf(content) as d:
                                 bates_counter += d.page_count
                         suffix = "_bates"
                     elif operation == "watermark":

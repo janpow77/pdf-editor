@@ -23,30 +23,20 @@ from app.services.pdf_tools_service import PdfToolResult
 
 logger = logging.getLogger(__name__)
 
-try:
-    import fitz
-
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
-
-try:
-    import pikepdf
-
-    PIKEPDF_AVAILABLE = True
-except ImportError:
-    PIKEPDF_AVAILABLE = False
-
-try:
-    from pyhanko.pdf_utils.reader import PdfFileReader as _HankoReader
-    from pyhanko.sign.validation import validate_pdf_signature as _validate_sig
-    from pyhanko.sign.validation.settings import KeyUsageConstraints
-
-    PYHANKO_VALIDATION_AVAILABLE = True
-except ImportError:
-    PYHANKO_VALIDATION_AVAILABLE = False
-
-SOFFICE_BIN = shutil.which("libreoffice") or shutil.which("soffice")
+# Fremdbibliotheken ausschließlich über app/pdf_backend.py — dort stehen
+# Import, Verfügbarkeitserkennung und Lizenzregister an einer Stelle.
+from app.pdf_backend import (
+    PIKEPDF_AVAILABLE,
+    PYHANKO_VALIDATION_AVAILABLE,
+    PYMUPDF_AVAILABLE,
+    SOFFICE_BIN,
+    HankoReader as _HankoReader,
+    KeyUsageConstraints,
+    fitz,
+    open_pdf,
+    pikepdf,
+    validate_pdf_signature as _validate_sig,
+)
 
 OFFICE_EXTENSIONS = {".xlsx", ".xls", ".pptx", ".ppt", ".odt", ".ods", ".odp", ".html", ".htm", ".rtf", ".txt"}
 

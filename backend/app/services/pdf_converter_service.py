@@ -14,13 +14,9 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-# PDF processing
-try:
-    import fitz  # PyMuPDF
-
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
+# Fremdbibliotheken ausschließlich über app/pdf_backend.py — dort stehen
+# Import, Verfügbarkeitserkennung und Lizenzregister an einer Stelle.
+from app.pdf_backend import PYMUPDF_AVAILABLE, fitz, open_pdf
 
 # Table extraction
 try:
@@ -49,12 +45,10 @@ except ImportError:
     OCR_AVAILABLE = False
 
 # Excel export
-try:
-    import openpyxl
+from app.pdf_backend import OPENPYXL_AVAILABLE
 
-    OPENPYXL_AVAILABLE = True
-except ImportError:
-    OPENPYXL_AVAILABLE = False
+if OPENPYXL_AVAILABLE:
+    import openpyxl
 
 
 @dataclass

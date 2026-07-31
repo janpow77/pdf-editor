@@ -183,6 +183,24 @@ async def health(request: Request):
     }
 
 
+@app.get("/api/licenses")
+async def licenses():
+    """Komponenten, Lizenzen und Quelltextangabe — Grundlage der Lizenzseite.
+
+    Die Liste kommt aus `app/pdf_backend.py` und damit aus demselben Register,
+    über das die Anwendung ihre Fremdbibliotheken lädt. Eine Komponente, die
+    hier fehlt, wäre auch nicht eingebunden — die Angabe kann nicht veralten,
+    ohne dass die Funktion mit veraltet.
+    """
+    from app.pdf_backend import dependency_report, requires_source_disclosure
+
+    return {
+        "components": dependency_report(),
+        "source_disclosure_required": requires_source_disclosure(),
+        "source_url": settings.source_url or None,
+    }
+
+
 # Datei-Router bekommen die gestuften Upload-Limits (anonym vs. angemeldet)
 # und die Werkzeug-Freigabe (vom Admin gesperrte Werkzeuge → 403 ohne Login)
 _limit_deps = [Depends(attach_upload_limits), Depends(enforce_tool_access)]

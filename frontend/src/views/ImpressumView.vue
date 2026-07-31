@@ -15,6 +15,18 @@
       <p>
         Verantwortlich für den Inhalt: [Name]
       </p>
+
+      <p><strong>Verwendete Software</strong></p>
+      <p>
+        Diese Anwendung nutzt freie Software, darunter Komponenten unter der
+        GNU Affero General Public License. Die vollständige Liste der
+        Komponenten mit Lizenzen und der Zugang zum Quelltext stehen unter
+        <RouterLink to="/lizenzen" class="text-primary-700 dark:text-primary-400 underline hover:no-underline">Open Source</RouterLink>.
+      </p>
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { RouterLink } from 'vue-router'
+</script>

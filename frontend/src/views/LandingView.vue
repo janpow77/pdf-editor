@@ -13,11 +13,18 @@
     <NoticeBanner />
     <ResultsPanel />
     <ToolGrid />
+
+    <!-- Offenlegung der Bauteile. Steht bewusst auf der Startseite und nicht
+         nur im Fußbereich: Die AGPL verlangt, dass Nutzende des Dienstes vom
+         Quelltext erfahren — eine Angabe, die man erst suchen muss, erfüllt
+         das nur formal. -->
+    <OpenSourceNotice />
   </div>
 </template>
 
 <script setup lang="ts">
 import NoticeBanner from '@/components/NoticeBanner.vue'
+import OpenSourceNotice from '@/components/OpenSourceNotice.vue'
 import ResultsPanel from '@/components/ResultsPanel.vue'
 import ToolGrid from '@/components/ToolGrid.vue'
 </script>

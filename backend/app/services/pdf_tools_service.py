@@ -19,42 +19,28 @@ from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+# Fremdbibliotheken kommen ausschließlich über app/pdf_backend.py — dort
+# stehen Import, Verfügbarkeitserkennung und Lizenzregister an einer Stelle.
+from app.pdf_backend import (
+    DOCX_AVAILABLE,
+    OPENPYXL_AVAILABLE,
+    PIKEPDF_AVAILABLE,
+    PILLOW_AVAILABLE,
+    PYMUPDF_AVAILABLE,
+    SOFFICE_BIN,
+    fitz,
+    open_pdf,
+    pikepdf,
+)
 
-try:
-    import fitz  # PyMuPDF
-
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
-
-try:
+if PILLOW_AVAILABLE:
     from PIL import Image
-
-    PILLOW_AVAILABLE = True
-except ImportError:
-    PILLOW_AVAILABLE = False
-
-try:
+if DOCX_AVAILABLE:
     from docx import Document as DocxDocument
-
-    DOCX_AVAILABLE = True
-except ImportError:
-    DOCX_AVAILABLE = False
-
-try:
+if OPENPYXL_AVAILABLE:
     import openpyxl
 
-    OPENPYXL_AVAILABLE = True
-except ImportError:
-    OPENPYXL_AVAILABLE = False
-
-try:
-    import pikepdf
-
-    PIKEPDF_AVAILABLE = True
-except ImportError:
-    PIKEPDF_AVAILABLE = False
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -125,6 +111,10 @@ def _libreoffice_available() -> bool:
     global _lo_available
     if _lo_available is not None:
         return _lo_available
+    if not SOFFICE_BIN:
+        # Programm liegt nicht im PATH — der Subprozess kann nur scheitern.
+        _lo_available = False
+        return False
     with _lo_lock:
         if _lo_available is None:
             try:
@@ -170,6 +160,40 @@ class PdfToolsService:
             "pdf_protect": PIKEPDF_AVAILABLE,
             "pdf_unlock": PIKEPDF_AVAILABLE,
         }
+
+    def thumbnails_for_spec(
+        self,
+        file_content: bytes,
+        page_spec: str | None = None,
+        max_width: int = 200,
+        max_count: int = 50,
+    ) -> dict[str, str]:
+        """Vorschaubilder für eine Seitenangabe („1-5", „2,4,7") erzeugen.
+
+        Lag vorher im Router: der öffnete das Dokument selbst, um die
+        Seitenzahl zu bestimmen, und importierte dafür PyMuPDF direkt. Damit
+        stand Geschäftslogik in der Schnittstellenschicht und die
+        Bibliothek war an einer weiteren Stelle verdrahtet.
+
+        Wirft ``ValueError``, wenn mehr Seiten angefordert werden als erlaubt —
+        der Router macht daraus eine 400-Antwort.
+        """
+        if not PYMUPDF_AVAILABLE:
+            return {}
+
+        doc = open_pdf(file_content)
+        total = doc.page_count
+        doc.close()
+
+        page_list = (
+            _parse_page_range(page_spec, total) if page_spec else list(range(1, total + 1))
+        )
+        if len(page_list) > max_count:
+            raise ValueError(f"Maximal {max_count} Vorschaubilder pro Anfrage")
+
+        thumbnails = self.get_thumbnails(file_content, page_list, max_width)
+        wanted = set(page_list)
+        return {k: v for k, v in thumbnails.items() if int(k) in wanted}
 
     def get_thumbnails(
         self,

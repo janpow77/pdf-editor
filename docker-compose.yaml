@@ -42,6 +42,7 @@ services:
       - PDFAPP_SMTP_PASSWORD=${PDFAPP_SMTP_PASSWORD:-}
       - PDFAPP_SMTP_FROM=${PDFAPP_SMTP_FROM:-noreply@flowaudit.de}
       - PDFAPP_PUBLIC_BASE_URL=${PDFAPP_PUBLIC_BASE_URL:-}
+      - PDFAPP_SOURCE_URL=${PDFAPP_SOURCE_URL:-}
       - PDFAPP_TURNSTILE_SITE_KEY=${PDFAPP_TURNSTILE_SITE_KEY:-}
       - PDFAPP_TURNSTILE_SECRET=${PDFAPP_TURNSTILE_SECRET:-}
       # Lokale KI: leer = deaktiviert; nur eigene Infrastruktur, keine Cloud

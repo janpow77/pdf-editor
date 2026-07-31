@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     # z.B. https://pdf.flowaudit.de — leer = Flows senden keine Mails
     public_base_url: str = ""
 
+    # Quelltext-Adresse für die Lizenzseite. Solange Komponenten mit
+    # Netzwerk-Copyleft (AGPL: PyMuPDF, Ghostscript) im Einsatz sind, muss der
+    # Quelltext für Nutzerinnen und Nutzer des Dienstes erreichbar sein —
+    # die Lizenzseite weist ohne diesen Wert sichtbar darauf hin.
+    source_url: str = ""
+
     # Cloudflare Turnstile (optional): beide Keys gesetzt = Registrierung und
     # Mailversand verlangen ein gültiges Turnstile-Token
     turnstile_site_key: str = ""
