@@ -74,12 +74,33 @@ const password = ref('')
 const loading = ref(false)
 const error = ref<string | null>(null)
 
+/**
+ * Weiterleitungsziel prüfen — Schutz vor offener Weiterleitung.
+ *
+ * Der Parameter kam ungeprüft aus der Adresszeile. Ein Link auf
+ * `/login?redirect=https://phishing.example` hätte nach erfolgreicher
+ * Anmeldung auf eine fremde Seite geführt: Die Nutzerin hat sich gerade
+ * echt angemeldet, vertraut der Seite und gibt auf der nachgeschalteten
+ * Fälschung bereitwillig weitere Daten ein.
+ *
+ * Erlaubt sind deshalb nur seiteninterne Pfade: ein einzelner Schrägstrich
+ * am Anfang, danach kein weiterer und kein Doppelpunkt (`//host` wäre
+ * protokollrelativ, `javascript:` ein Skriptaufruf).
+ */
+function safeRedirect(value: unknown): string {
+  const target = typeof value === 'string' ? value : ''
+  if (!target.startsWith('/') || target.startsWith('//') || target.includes(':')) {
+    return '/'
+  }
+  return target
+}
+
 async function submit() {
   loading.value = true
   error.value = null
   try {
     await login(email.value, password.value)
-    router.push((route.query.redirect as string) || '/')
+    router.push(safeRedirect(route.query.redirect))
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Anmeldung fehlgeschlagen'
   } finally {

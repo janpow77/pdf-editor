@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # z.B. https://pdf.flowaudit.de — leer = Flows senden keine Mails
     public_base_url: str = ""
 
+    # HSTS-Kopfzeile in Sekunden — nur setzen, wenn der Dienst ausschließlich
+    # über HTTPS erreichbar ist (sonst sperrt man sich HTTP-Aufrufe aus).
+    # Empfehlung für den Produktivbetrieb: 15768000 (ein halbes Jahr).
+    hsts_seconds: int = 0
+
     # Quelltext-Adresse für die Lizenzseite. Solange Komponenten mit
     # Netzwerk-Copyleft (AGPL: PyMuPDF, Ghostscript) im Einsatz sind, muss der
     # Quelltext für Nutzerinnen und Nutzer des Dienstes erreichbar sein —

@@ -4,6 +4,7 @@ Provides merge, split, rotate, compress, watermark, convert, and more.
 """
 
 import io
+import logging
 import json
 
 from fastapi import (
@@ -20,6 +21,8 @@ from pydantic import BaseModel
 from app.offload import run_cpu
 from app.api.deps import current_limits
 from app.services.pdf_tools_service import get_pdf_tools
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pdf-tools", tags=["PDF & Dokument Tools"])
 
@@ -226,10 +229,11 @@ async def get_thumbnails(
         raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Fehler bei Thumbnail-Generierung: {e}"
-        )
+    except Exception:
+        # Ausnahmetexte können Pfade und Bibliotheksinterna verraten — nach
+        # außen nur die Aussage, nach innen der vollständige Eintrag im Log.
+        logger.exception("Thumbnail-Erzeugung fehlgeschlagen")
+        raise HTTPException(status_code=500, detail="Vorschau konnte nicht erzeugt werden")
 
 
 @router.post("/merge")

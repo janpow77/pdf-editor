@@ -29,6 +29,7 @@ from app.api import (
 from app.api.deps import attach_upload_limits, enforce_tool_access
 from app.config import settings
 from app.compression import JsonGZipMiddleware
+from app.hardening import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.ratelimit import RateTierMiddleware, limiter
 from app.tool_access import get_login_required_tools, set_db_available
 
@@ -134,6 +135,17 @@ app = FastAPI(
 # der slowapi-Limiter bedient nur die per-Route-Dekoratoren.
 app.state.limiter = limiter
 app.add_middleware(RateTierMiddleware)
+# Harte Obergrenze vor dem Einlesen des Anfragekörpers. Bewusst großzügiger
+# als das fachliche Gesamtlimit (dort wird zwischen anonym und angemeldet
+# unterschieden) — hier geht es nur darum, dass niemand den Arbeitsspeicher
+# füllt, bevor überhaupt eine Prüfung greift.
+app.add_middleware(
+    BodySizeLimitMiddleware,
+    max_bytes=(max(settings.max_total_size_mb, settings.max_total_size_mb_authed) + 16)
+    * 1024
+    * 1024,
+)
+app.add_middleware(SecurityHeadersMiddleware, hsts_seconds=settings.hsts_seconds)
 # Textantworten komprimieren — Textextraktion, Formularfeld-Listen und
 # Qualitätsberichte werden dadurch um ein Vielfaches kleiner. PDFs, Bilder
 # und Office-Dateien bleiben unangetastet: deren Inhalt ist bereits

@@ -56,10 +56,18 @@ except ImportError:  # pragma: no cover
     PIKEPDF_AVAILABLE = False
 
 try:
-    from PIL import Image  # noqa: F401
+    from PIL import Image
 
     PILLOW_AVAILABLE = True
+    # Schutz vor Dekompressionsbomben: Eine wenige Kilobyte große PNG-Datei
+    # kann sich zu Milliarden Pixeln entfalten und den Arbeitsspeicher
+    # sprengen. Pillows Voreinstellung greift erst bei rund 178 Millionen
+    # Pixeln — das wären allein 715 MB Bilddaten. 64 Megapixel entsprechen
+    # etwa DIN A3 bei 600 dpi und decken jeden realistischen Scan ab; darüber
+    # bricht Pillow mit ``DecompressionBombError`` ab.
+    Image.MAX_IMAGE_PIXELS = 64_000_000
 except ImportError:  # pragma: no cover
+    Image = None  # type: ignore[assignment]
     PILLOW_AVAILABLE = False
 
 try:
@@ -326,6 +334,17 @@ def requires_source_disclosure() -> bool:
     return any(d.copyleft_network and d.available for d in DEPENDENCIES)
 
 
+#: Obergrenze für die Seitenzahl eines einzelnen Dokuments.
+#:
+#: Ein PDF von wenigen hundert Kilobyte kann zehntausende Seiten enthalten
+#: (gleicher Seiteninhalt, vielfach referenziert). Operationen, die je Seite
+#: rendern oder Text extrahieren, laufen dann minutenlang und binden einen
+#: Arbeits-Thread — mit ein paar solchen Uploads steht der Dienst. Die Grenze
+#: liegt bewusst hoch: Eine vollständige Prüfakte hat selten mehr als ein paar
+#: tausend Seiten.
+MAX_PAGES = 5_000
+
+
 def open_pdf(content: bytes):
     """PDF aus dem Arbeitsspeicher öffnen — der einzige Einstieg in ein Dokument.
 
@@ -334,7 +353,18 @@ def open_pdf(content: bytes):
     anderes Backend ein kompatibles Dokumentobjekt liefern müsste. Auch das
     Versprechen „nur im Arbeitsspeicher" ist damit an einer Stelle ablesbar —
     es gibt keinen Pfad, auf dem eine Nutzerdatei ins Dateisystem gelangt.
+
+    Weil jede Verarbeitung hier durchläuft, ist das zugleich die richtige
+    Stelle für die Seitenzahl-Schranke: Sie greift damit für alle Werkzeuge,
+    auch für künftige, ohne dass jemand daran denken muss.
     """
     if not PYMUPDF_AVAILABLE:
         raise RuntimeError("PyMuPDF nicht verfügbar")
-    return fitz.open(stream=content, filetype="pdf")
+    doc = fitz.open(stream=content, filetype="pdf")
+    if doc.page_count > MAX_PAGES:
+        pages = doc.page_count
+        doc.close()
+        raise ValueError(
+            f"Dokument hat {pages} Seiten — verarbeitet werden höchstens {MAX_PAGES}"
+        )
+    return doc

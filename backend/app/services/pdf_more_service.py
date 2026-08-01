@@ -41,6 +41,45 @@ from app.pdf_backend import (
 OFFICE_EXTENSIONS = {".xlsx", ".xls", ".pptx", ".ppt", ".odt", ".ods", ".odp", ".html", ".htm", ".rtf", ".txt"}
 
 
+#: LibreOffice-Profileinstellungen für die Konvertierung fremder Dateien.
+#: LinkUpdateMode 0 = Verknüpfungen nie aktualisieren; MacroSecurityLevel 3 =
+#: höchste Stufe (nur signierte Makros aus vertrauenswürdigen Quellen, also
+#: praktisch keine). Beides greift, bevor das Dokument geöffnet wird.
+_HARDENED_PROFILE_XCU = """<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry"
+           xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <item oor:path="/org.openoffice.Office.Writer/Content/Update">
+    <prop oor:name="Link" oor:op="fuse"><value>0</value></prop>
+  </item>
+  <item oor:path="/org.openoffice.Office.Calc/Content/Update">
+    <prop oor:name="Link" oor:op="fuse"><value>0</value></prop>
+  </item>
+  <item oor:path="/org.openoffice.Office.Common/Security/Scripting">
+    <prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop>
+    <prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop>
+  </item>
+</oor:items>
+"""
+
+
+def _write_hardened_profile(profile_dir: Path) -> None:
+    """Frisches, gehärtetes LibreOffice-Profil anlegen.
+
+    Fehler werden bewusst nur protokolliert: Kann die Konfiguration nicht
+    geschrieben werden, läuft die Konvertierung trotzdem — allerdings mit den
+    Voreinstellungen. Ein harter Abbruch würde eine funktionierende Funktion
+    wegen einer Schreibrechte-Frage lahmlegen.
+    """
+    try:
+        target = profile_dir / "user"
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "registrymodifications.xcu").write_text(
+            _HARDENED_PROFILE_XCU, encoding="utf-8"
+        )
+    except OSError:
+        logger.warning("Gehärtetes LibreOffice-Profil konnte nicht angelegt werden")
+
+
 def _fail(msg: str, fmt: str = "pdf") -> PdfToolResult:
     return PdfToolResult(success=False, output_format=fmt, error=msg)
 
@@ -64,6 +103,33 @@ class PdfMoreService:
     # ── Office/HTML → PDF (LibreOffice headless) ──────────────
 
     def office_to_pdf(self, file_content: bytes, extension: str) -> PdfToolResult:
+        """Office-/HTML-Datei über LibreOffice nach PDF wandeln.
+
+        Sicherheitsrelevant: Die hochgeladene Datei bestimmt, was LibreOffice
+        beim Öffnen nachlädt. Eine HTML-Datei mit
+        ``<img src="file:///etc/passwd">`` oder ein Tabellenblatt mit einer
+        Verknüpfung auf einen internen Dienst würde diese Inhalte in das
+        erzeugte PDF ziehen — lokaler Dateizugriff bzw. eine Anfrage aus dem
+        Serverkontext heraus.
+
+        Gegenmaßnahmen hier:
+
+        - **Eigenes Benutzerprofil je Aufruf** (``-env:UserInstallation``).
+          Ohne das teilen sich alle gleichzeitigen Konvertierungen ein Profil
+          im Home-Verzeichnis — das ist nicht nur ein Datenleck zwischen
+          Aufträgen, sondern führt bei parallelen Läufen zu Sperrfehlern.
+        - **Verknüpfungen und Makros aus.** In das frische Profil wird eine
+          Konfiguration geschrieben, die das Aktualisieren von Verknüpfungen
+          unterbindet und die Makrosicherheit auf die höchste Stufe stellt.
+        - **Keine Wiederherstellung, keine Sperrdateien, kein Assistent** —
+          verhindert, dass ein abgestürzter Lauf den nächsten beeinflusst.
+
+        Restrisiko, das im Code nicht abschließend zu schließen ist: Der
+        Import eingebetteter Bilder ist Teil des Formats. Vollständig
+        ausgeschlossen wird der Zugriff erst, wenn der Konvertierungsprozess
+        ohne Netzzugang und ohne Lesezugriff auf das übrige Dateisystem läuft
+        (eigener Container ohne Egress). Das ist im Betriebskonzept vermerkt.
+        """
         if not SOFFICE_BIN:
             return _fail("LibreOffice nicht verfügbar")
         ext = extension.lower()
@@ -71,14 +137,32 @@ class PdfMoreService:
             return _fail(f"Dateityp {ext} wird nicht unterstützt")
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                src = Path(tmp) / f"eingabe{ext}"
+                tmp_path = Path(tmp)
+                src = tmp_path / f"eingabe{ext}"
                 src.write_bytes(file_content)
+
+                profile = tmp_path / "profil"
+                _write_hardened_profile(profile)
+
                 proc = subprocess.run(
-                    [SOFFICE_BIN, "--headless", "--convert-to", "pdf", "--outdir", tmp, str(src)],
+                    [
+                        SOFFICE_BIN,
+                        f"-env:UserInstallation=file://{profile}",
+                        "--headless",
+                        "--norestore",
+                        "--nolockcheck",
+                        "--nodefault",
+                        "--nofirststartwizard",
+                        "--convert-to",
+                        "pdf",
+                        "--outdir",
+                        tmp,
+                        str(src),
+                    ],
                     capture_output=True,
                     timeout=180,
                 )
-                out = Path(tmp) / "eingabe.pdf"
+                out = tmp_path / "eingabe.pdf"
                 if proc.returncode != 0 or not out.exists():
                     return _fail("Konvertierung fehlgeschlagen")
                 return PdfToolResult(
@@ -86,8 +170,11 @@ class PdfMoreService:
                 )
         except subprocess.TimeoutExpired:
             return _fail("Konvertierung: Zeitlimit überschritten")
-        except Exception as e:
-            return _fail(f"Konvertierung fehlgeschlagen: {e}")
+        except Exception:
+            # Kein Ausnahmetext nach außen: er kann Pfade und interne Zustände
+            # verraten. Für die Fehlersuche steht er im Log.
+            logger.exception("Office-Konvertierung fehlgeschlagen")
+            return _fail("Konvertierung fehlgeschlagen")
 
     # ── PDF → Markdown / HTML / JSON / CSV ────────────────────
 

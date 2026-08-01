@@ -432,6 +432,84 @@ selbst, statt als falsche Angabe stehen zu bleiben. Fehlt die Adresse
 (`PDFAPP_SOURCE_URL`), weist die Lizenzseite den Betreiber sichtbar darauf hin,
 dass die Bedingung noch nicht erfüllt ist.
 
+### Härtung gegen Angriffe (2026-07-31) — umgesetzt
+
+Durchgang über die Angriffsflächen einer öffentlich erreichbaren Anwendung, die
+fremde Dateien verarbeitet. Sieben Befunde, alle behoben; jeder mit Test.
+
+**1. Es gab keine einzige Sicherheitskopfzeile.** Kein CSP, kein
+X-Frame-Options, kein nosniff. Weil das Anmeldetoken im localStorage liegt,
+wäre jede Cross-Site-Scripting-Lücke eine Kontoübernahme gewesen — und die
+Werkzeugseiten ließen sich in einen fremden Rahmen einbetten (Clickjacking).
+
+Jetzt gesetzt: Content-Security-Policy, X-Content-Type-Options,
+X-Frame-Options, Referrer-Policy, Permissions-Policy, Cross-Origin-Opener und
+-Resource-Policy, optional HSTS. **Doppelt** — in nginx für die Oberfläche
+(`frontend/security-headers.conf`) und im Backend für die API
+(`backend/app/hardening.py`). Ein Schutz nur im Reverse-Proxy fällt genau dann
+aus, wenn jemand die Aufstellung ändert.
+
+Zwei bewusste Lockerungen, beide begründet: `style-src 'unsafe-inline'`, weil
+Vue gebundene Stile als Inline-Attribut schreibt (Live-Editor und
+Rolodex-Karten positionieren sich so) — Inline-*Styles* sind kein
+Skriptausführungspfad, `script-src` bleibt strikt ohne `unsafe-inline` und ohne
+`unsafe-eval`. Und die feste Turnstile-Domain, sonst ließe sich der Bot-Schutz
+nicht laden.
+
+**2. Uploadgröße wurde erst nach dem vollständigen Einlesen geprüft.** Bis zur
+ersten Prüfung lag die Datei komplett im Arbeitsspeicher — bei 400 MB
+Obergrenze und ein paar gleichzeitigen Anfragen ein Erschöpfungsangriff mit
+einer curl-Zeile. `BodySizeLimitMiddleware` weist jetzt anhand von
+Content-Length ab, bevor der Körper gelesen wird: gemessen **413 nach 11 ms**
+statt 450 MB im Speicher. Fehlt die Längenangabe (chunked), zählt die
+Middleware mit — sonst wäre die Schranke durch Weglassen eines Kopfes zu
+umgehen.
+
+**3. LibreOffice-Konvertierung ohne Isolation.** Eine hochgeladene HTML-Datei
+mit `<img src="file:///etc/passwd">` hätte den Inhalt in das erzeugte PDF
+gezogen; eine Verknüpfung auf einen internen Dienst wäre eine Anfrage aus dem
+Serverkontext heraus gewesen. Jetzt: eigenes Benutzerprofil je Aufruf
+(behebt nebenbei Sperrfehler bei parallelen Läufen), Verknüpfungsaktualisierung
+aus, Makroausführung aus, keine Wiederherstellung.
+
+**Restrisiko, das im Code nicht zu schließen ist:** Der Import eingebetteter
+Bilder ist Teil des Formats. Vollständig ausgeschlossen ist der Zugriff erst,
+wenn die Konvertierung ohne Netzzugang und ohne Lesezugriff auf das übrige
+Dateisystem läuft — ein eigener Container ohne Egress. Das gehört ins
+Betriebskonzept, nicht in den Quelltext.
+
+**4. Keine Schranke gegen Dekompressionsbomben.** Pillow griff erst bei rund
+178 Millionen Pixeln (allein 715 MB Bilddaten). Jetzt 64 Megapixel — das
+entspricht DIN A3 bei 600 dpi und deckt jeden realistischen Scan ab.
+
+**5. Keine Seitenzahl-Grenze.** Ein PDF von wenigen hundert Kilobyte kann
+zehntausende Seiten enthalten; seitenweise Verarbeitung bindet dann minutenlang
+einen Arbeits-Thread. Die Grenze (5.000 Seiten) hängt an `open_pdf()` — also am
+Kapselungspunkt und damit automatisch an jedem Werkzeug, auch an künftigen.
+
+**6. Offene Weiterleitung nach der Anmeldung.** `/login?redirect=` wurde
+ungeprüft übernommen. Ein Link auf `?redirect=https://phishing.example` hätte
+nach *echter* Anmeldung auf eine Fälschung geführt — der gefährlichste Moment,
+weil die Nutzerin der Seite gerade vertraut. Jetzt sind nur seiteninterne Pfade
+zugelassen; `//host` und `javascript:` werden ebenfalls abgewiesen.
+
+**7. Ausnahmetexte in Fehlerantworten.** Zwei Stellen gaben `str(e)` nach außen
+— das verrät Pfade und Bibliotheksinterna. Jetzt: Aussage nach außen,
+vollständiger Eintrag im Log.
+
+Was **schon vorher** in Ordnung war und geprüft wurde: ZIP-Dateien werden nur
+geschrieben, nie entpackt (kein Zip-Slip); Dateinamen werden für
+Content-Disposition bereinigt; CORS und das Vertrauen in `CF-Connecting-IP`
+sind standardmäßig aus; Formelfelder laufen über einen eigenen Übersetzer statt
+über freies JavaScript im PDF.
+
+Nachweis: 11 pytest-Fälle in `test_hardening.py` plus ein Browser-Lauf, der die
+Angriffe tatsächlich ausführt (`e2e_haertung.mjs`): Fremdskript, eingeschleustes
+Inline-Skript, Datenabfluss an eine fremde Domain, Clickjacking und zwei
+Weiterleitungsvarianten — alle sechs abgewehrt. Und, genauso wichtig: alle
+sieben bestehenden E2E-Suiten laufen **unter der CSP** ohne Konsolenfehler, die
+Richtlinie bremst die Anwendung also nicht aus.
+
 ### Optionale Konten — vorgezogen und umgesetzt
 
 Ursprünglich Phase 3, auf Nutzerwunsch vorgezogen. Grundsätze (alle eingehalten):
@@ -663,6 +741,12 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | F28 | Kapselung: kein Direktimport von fitz/pikepdf/pymupdf außerhalb von `app/pdf_backend.py`, keine eigenen Verfügbarkeits-Flags in Services | `test_pdf_backend.py` (Quelltext-Scan über alle Module, auch lokale Importe in Funktionen) | ✅ automatisiert erzwungen |
 | F29 | Register: jede Komponente mit Zweck, Lizenz, Quelle; AGPL-Komponenten als Netzwerk-Copyleft markiert; `/api/licenses` liefert dieselbe Liste | `test_pdf_backend.py` (7 Fälle) | ✅ automatisiert |
 | F30 | Quelltextpflicht sichtbar: Hinweis auf der Startseite nennt die AGPL-Komponenten und verlinkt den Quelltext, Fußzeile auf jeder Seite, Impressum-Abschnitt, Lizenzseite mit 15 Komponenten; fehlende Adresse wird als unerfüllte Bedingung angezeigt | Browser-E2E `e2e_lizenzen.mjs` (7 Schritte) + axe-Audit über Lizenz- und Impressumsseite in beiden Farbschemata | ✅ live geprüft |
+| S5 | Sicherheitskopfzeilen auf jeder Antwort (auch Fehlerseiten), CSP ohne `unsafe-inline`/`unsafe-eval` im script-src, in nginx und Backend gesetzt | `test_hardening.py` (5 Fälle) + Browser-Lauf gegen eine Auslieferung mit den echten nginx-Kopfzeilen | ✅ automatisiert + live geprüft |
+| S6 | Angriffe werden tatsächlich abgewehrt: Fremdskript, Inline-Skript, Datenabfluss, Clickjacking, offene Weiterleitung (absolut und protokollrelativ) | Browser-E2E `e2e_haertung.mjs` (6 Angriffe ausgeführt) | ✅ live geprüft |
+| S7 | Zu große Anfrage wird vor dem Einlesen abgewiesen (413), auch ohne Content-Length | `test_hardening.py` + Messung: 450 MB → 413 nach 11 ms | ✅ automatisiert + gemessen |
+| S8 | Ressourcengrenzen: höchstens 5.000 Seiten je Dokument (zentral an `open_pdf`), Bildbomben ab 64 Megapixel abgewiesen | `test_hardening.py` (2 Fälle) | ✅ automatisiert |
+| S9 | Office-Konvertierung isoliert: eigenes Profil je Aufruf, Verknüpfungen und Makros aus | Quelltextprüfung; vollständige Absicherung erfordert Netz-Isolation des Konvertierungsprozesses (Betriebskonzept) | 🟡 gemindert, Restrisiko dokumentiert |
+| S10 | Fehlerantworten ohne Pfade, Bibliotheksnamen oder Rückverfolgung | `test_hardening.py::test_error_messages_do_not_leak_internals` | ✅ automatisiert |
 | D1 | Keine Datei-Persistenz nach Verarbeitung | Dateisystem-Diff vor/nach 7-Operationen-Serie | ✅ live geprüft (0 neue Dateien) |
 | D2 | users-Tabelle nur E-Mail/Hash/Rolle/Flags/Prefs/Zeitstempel — keine IP | `\d users` + Code-Review models.py | ✅ per Modell |
 | D3 | Mail-Adresse nie in Logs (Erfolg + Fehlerpfade) | Log-Grep nach Testversand gegen Debug-SMTP | ✅ live geprüft (0 Treffer, SMTP-Gegenprobe positiv) |
