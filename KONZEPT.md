@@ -503,12 +503,53 @@ Content-Disposition bereinigt; CORS und das Vertrauen in `CF-Connecting-IP`
 sind standardmäßig aus; Formelfelder laufen über einen eigenen Übersetzer statt
 über freies JavaScript im PDF.
 
-Nachweis: 11 pytest-Fälle in `test_hardening.py` plus ein Browser-Lauf, der die
+Nachweis: 16 pytest-Fälle in `test_hardening.py` plus ein Browser-Lauf, der die
 Angriffe tatsächlich ausführt (`e2e_haertung.mjs`): Fremdskript, eingeschleustes
 Inline-Skript, Datenabfluss an eine fremde Domain, Clickjacking und zwei
 Weiterleitungsvarianten — alle sechs abgewehrt. Und, genauso wichtig: alle
 sieben bestehenden E2E-Suiten laufen **unter der CSP** ohne Konsolenfehler, die
 Richtlinie bremst die Anwendung also nicht aus.
+
+#### Nachprüfung mit echtem nginx — vier weitere Befunde
+
+Die erste Prüfung lief gegen einen Behelfsserver, der die Direktiven aus der
+Konfigurationsdatei las. Das prüft die Werte, aber nicht das Verhalten von
+nginx. Mit echtem nginx (1.24) kamen vier Mängel ans Licht, die alle behoben
+sind:
+
+1. **Der pdf.js-Worker wurde unbrauchbar.** Er ist eine `.mjs`-Datei; nginx'
+   mitgelieferte `mime.types` kennt die Endung nicht und antwortet mit
+   `application/octet-stream`. Zusammen mit dem neuen `nosniff` verweigert der
+   Browser die Ausführung — Anzeige, Textbearbeitung, Anmerkungen und
+   Formular-Designer wären in Produktion leer geblieben. Vorher fiel das nicht
+   auf, weil der Browser den Typ erriet: **die Härtung selbst erzeugte den
+   Fehler**, und nur der Lauf gegen echtes nginx machte ihn sichtbar. Behoben
+   über einen eigenen `location`-Block mit `default_type text/javascript`.
+2. **Zwei `Cache-Control`-Kopfzeilen auf `/assets/`** — `expires 1y` setzt eine
+   eigene, zusätzlich zur ausdrücklichen. Jetzt eine einzige Angabe.
+3. **Die von nginx selbst erzeugten Fehlerseiten trugen keine Kopfzeilen.**
+   Bei 502 (Backend aus) und 413 (Körper zu groß) unter `/api/` antwortet nginx
+   ohne das Backend — vorher null Sicherheitskopfzeilen, jetzt vollständig.
+4. **API-Antworten waren cachefähig.** Ohne `Cache-Control` dürfen Browser und
+   vorgelagerte Proxys verarbeitete Dokumente und Kontoauskünfte ablegen — das
+   widerspricht dem Versprechen „keine Datenspeicherung" direkt. Jetzt
+   `no-store` auf jeder API-Antwort, gesetzt in nginx **und** im Backend.
+
+Zusätzlich: `Server: uvicorn` wird ausgeblendet, `X-Permitted-Cross-Domain-Policies`
+ergänzt (die Anwendung liefert PDFs aus), und der überholte
+`interest-cohort`-Eintrag ist entfernt.
+
+Zwei Tests halten das zusammen: einer vergleicht die Kopfzeilenliste in nginx
+mit der im Backend (sie stehen an zwei Orten und dürfen nicht auseinanderlaufen),
+einer prüft, dass **jeder** `location`-Block das Schnipsel einbindet — in nginx
+ersetzt ein `add_header` im Block alle geerbten Angaben, ein vergessenes
+`include` liefert also gar keine Kopfzeilen. Beide wurden gegengeprüft, indem
+die Abweichung absichtlich erzeugt wurde; beide schlagen an.
+
+Alle acht E2E-Suiten und der axe-Lauf sind anschließend gegen echtes nginx
+wiederholt worden — grün. Am Prüfskript selbst war dafür eine Änderung nötig:
+Es schleuste axe-core als Inline-Skript ein, was die CSP zu Recht verweigert.
+Angepasst wurde das Skript, nicht die Richtlinie.
 
 ### Optionale Konten — vorgezogen und umgesetzt
 
@@ -747,6 +788,9 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | S8 | Ressourcengrenzen: höchstens 5.000 Seiten je Dokument (zentral an `open_pdf`), Bildbomben ab 64 Megapixel abgewiesen | `test_hardening.py` (2 Fälle) | ✅ automatisiert |
 | S9 | Office-Konvertierung isoliert: eigenes Profil je Aufruf, Verknüpfungen und Makros aus | Quelltextprüfung; vollständige Absicherung erfordert Netz-Isolation des Konvertierungsprozesses (Betriebskonzept) | 🟡 gemindert, Restrisiko dokumentiert |
 | S10 | Fehlerantworten ohne Pfade, Bibliotheksnamen oder Rückverfolgung | `test_hardening.py::test_error_messages_do_not_leak_internals` | ✅ automatisiert |
+| S11 | Kopfzeilen gegen echtes nginx geprüft: keine doppelten Namen, Fehlerseiten (404/413/502) tragen sie ebenfalls, `Cache-Control: no-store` auf jeder API-Antwort | nginx 1.24 lokal mit der echten Konfiguration; `test_hardening.py` (Duplikat- und no-store-Fall) | ✅ automatisiert + live geprüft |
+| S12 | nginx- und Backend-Kopfzeilen laufen nicht auseinander; jeder location-Block bindet das Schnipsel ein | `test_hardening.py` (2 Fälle, beide durch absichtliche Abweichung gegengeprüft) | ✅ automatisiert |
+| S13 | `.mjs` wird als JavaScript ausgeliefert — sonst verweigert der Browser wegen nosniff den pdf.js-Worker und die Vorschau bleibt leer | `test_hardening.py::test_nginx_serves_mjs_as_javascript` + acht E2E-Suiten gegen echtes nginx | ✅ automatisiert + live geprüft |
 | D1 | Keine Datei-Persistenz nach Verarbeitung | Dateisystem-Diff vor/nach 7-Operationen-Serie | ✅ live geprüft (0 neue Dateien) |
 | D2 | users-Tabelle nur E-Mail/Hash/Rolle/Flags/Prefs/Zeitstempel — keine IP | `\d users` + Code-Review models.py | ✅ per Modell |
 | D3 | Mail-Adresse nie in Logs (Erfolg + Fehlerpfade) | Log-Grep nach Testversand gegen Debug-SMTP | ✅ live geprüft (0 Treffer, SMTP-Gegenprobe positiv) |

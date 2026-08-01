@@ -74,6 +74,15 @@ _STATIC_HEADERS: tuple[tuple[str, str], ...] = (
     # Trennt den Browsing-Kontext von fremden Fenstern (Spectre-Klasse).
     ("Cross-Origin-Opener-Policy", "same-origin"),
     ("Cross-Origin-Resource-Policy", "same-origin"),
+    # Die Anwendung liefert PDFs aus; ohne diese Angabe könnten
+    # Adobe-Laufzeiten eine seitenweite Cross-Domain-Richtlinie annehmen.
+    ("X-Permitted-Cross-Domain-Policies", "none"),
+    # Verarbeitete Dokumente und Kontodaten dürfen nirgends zwischenliegen —
+    # weder im Browser-Cache noch in einem vorgelagerten Proxy. Das ist die
+    # Kopfzeilen-Entsprechung des Versprechens „keine Datenspeicherung".
+    # Jede Antwort dieses Dienstes ist entweder eine Nutzerdatei oder eine
+    # Auskunft über den Anfragenden — nichts davon gehört in einen Cache.
+    ("Cache-Control", "no-store"),
 )
 
 

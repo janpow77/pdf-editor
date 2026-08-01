@@ -50,6 +50,102 @@ def test_security_headers_also_on_errors(client):
     assert "content-security-policy" in {k.lower() for k in r.headers}
 
 
+def test_no_duplicate_headers(client):
+    """Kein Name darf zweimal in einer Antwort stehen.
+
+    Doppelte Kopfzeilen entstehen leicht, wenn Proxy und Anwendung dieselbe
+    Angabe setzen. Der Browser wendet zwei CSP-Kopfzeilen als Schnittmenge an —
+    das ist nicht unsicher, macht aber jede Fehlersuche zäh, und bei
+    Cache-Control führt es zu widersprüchlichen Angaben.
+    """
+    r = client.get("/api/health")
+    names = [k.lower() for k in r.headers.keys()]
+    doppelt = {n for n in names if names.count(n) > 1}
+    assert not doppelt, f"Doppelte Kopfzeilen: {sorted(doppelt)}"
+
+
+def test_api_responses_are_not_cacheable(client):
+    """Jede Antwort dieses Dienstes ist eine Nutzerdatei oder eine Auskunft
+    über den Anfragenden. Nichts davon darf in einem Cache landen — das ist
+    die Kopfzeilen-Entsprechung des Versprechens „keine Datenspeicherung"."""
+    r = client.get("/api/health")
+    assert r.headers.get("cache-control") == "no-store"
+
+
+def test_nginx_and_backend_headers_stay_in_sync():
+    """Die Kopfzeilen stehen an zwei Orten — sie dürfen nicht auseinanderlaufen.
+
+    nginx bedient die Oberfläche, das Backend die API und den Fall ohne Proxy.
+    Wird eine Kopfzeile nur an einer Stelle ergänzt, entsteht genau die Lücke,
+    die niemand bemerkt. Deshalb vergleicht dieser Test beide Listen.
+    """
+    import pathlib
+    import re
+
+    from app.hardening import _STATIC_HEADERS
+
+    conf = (
+        pathlib.Path(__file__).parents[2] / "frontend" / "security-headers.conf"
+    ).read_text(encoding="utf-8")
+    nginx_names = {
+        m.group(1).lower() for m in re.finditer(r"^add_header\s+(\S+)", conf, re.M)
+    }
+    backend_names = {name.lower() for name, _ in _STATIC_HEADERS}
+
+    # Cache-Control setzt nginx pro Ort unterschiedlich (Assets lange, API gar
+    # nicht) und steht deshalb bewusst nicht im gemeinsamen Schnipsel.
+    backend_names.discard("cache-control")
+
+    assert nginx_names == backend_names, (
+        f"Nur in nginx: {sorted(nginx_names - backend_names)} · "
+        f"nur im Backend: {sorted(backend_names - nginx_names)}"
+    )
+
+
+def test_nginx_config_includes_headers_in_every_location():
+    """Jeder location-Block muss das Schnipsel einbinden.
+
+    In nginx ersetzt ein `add_header` im Block alle geerbten Kopfzeilen. Ein
+    Block ohne `include` liefert daher **keine** Sicherheitskopfzeilen — auch
+    dann nicht, wenn sie weiter oben stehen.
+    """
+    import pathlib
+    import re
+
+    conf = (
+        pathlib.Path(__file__).parents[2] / "frontend" / "nginx.conf"
+    ).read_text(encoding="utf-8")
+    blocks = re.findall(r"location\s+([^\s{]+(?:\s+[^\s{]+)?)\s*\{(.*?)\n    \}", conf, re.S)
+    assert blocks, "Keine location-Blöcke gefunden — Test greift ins Leere"
+    ohne = [name for name, body in blocks if "security-headers.conf" not in body]
+    assert not ohne, f"location-Block ohne Sicherheitskopfzeilen: {ohne}"
+
+
+def test_nginx_serves_mjs_as_javascript():
+    """`.mjs` braucht einen ausdrücklichen Typ — sonst bricht die Vorschau.
+
+    nginx' mitgelieferte `mime.types` kennt die Endung nicht und antwortet mit
+    `application/octet-stream`. Zusammen mit `X-Content-Type-Options: nosniff`
+    verweigert der Browser die Ausführung; der pdf.js-Worker ist genau so eine
+    Datei. Ohne nosniff fiel das nicht auf, weil der Browser den Typ erraten
+    hat — die Härtung machte den Fehler erst sichtbar, und zwar in Produktion.
+
+    Der Test greift nur, solange der Build wirklich `.mjs`-Dateien erzeugt.
+    """
+    import pathlib
+
+    frontend = pathlib.Path(__file__).parents[2] / "frontend"
+    dist = frontend / "dist"
+    if dist.is_dir() and not any(dist.rglob("*.mjs")):
+        pytest.skip("Build enthält keine .mjs-Dateien")
+
+    conf = (frontend / "nginx.conf").read_text(encoding="utf-8")
+    assert "\\.mjs$" in conf, "Kein location-Block für .mjs in nginx.conf"
+    mjs_block = conf.split("\\.mjs$")[1].split("location")[0]
+    assert "default_type text/javascript" in mjs_block
+    assert "types { }" in mjs_block, "Ohne leere types-Tabelle greift default_type nicht"
+
+
 def test_csp_blocks_the_dangerous_directives():
     """Die CSP muss die Kernpunkte wirklich abdecken — nicht nur vorhanden sein."""
     assert "object-src 'none'" in CSP
