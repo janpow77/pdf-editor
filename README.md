@@ -80,6 +80,11 @@ alembic revision -m "..."   # neue Migration anlegen
 Die Initial-Migration `0001` ist idempotent und läuft auch auf per
 `create_all` erzeugten Beständen sauber durch (zieht fehlende Spalten nach).
 
+## Betrieb
+
+Vollständiges Handbuch für NUC-Inbetriebnahme, Extraktion in ein eigenes
+Repository, Hetzner-Deployment und den laufenden Betrieb: **[BETRIEB.md](BETRIEB.md)**.
+
 ## Deployment Hetzner + Cloudflare-Tunnel (`pdf.flowaudit.de`)
 
 Analog zum Muster in `docs/HETZNER_DEPLOY.md` des audit_designer-Repos:

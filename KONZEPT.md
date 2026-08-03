@@ -805,6 +805,26 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 | SEC2 | Ungültiger Token → 401, kein stilles Anonym-Downgrade | `test_auth.py` | ✅ automatisiert |
 | SEC3 | Identische Login-Fehlertexte (keine User-Enumeration) | `test_auth.py` | ✅ automatisiert |
 
+## 9a. Betrieb und Extraktion
+
+Inbetriebnahme auf der NUC, Überführung in ein eigenes Repository,
+Hetzner-Deployment sowie Sicherung, Aktualisierungsfristen, Verfügbarkeit und
+Zuständigkeiten stehen in @BETRIEB.md.
+
+Zwei Punkte daraus gehören auch hierher, weil sie Entscheidungen sind und keine
+Handgriffe:
+
+- **Die Extraktion ist erprobt.** `git subtree split --prefix=pdf-editor-app`
+  erzeugt 154 Dateien in 22 Commits mit vollständiger Historie; der geklonte
+  Ast baut und testet grün. Dafür trägt der Ordner seit dem 2026-08-01 eine
+  **eigene `.gitignore`** — die im Wurzelverzeichnis wandert beim Split nicht
+  mit, und ohne Ignoriermuster landete beim ersten `git add .` auch die `.env`
+  in der Versionsverwaltung.
+- **Nach der Extraktion muss `PDFAPP_SOURCE_URL` auf das neue Repository
+  zeigen.** Die Angabe erfüllt eine Lizenzbedingung (AGPL § 13), keine
+  Formalie: Zeigt sie auf einen Quelltext, der die Anwendung nicht mehr
+  enthält, ist die Bedingung verletzt.
+
 ## 10. Roadmap
 
 | Phase | Inhalt | Status |

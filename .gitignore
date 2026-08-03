@@ -1,0 +1,45 @@
+# Ignoriermuster der PDF-Editor-App.
+#
+# Bewusst vollständig und nicht auf die .gitignore im Repo-Wurzelverzeichnis
+# angewiesen: Bei der Extraktion in ein eigenes Repository (siehe BETRIEB.md)
+# wandert nur dieser Ordner mit. Ohne eigene Datei stünde das neue Repository
+# ganz ohne Ignoriermuster da — node_modules, dist und vor allem die .env
+# landeten beim ersten `git add .` in der Versionsverwaltung.
+
+# Geheimnisse — niemals einchecken
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+*.egg-info/
+
+# Der Ordner „lib" ist in Python ein Build-Artefakt, im Frontend aber
+# Quellcode. Diese Ausnahme hat schon einmal dafür gesorgt, dass ein frischer
+# Klon nicht baubar war — deshalb steht sie hier ausdrücklich.
+lib/
+!frontend/src/lib/
+!frontend/src/lib/**
+
+# Node / Vite
+node_modules/
+dist/
+npm-debug.log*
+.cache/
+
+# Werkzeuge und Betriebssystem
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Laufzeit
+*.log
+*.db
+*.sqlite3
