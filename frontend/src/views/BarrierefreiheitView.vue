@@ -102,9 +102,9 @@
           Sind Ihnen Barrieren aufgefallen, oder brauchen Sie eine Auskunft in
           zugänglicher Form? Schreiben Sie an
           <a
-            href="mailto:jan.riener@googlemail.com"
+            href="mailto:jan.riener@vwvg.de"
             class="text-primary-700 dark:text-primary-400 underline hover:no-underline"
-          >jan.riener@googlemail.com</a>.
+          >jan.riener@vwvg.de</a>.
           Bitte nennen Sie die Seite und, wenn möglich, das verwendete
           Hilfsmittel — damit lässt sich der Fehler nachstellen.
         </p>

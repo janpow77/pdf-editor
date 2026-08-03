@@ -106,9 +106,9 @@
           Am Amalienbad 6<br />
           76669 Bad Schönborn-Bad Langenbrücken<br />
           <a
-            href="mailto:jan.riener@googlemail.com"
+            href="mailto:jan.riener@vwvg.de"
             class="text-primary-700 dark:text-primary-400 underline hover:no-underline"
-          >jan.riener@googlemail.com</a>
+          >jan.riener@vwvg.de</a>
         </p>
         <p>
           Ein Datenschutzbeauftragter ist nicht bestellt; die Voraussetzungen

@@ -250,7 +250,7 @@ vorher geklärt sein — sie kosten wenig Zeit und sind hinterher unangenehm.
 | Impressum nach § 5 DDG (Name, Anschrift, Kontakt, Verantwortlicher) | ✅ ausgefüllt: Jan Riener, privat betriebenes Angebot |
 | Verantwortlicher nach Art. 13 DSGVO, Betroffenenrechte, Aufsichtsbehörde | ✅ in der Datenschutzerklärung benannt |
 | Erklärung zur Barrierefreiheit | ✅ vorhanden — **freiwillig**, siehe unten |
-| Quelltext öffentlich erreichbar (AGPL § 13) | ⚠️ offen — hängt daran, ob das neue Repository öffentlich ist |
+| Quelltext öffentlich erreichbar (AGPL § 13) | ✅ entschieden: das neue Repository wird **öffentlich** angelegt |
 | Eigener Cloudflare-Tunnel für die Domain | ⚠️ offen |
 
 **Zur Barrierefreiheit:** Die Pflicht aus § 12b BGG und der BITV 2.0 trifft
@@ -262,9 +262,21 @@ Screenreader nötig, und die Werkzeugoberflächen müssen in die Prüfung
 einbezogen werden. Beides steht in der Erklärung als offen benannt.
 
 **Zur AGPL:** `PDFAPP_SOURCE_URL` muss auf ein **öffentlich erreichbares**
-Repository zeigen. Wird das neue Repository privat angelegt, ist die
-Lizenzbedingung ab dem Moment verletzt, in dem der Dienst öffentlich läuft.
-Das ist eine Entscheidung, keine Einstellung.
+Repository zeigen. Entschieden am 2026-08-03: Das neue Repository wird
+öffentlich angelegt — damit ist die Bedingung erfüllt, sobald die Adresse
+gesetzt ist.
+
+Zwei Folgen, die man beim Umschalten auf „öffentlich" bedenken sollte:
+
+- **Die Historie wird mit veröffentlicht.** Der Split trägt 22 Commits mit
+  vollständigen Diffs. Vor dem Push prüfen, dass darin keine Zugangsdaten
+  stecken: `git log -p pdf-editor-standalone | grep -iE "secret|password|token"`
+  — Treffer in `.env.example` und in Variablennamen sind erwartbar, echte Werte
+  nicht.
+- **Die Anschrift aus dem Impressum steht dann im Quelltext.** Das ist bei
+  einem privat betriebenen Angebot unvermeidbar, weil § 5 DDG die ladungsfähige
+  Anschrift verlangt und ein Postfach dafür nicht genügt. Bewusst hinnehmen
+  oder vorher eine andere Lösung wählen.
 
 **Zwischenweg:** Der Betrieb auf dem Hetzner-Server **ohne** öffentlichen
 Tunnel — nur über Tailscale erreichbar — macht die beiden offenen Punkte

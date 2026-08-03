@@ -11,9 +11,9 @@
       <p>
         Kontakt:
         <a
-          href="mailto:jan.riener@googlemail.com"
+          href="mailto:jan.riener@vwvg.de"
           class="text-primary-700 dark:text-primary-400 underline hover:no-underline"
-        >jan.riener@googlemail.com</a>
+        >jan.riener@vwvg.de</a>
       </p>
       <p>
         Verantwortlich für den Inhalt: Jan Riener, Anschrift wie oben.
