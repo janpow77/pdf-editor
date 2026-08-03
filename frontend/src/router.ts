@@ -55,6 +55,11 @@ export const router = createRouter({
       component: () => import('@/views/DatenschutzView.vue'),
     },
     {
+      path: '/barrierefreiheit',
+      name: 'barrierefreiheit',
+      component: () => import('@/views/BarrierefreiheitView.vue'),
+    },
+    {
       path: '/lizenzen',
       name: 'lizenzen',
       component: () => import('@/views/LizenzenView.vue'),

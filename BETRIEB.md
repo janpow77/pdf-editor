@@ -240,6 +240,39 @@ Auf dem Server dann `image:` statt `build:` in der Compose-Datei und
 
 ---
 
+## Teil B2 — Freigaben vor der öffentlichen Erreichbarkeit
+
+Technisch kann der Dienst sofort öffentlich laufen. Diese Punkte sollten aber
+vorher geklärt sein — sie kosten wenig Zeit und sind hinterher unangenehm.
+
+| Punkt | Stand |
+|---|---|
+| Impressum nach § 5 DDG (Name, Anschrift, Kontakt, Verantwortlicher) | ✅ ausgefüllt: Jan Riener, privat betriebenes Angebot |
+| Verantwortlicher nach Art. 13 DSGVO, Betroffenenrechte, Aufsichtsbehörde | ✅ in der Datenschutzerklärung benannt |
+| Erklärung zur Barrierefreiheit | ✅ vorhanden — **freiwillig**, siehe unten |
+| Quelltext öffentlich erreichbar (AGPL § 13) | ⚠️ offen — hängt daran, ob das neue Repository öffentlich ist |
+| Eigener Cloudflare-Tunnel für die Domain | ⚠️ offen |
+
+**Zur Barrierefreiheit:** Die Pflicht aus § 12b BGG und der BITV 2.0 trifft
+öffentliche Stellen. Bei einem privat betriebenen Angebot gilt sie **nicht**.
+Die Erklärung unter `/barrierefreiheit` wird deshalb freiwillig abgegeben und
+ist als solche gekennzeichnet. Sollte das Angebot später von einer Behörde
+übernommen werden, wird die Pflicht wirksam — dann ist zusätzlich ein Test mit
+Screenreader nötig, und die Werkzeugoberflächen müssen in die Prüfung
+einbezogen werden. Beides steht in der Erklärung als offen benannt.
+
+**Zur AGPL:** `PDFAPP_SOURCE_URL` muss auf ein **öffentlich erreichbares**
+Repository zeigen. Wird das neue Repository privat angelegt, ist die
+Lizenzbedingung ab dem Moment verletzt, in dem der Dienst öffentlich läuft.
+Das ist eine Entscheidung, keine Einstellung.
+
+**Zwischenweg:** Der Betrieb auf dem Hetzner-Server **ohne** öffentlichen
+Tunnel — nur über Tailscale erreichbar — macht die beiden offenen Punkte
+gegenstandslos, weil der Dienst nicht öffentlich ist. Der Schritt zur
+Öffentlichkeit ist danach nur noch der Tunnel.
+
+---
+
 ## Teil C — Auf den Hetzner-Server bringen
 
 Der Host betreibt bereits `checklist.flowaudit.de` aus `/opt/checklist`. Die

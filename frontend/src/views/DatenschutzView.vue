@@ -98,8 +98,46 @@
 
       <section>
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Verantwortlicher</h2>
-        <!-- TODO: Vor Veröffentlichung ausfüllen -->
-        <p>[Name und Kontaktdaten des Verantwortlichen — siehe Impressum]</p>
+        <p>
+          Verantwortlich im Sinne von Art. 4 Nr. 7 DSGVO:
+        </p>
+        <p>
+          Jan Riener<br />
+          Am Amalienbad 6<br />
+          76669 Bad Schönborn-Bad Langenbrücken<br />
+          <a
+            href="mailto:jan.riener@googlemail.com"
+            class="text-primary-700 dark:text-primary-400 underline hover:no-underline"
+          >jan.riener@googlemail.com</a>
+        </p>
+        <p>
+          Ein Datenschutzbeauftragter ist nicht bestellt; die Voraussetzungen
+          nach Art. 37 DSGVO und § 38 BDSG liegen bei diesem privat betriebenen
+          Angebot nicht vor.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Ihre Rechte</h2>
+        <p>
+          Sie haben das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung
+          (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung
+          (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch
+          (Art. 21). Wenden Sie sich dafür an die oben genannte Adresse.
+        </p>
+        <p>
+          Unabhängig davon können Sie sich bei einer Aufsichtsbehörde
+          beschweren (Art. 77 DSGVO). Zuständig ist der Landesbeauftragte für
+          den Datenschutz und die Informationsfreiheit Baden-Württemberg,
+          Lautenschlagerstraße 20, 70173 Stuttgart.
+        </p>
+        <p>
+          Für die Werkzeuge selbst laufen diese Rechte weitgehend ins Leere —
+          und das ist beabsichtigt: Ihre Dateien werden nicht gespeichert, es
+          gibt also nichts, worüber Auskunft zu erteilen oder was zu löschen
+          wäre. Praktisch bedeutsam werden die Rechte nur, wenn Sie ein
+          freiwilliges Konto anlegen.
+        </p>
       </section>
     </div>
   </div>

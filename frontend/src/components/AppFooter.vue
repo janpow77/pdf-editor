@@ -5,6 +5,7 @@
       <nav class="flex gap-4">
         <RouterLink to="/impressum" class="hover:text-gray-900 dark:hover:text-white">Impressum</RouterLink>
         <RouterLink to="/datenschutz" class="hover:text-gray-900 dark:hover:text-white">Datenschutz</RouterLink>
+        <RouterLink to="/barrierefreiheit" class="hover:text-gray-900 dark:hover:text-white">Barrierefreiheit</RouterLink>
         <!-- Pflichtangabe, solange AGPL-Komponenten im Einsatz sind: der
              Quelltext muss für Nutzende des Dienstes erreichbar sein. -->
         <RouterLink to="/lizenzen" class="hover:text-gray-900 dark:hover:text-white">Open Source</RouterLink>
