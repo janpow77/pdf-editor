@@ -12,7 +12,7 @@
     <header class="sticky top-0 z-30 border-b border-gray-200/70 dark:border-gray-700/70 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md">
       <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
         <RouterLink to="/" class="flex items-center gap-2 font-semibold text-gray-900 dark:text-white">
-          <span aria-hidden="true">📄</span> PDF-Editor
+          <img src="/auditlogo.svg" alt="" aria-hidden="true" class="h-9 w-auto" /> PDF-Editor
         </RouterLink>
 
         <div class="flex items-center gap-3">
