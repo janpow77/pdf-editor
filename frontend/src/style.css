@@ -133,6 +133,80 @@
       0 24px 65px rgb(0 0 0 / 32%);
   }
 
+  /*
+   * Semantische Formularsteuerung für alle migrierten Fachmodule. Die Klasse
+   * ersetzt individuelle Kombinationen aus Radius, Rahmen, Hintergrund und
+   * Fokuszustand, ohne fremde Elemente über breite Nachfahrenselektoren zu
+   * überschreiben.
+   */
+  .ui-control {
+    border: 0;
+    border-radius: .95rem;
+    background: rgb(255 255 255 / 88%);
+    color: rgb(17 24 39);
+    padding: .7rem 1rem;
+    box-shadow:
+      inset 0 0 0 1px rgb(100 116 139 / 58%),
+      inset 0 1px 0 rgb(255 255 255 / 76%),
+      0 2px 8px rgb(15 23 42 / 6%);
+  }
+
+  .ui-control::placeholder {
+    color: rgb(107 114 128);
+  }
+
+  .ui-control:disabled {
+    cursor: not-allowed;
+    opacity: .5;
+  }
+
+  .dark .ui-control {
+    background: rgb(255 255 255 / 8%);
+    color: rgb(249 250 251);
+    box-shadow:
+      inset 0 0 0 1px rgb(156 163 175 / 62%),
+      inset 0 1px 0 rgb(255 255 255 / 8%),
+      0 3px 12px rgb(0 0 0 / 20%);
+  }
+
+  .dark .ui-control::placeholder {
+    color: rgb(156 163 175);
+  }
+
+  .ui-choice {
+    display: inline-flex;
+    min-height: 2.5rem;
+    cursor: pointer;
+    align-items: center;
+    gap: .5rem;
+    border-radius: 9999px;
+    background: rgb(243 244 246);
+    padding: .5rem 1rem;
+    color: rgb(55 65 81);
+    font-size: .875rem;
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1px rgb(148 163 184 / 38%);
+  }
+
+  .dark .ui-choice {
+    background: rgb(255 255 255 / 8%);
+    color: rgb(229 231 235);
+    box-shadow: inset 0 0 0 1px rgb(156 163 175 / 42%);
+  }
+
+  .ui-label {
+    display: block;
+    margin-bottom: .375rem;
+    color: rgb(55 65 81);
+    font-size: .875rem;
+    font-weight: 600;
+  }
+
+  .dark .ui-label {
+    color: rgb(229 231 235);
+  }
+
+  /* Bestehende zentral genutzte Icon-Buttons bleiben für Viewer kompatibel. */
   .apple-icon-button {
     display: grid;
     width: 2.75rem;
@@ -171,7 +245,7 @@
       0 6px 18px rgb(0 0 0 / 24%);
   }
 
-  /* Uploadflächen erhalten eine großzügige Trefferfläche und weiche Tiefe. */
+  /* Altbezeichnungen bleiben nur für explizit importierende zentrale Komponenten. */
   .apple-upload-zone {
     border-radius: 1.5rem;
     border: 2px dashed rgb(107 114 128);
@@ -196,7 +270,6 @@
     background: rgb(30 133 236 / 10%);
   }
 
-  /* Dezent eingefärbte Inline-Fehler ersetzen aggressive Vollflächen. */
   .apple-inline-error {
     border-radius: .9rem;
     background: rgb(255 241 242 / 85%);
@@ -210,95 +283,4 @@
     color: rgb(253 164 175);
     box-shadow: inset 0 0 0 1px rgb(251 113 133 / 38%);
   }
-}
-
-@layer utilities {
-  /*
-   * Zwei bewusst feinere Materialstufen werden im Rolodex und in Kacheln
-   * verwendet. Sie bleiben zusätzlich zur erweiterten Tailwind-Skala bestehen,
-   * damit auch ältere Build-Artefakte dieselben Werte sicher enthalten.
-   */
-  .bg-white\/45 {
-    background-color: rgb(255 255 255 / 45%);
-  }
-
-  .bg-white\/82 {
-    background-color: rgb(255 255 255 / 82%);
-  }
-}
-
-/*
- * Kompatibilitätsschicht für ältere Fachmodule
- * --------------------------------------------
- * Nicht jedes der vielen bestehenden Werkzeuge musste einzeln umgeschrieben
- * werden. Da alle Fachmodule innerhalb von `.apple-workspace` laufen, können
- * wiederkehrende Alt-Muster hier gezielt an das neue Designsystem angebunden
- * werden. Die Selektoren bleiben bewusst auf den Arbeitsbereich begrenzt und
- * verändern weder Login-/Adminseiten noch speziell gestaltete neue Komponenten.
- */
-.apple-workspace :where(
-  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
-  select,
-  textarea
-) {
-  border-radius: .9rem;
-  border-color: rgb(148 163 184 / 72%);
-  background-color: rgb(255 255 255 / 88%);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 75%),
-    0 2px 8px rgb(15 23 42 / 6%);
-}
-
-.dark .apple-workspace :where(
-  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
-  select,
-  textarea
-) {
-  border-color: rgb(107 114 128 / 85%);
-  background-color: rgb(255 255 255 / 8%);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 8%),
-    0 3px 12px rgb(0 0 0 / 20%);
-}
-
-.apple-workspace :where(button.bg-primary-600, a.bg-primary-600) {
-  border-radius: 9999px;
-  box-shadow:
-    0 1px 2px rgb(15 23 42 / 8%),
-    0 8px 20px rgb(0 113 227 / 16%);
-}
-
-.apple-workspace :where(button.bg-primary-600, a.bg-primary-600):hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow:
-    0 2px 5px rgb(15 23 42 / 9%),
-    0 13px 28px rgb(0 113 227 / 22%);
-}
-
-.apple-workspace :where(.border-2.border-dashed) {
-  border-radius: 1.5rem;
-  border-color: rgb(107 114 128 / 78%);
-  background-color: rgb(255 255 255 / 62%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 72%);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-}
-
-.dark .apple-workspace :where(.border-2.border-dashed) {
-  border-color: rgb(156 163 175 / 78%);
-  background-color: rgb(255 255 255 / 5%);
-}
-
-.apple-workspace :where(.rounded-xl.border, .rounded-lg.border) {
-  border-color: rgb(148 163 184 / 52%);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 68%),
-    0 10px 28px rgb(15 23 42 / 7%);
-}
-
-.dark .apple-workspace :where(.rounded-xl.border, .rounded-lg.border) {
-  border-color: rgb(107 114 128 / 64%);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 7%),
-    0 12px 32px rgb(0 0 0 / 22%);
 }
