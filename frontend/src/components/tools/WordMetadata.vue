@@ -1,89 +1,81 @@
 <template>
-  <div class="space-y-4">
-    <button class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1" @click="$emit('back')">
-      ← Zurück
-    </button>
-    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Word Metadaten</h2>
-    <p class="text-sm text-gray-500">Titel, Autor, Bearbeitungsdatum und weitere Eigenschaften einer Word-Datei lesen und ändern.</p>
+  <div class="space-y-5">
+    <ToolHeader title="Word-Metadaten" description="Titel, Autor, Datumswerte und weitere Dokumenteigenschaften bearbeiten." @back="$emit('back')" />
 
-    <!-- Upload -->
-    <div v-if="!file" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-8 text-center">
-      <input ref="fileInput" type="file" accept=".docx,.doc" class="hidden" @change="onFileSelect" />
-      <button class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700" @click="($refs.fileInput as HTMLInputElement).click()">
-        Word-Datei auswählen
-      </button>
-      <p class="text-xs text-gray-600 dark:text-gray-400 mt-2">.docx / .doc</p>
+    <FileDrop v-model="file" accept=".docx,.doc" label="Word-Datei" />
+
+    <div v-if="loading" class="flex items-center justify-center gap-3 py-6" role="status">
+      <span class="h-7 w-7 animate-spin rounded-full border-2 border-gray-300 border-t-primary-600" aria-hidden="true"></span>
+      <span class="text-sm text-gray-600 dark:text-gray-300">Metadaten werden gelesen…</span>
     </div>
 
-    <!-- Metadata Form -->
-    <div v-else class="space-y-4">
-      <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-        <span class="text-2xl">📝</span>
-        <div>
-          <p class="font-medium text-gray-900 dark:text-white">{{ file.name }}</p>
-          <p class="text-xs text-gray-500">{{ (file.size / 1024).toFixed(1) }} KB</p>
-        </div>
-        <button class="ml-auto text-sm text-red-500 hover:text-red-700" @click="reset">Entfernen</button>
+    <UiPanel v-if="file && meta && !loading" class="space-y-4">
+      <div class="grid gap-4 md:grid-cols-2">
+        <UiField v-for="field in fields" :key="field.key" :label="field.label" :for-id="`word-meta-${field.key}`">
+          <input
+            v-if="field.type !== 'datetime-local'"
+            :id="`word-meta-${field.key}`"
+            v-model="meta[field.key]"
+            type="text"
+            class="ui-control w-full"
+          />
+          <input
+            v-else
+            :id="`word-meta-${field.key}`"
+            :value="toLocalDatetime(meta[field.key])"
+            type="datetime-local"
+            class="ui-control w-full"
+            @input="meta[field.key] = fromLocalDatetime(($event.target as HTMLInputElement).value)"
+          />
+        </UiField>
       </div>
 
-      <div v-if="loading" class="text-center py-6">
-        <div class="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto"></div>
-        <p class="text-sm text-gray-500 mt-2">Metadaten werden gelesen…</p>
-      </div>
+      <UiButton variant="primary" :loading="saving" @click="save">
+        {{ saving ? 'Speichern…' : 'Metadaten setzen und herunterladen' }}
+      </UiButton>
+    </UiPanel>
 
-      <div v-if="meta && !loading" class="space-y-3">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div v-for="field in fields" :key="field.key">
-            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{{ field.label }}</label>
-            <input
-              v-if="field.type !== 'datetime-local'"
-              v-model="meta[field.key]"
-              :type="field.type || 'text'"
-              class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-            />
-            <input
-              v-else
-              :value="toLocalDatetime(meta[field.key])"
-              type="datetime-local"
-              class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-              @input="meta[field.key] = fromLocalDatetime(($event.target as HTMLInputElement).value)"
-            />
-          </div>
-        </div>
-
-        <div class="flex gap-3 pt-2">
-          <button
-            class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-            :disabled="saving"
-            @click="save"
-          >
-            {{ saving ? 'Speichern…' : 'Metadaten setzen & herunterladen' }}
-          </button>
-        </div>
-      </div>
-
-      <p v-if="error" class="text-sm text-red-500">{{ error }}</p>
-      <p v-if="success" class="text-sm text-green-600">{{ success }}</p>
-    </div>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
+    <UiAlert v-if="success" tone="success" live>{{ success }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import FileDrop from '@/components/FileDrop.vue'
+import ToolHeader from '@/components/ui/ToolHeader.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import { usePdfTools } from '@/composables/usePdfTools'
 
-defineEmits<{ (e: 'back'): void }>()
+defineEmits<{ (event: 'back'): void }>()
+
+interface WordMetadataValues {
+  title: string
+  author: string
+  subject: string
+  keywords: string
+  category: string
+  comments: string
+  last_modified_by: string
+  created: string
+  modified: string
+}
+
+type MetadataKey = keyof WordMetadataValues
 
 const { readWordMetadata, setWordMetadata } = usePdfTools()
-
 const file = ref<File | null>(null)
-const meta = ref<Record<string, any>>({})
+const meta = ref<WordMetadataValues | null>(null)
 const loading = ref(false)
 const saving = ref(false)
 const error = ref<string | null>(null)
 const success = ref<string | null>(null)
+let readGeneration = 0
 
-const fields = [
+const fields: { key: MetadataKey; label: string; type?: 'datetime-local' }[] = [
   { key: 'title', label: 'Titel' },
   { key: 'author', label: 'Autor' },
   { key: 'subject', label: 'Betreff' },
@@ -95,69 +87,76 @@ const fields = [
   { key: 'modified', label: 'Geändert am', type: 'datetime-local' },
 ]
 
+function emptyMetadata(): WordMetadataValues {
+  return {
+    title: '',
+    author: '',
+    subject: '',
+    keywords: '',
+    category: '',
+    comments: '',
+    last_modified_by: '',
+    created: '',
+    modified: '',
+  }
+}
+
+function normalizeMetadata(value: unknown): WordMetadataValues {
+  const source = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const normalized = emptyMetadata()
+  for (const key of Object.keys(normalized) as MetadataKey[]) {
+    normalized[key] = source[key] == null ? '' : String(source[key])
+  }
+  return normalized
+}
+
 function toLocalDatetime(iso: string): string {
   if (!iso) return ''
-  try {
-    const d = new Date(iso)
-    return d.toISOString().slice(0, 16)
-  } catch { return '' }
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 16)
 }
 
 function fromLocalDatetime(local: string): string {
   if (!local) return ''
-  return new Date(local).toISOString()
+  const date = new Date(local)
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
 }
 
-function onFileSelect(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (input.files?.[0]) {
-    file.value = input.files[0]
-  }
-}
-
-watch(file, async (f) => {
-  if (!f) return
-  loading.value = true
+watch(file, async (currentFile) => {
+  const generation = ++readGeneration
+  meta.value = null
   error.value = null
   success.value = null
-  try {
-    meta.value = await readWordMetadata(f)
-  } catch (e: any) {
-    error.value = e.message || 'Fehler beim Lesen'
-  } finally {
+  if (!currentFile) {
     loading.value = false
+    return
+  }
+
+  loading.value = true
+  try {
+    const result = await readWordMetadata(currentFile)
+    if (generation !== readGeneration || file.value !== currentFile) return
+    meta.value = normalizeMetadata(result)
+  } catch (caught: unknown) {
+    if (generation !== readGeneration) return
+    error.value = caught instanceof Error ? caught.message : 'Fehler beim Lesen'
+  } finally {
+    if (generation === readGeneration) loading.value = false
   }
 })
 
-async function save() {
-  if (!file.value) return
+async function save(): Promise<void> {
+  if (!file.value || !meta.value) return
   saving.value = true
   error.value = null
   success.value = null
   try {
-    await setWordMetadata(file.value, {
-      title: meta.value.title,
-      author: meta.value.author,
-      subject: meta.value.subject,
-      keywords: meta.value.keywords,
-      category: meta.value.category,
-      comments: meta.value.comments,
-      last_modified_by: meta.value.last_modified_by,
-      modified: meta.value.modified,
-      created: meta.value.created,
-    })
+    await setWordMetadata(file.value, meta.value)
     success.value = 'Datei mit neuen Metadaten heruntergeladen.'
-  } catch (e: any) {
-    error.value = e.message || 'Fehler beim Speichern'
+  } catch (caught: unknown) {
+    error.value = caught instanceof Error ? caught.message : 'Fehler beim Speichern'
   } finally {
     saving.value = false
   }
-}
-
-function reset() {
-  file.value = null
-  meta.value = {}
-  error.value = null
-  success.value = null
 }
 </script>
