@@ -1,45 +1,36 @@
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">PDF bereinigen</h2>
-    </div>
+  <div class="space-y-5">
+    <ToolHeader title="PDF bereinigen" description="Versteckte und personenbezogene Dokumentinformationen vor der Weitergabe entfernen." @back="$emit('back')" />
 
-    <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-800 dark:text-blue-300">
-      Entfernt Metadaten (Autor, Titel, XMP), JavaScript, eingebettete Dateien und
-      versteckte Inhalte — z.B. vor der Weitergabe an Dritte. Der sichtbare Inhalt
-      bleibt unverändert.
-    </div>
+    <UiAlert tone="info">
+      Entfernt Metadaten, JavaScript, eingebettete Dateien und versteckte Inhalte. Der sichtbare Inhalt bleibt unverändert.
+    </UiAlert>
 
     <FileDrop v-model="file" />
 
-    <div v-if="done" class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-700 dark:text-green-300">
-      PDF bereinigt und heruntergeladen.
-    </div>
+    <UiAlert v-if="done" tone="success" live>PDF bereinigt und heruntergeladen.</UiAlert>
 
-    <button
-      v-if="file"
-      :disabled="loading"
-      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-      @click="apply"
-    >
+    <UiButton v-if="file" variant="primary" size="lg" :loading="loading" @click="apply">
       {{ loading ? 'Bereinige…' : 'Bereinigen' }}
-    </button>
-    <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    </UiButton>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
+import ToolHeader from '@/components/ui/ToolHeader.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { useToolRun } from '@/composables/useToolRun'
 
-defineEmits<{ (e: 'back'): void }>()
+defineEmits<{ (event: 'back'): void }>()
 
 const { loading, error, done, run } = useToolRun()
 const file = ref<File | null>(null)
 
-async function apply() {
+async function apply(): Promise<void> {
   if (!file.value) return
   const fd = new FormData()
   fd.append('file', file.value)
