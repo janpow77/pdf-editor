@@ -40,7 +40,7 @@
           v-model="searchQuery"
           type="search"
           autocomplete="off"
-          class="w-full rounded-[1.35rem] bg-white/88 py-4 pl-13 pr-12 text-base font-medium text-gray-950
+          class="w-full rounded-[1.35rem] bg-white/[0.88] py-4 pl-14 pr-12 text-base font-medium text-gray-950
                  shadow-apple ring-1 ring-gray-400/70 backdrop-blur-2xl transition
                  placeholder:text-gray-500 focus:ring-2 focus:ring-primary-500
                  dark:bg-white/10 dark:text-white dark:ring-gray-500 dark:placeholder:text-gray-400"
