@@ -5,9 +5,7 @@
         Ergebnisse dieser Sitzung ({{ results.length }}, {{ formatSize(totalSize) }})
       </h2>
       <div class="flex flex-wrap gap-2">
-        <UiButton variant="primary" size="sm" :loading="zipping" @click="zipAll">
-          {{ zipping ? 'Packe…' : 'Alle als ZIP' }}
-        </UiButton>
+        <UiButton variant="primary" size="sm" :loading="zipping" @click="zipAll">{{ zipping ? 'Packe…' : 'Alle als ZIP' }}</UiButton>
         <UiButton v-if="mailAvailable" size="sm" @click="showMailDialog = true">Per E-Mail senden</UiButton>
         <UiButton variant="danger" size="sm" @click="clearAll">Leeren</UiButton>
       </div>
@@ -28,7 +26,12 @@
     </p>
     <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
 
-    <EmailSendDialog v-if="showMailDialog" :items="results" @close="showMailDialog = false" />
+    <EmailSendDialog
+      v-if="showMailDialog"
+      :items="results"
+      :max-attachment-bytes="maxAttachmentBytes"
+      @close="showMailDialog = false"
+    />
   </UiPanel>
 </template>
 
@@ -46,12 +49,16 @@ import { downloadResultsAsZip } from '@/lib/zip'
 const zipping = ref(false)
 const showMailDialog = ref(false)
 const mailAvailable = ref(false)
+const maxAttachmentBytes = ref(20 * 1024 * 1024)
 const error = ref<string | null>(null)
 
 onMounted(async () => {
   try {
-    const status = await apiGetJson<{ available: boolean }>('/api/mail/status')
+    const status = await apiGetJson<{ available: boolean; max_attachment_bytes?: number }>('/api/mail/status')
     mailAvailable.value = Boolean(status.available)
+    if (Number.isFinite(status.max_attachment_bytes) && Number(status.max_attachment_bytes) > 0) {
+      maxAttachmentBytes.value = Number(status.max_attachment_bytes)
+    }
   } catch {
     mailAvailable.value = false
   }
