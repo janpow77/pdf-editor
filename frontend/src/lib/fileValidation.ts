@@ -51,8 +51,14 @@ export async function validatePdfFile(file: File): Promise<FileValidationResult>
   }
 
   try {
-    const signature = new TextDecoder('ascii').decode(await file.slice(0, 5).arrayBuffer())
-    if (signature !== '%PDF-') {
+    /*
+     * Übliche PDFs beginnen direkt mit `%PDF-`. Einige zulässige Dateien
+     * enthalten jedoch wenige Präfix-Bytes. Die Suche in den ersten 1.024 Bytes
+     * ist deshalb robuster als ein strikter Vergleich nur der ersten fünf Bytes,
+     * lehnt umbenannte Fremdformate aber weiterhin zuverlässig ab.
+     */
+    const header = new TextDecoder('latin1').decode(await file.slice(0, 1024).arrayBuffer())
+    if (!header.includes('%PDF-')) {
       return {
         valid: false,
         message: 'Die Datei besitzt keine gültige PDF-Signatur und ist möglicherweise beschädigt.',
