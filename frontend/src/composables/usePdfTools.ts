@@ -1,17 +1,22 @@
 /**
- * Composable for PDF & Document Tools API calls.
- * Shared download/upload/auth logic for all tool components.
+ * Gemeinsame API-Funktionen für PDF- und Office-Werkzeuge.
+ *
+ * Upload, Download und Fehlerbehandlung werden bewusst zentral gebündelt.
+ * Dadurch verwenden alle Fachmodule dieselben Zeitlimits, Dateinamen und
+ * Benachrichtigungen. Die Standardbreite der Vorschaubilder wurde von 200 auf
+ * 320 Pixel erhöht; das entspricht einer Steigerung um 60 Prozent und verbessert
+ * die Lesbarkeit, ohne die responsive Rasterdarstellung aufzugeben.
  */
 import { ref } from 'vue'
 import { apiPost, apiGetJson, downloadBlob } from '@/lib/api'
 
 const API_BASE = '/api/pdf-tools'
-const TIMEOUT = 5 * 60 * 1000 // 5 minutes
+const TIMEOUT = 5 * 60 * 1000
 
 function apiRequest(
   endpoint: string,
   formData: FormData,
-  options?: { timeout?: number }
+  options?: { timeout?: number },
 ): Promise<Response> {
   return apiPost(`${API_BASE}${endpoint}`, formData, {
     timeout: options?.timeout ?? TIMEOUT,
@@ -39,13 +44,11 @@ export function usePdfTools() {
     }
   }
 
-  // Status
   async function getStatus() {
     return apiGet('/status')
   }
 
-  // Thumbnails
-  async function getThumbnails(file: File, pages?: string, maxWidth = 200) {
+  async function getThumbnails(file: File, pages?: string, maxWidth = 320) {
     const fd = new FormData()
     fd.append('file', file)
     if (pages) fd.append('pages', pages)
@@ -53,7 +56,6 @@ export function usePdfTools() {
     return resp.json()
   }
 
-  // Merge
   async function mergePdfs(files: File[], pageSelections?: Record<string, string>) {
     const fd = new FormData()
     files.forEach((f) => fd.append('files', f))
@@ -62,7 +64,6 @@ export function usePdfTools() {
     await downloadBlob(resp, 'zusammengefuehrt.pdf')
   }
 
-  // Split
   async function splitPdf(file: File, mode: string, ranges?: string, everyN?: number) {
     const fd = new FormData()
     fd.append('file', file)
@@ -75,7 +76,6 @@ export function usePdfTools() {
     await downloadBlob(resp, `geteilt.${ext}`)
   }
 
-  // Rotate
   async function rotatePdf(file: File, rotations: Record<number, number>) {
     const fd = new FormData()
     fd.append('file', file)
@@ -84,7 +84,6 @@ export function usePdfTools() {
     await downloadBlob(resp, 'rotiert.pdf')
   }
 
-  // To Images
   async function pdfToImages(file: File, pages?: string, format = 'png', dpi = 150) {
     const fd = new FormData()
     fd.append('file', file)
@@ -95,7 +94,6 @@ export function usePdfTools() {
     await downloadBlob(resp, 'bilder.zip')
   }
 
-  // Compress
   async function compressPdf(file: File, quality = 'medium') {
     const fd = new FormData()
     fd.append('file', file)
@@ -111,7 +109,6 @@ export function usePdfTools() {
     return meta
   }
 
-  // Watermark
   async function addWatermark(
     file: File,
     opts: {
@@ -123,7 +120,7 @@ export function usePdfTools() {
       fontSize?: number
       color?: string
       pages?: string
-    }
+    },
   ) {
     const fd = new FormData()
     fd.append('file', file)
@@ -139,7 +136,6 @@ export function usePdfTools() {
     await downloadBlob(resp, 'wasserzeichen.pdf')
   }
 
-  // Images to PDF
   async function imagesToPdf(files: File[], pageSize = 'a4', orientation = 'portrait') {
     const fd = new FormData()
     files.forEach((f) => fd.append('files', f))
@@ -149,7 +145,6 @@ export function usePdfTools() {
     await downloadBlob(resp, 'bilder_zu_pdf.pdf')
   }
 
-  // Page Operations
   async function pageOperations(file: File, newOrder: number[]) {
     const fd = new FormData()
     fd.append('file', file)
@@ -158,7 +153,6 @@ export function usePdfTools() {
     await downloadBlob(resp, 'bearbeitet.pdf')
   }
 
-  // Metadata Read
   async function readMetadata(file: File) {
     const fd = new FormData()
     fd.append('file', file)
@@ -166,7 +160,6 @@ export function usePdfTools() {
     return resp.json()
   }
 
-  // Metadata Set
   async function setMetadata(
     file: File,
     meta: {
@@ -178,7 +171,7 @@ export function usePdfTools() {
       modification_date?: string
       creator?: string
       producer?: string
-    }
+    },
   ) {
     const fd = new FormData()
     fd.append('file', file)
@@ -194,7 +187,6 @@ export function usePdfTools() {
     await downloadBlob(resp, 'metadaten.pdf')
   }
 
-  // Word to PDF
   async function wordToPdf(file: File) {
     const fd = new FormData()
     fd.append('file', file)
@@ -202,7 +194,6 @@ export function usePdfTools() {
     await downloadBlob(resp, file.name.replace(/\.docx?$/i, '.pdf'))
   }
 
-  // Word Merge
   async function wordMerge(files: File[], addPageBreak = true) {
     const fd = new FormData()
     files.forEach((f) => fd.append('files', f))
@@ -211,7 +202,6 @@ export function usePdfTools() {
     await downloadBlob(resp, 'zusammengefuehrt.docx')
   }
 
-  // Word Diff
   async function wordDiff(fileA: File, fileB: File) {
     const fd = new FormData()
     fd.append('file_a', fileA)
@@ -220,7 +210,6 @@ export function usePdfTools() {
     return resp.json()
   }
 
-  // Word Metadata Read
   async function readWordMetadata(file: File) {
     const fd = new FormData()
     fd.append('file', file)
@@ -228,7 +217,6 @@ export function usePdfTools() {
     return resp.json()
   }
 
-  // Word Metadata Set
   async function setWordMetadata(
     file: File,
     meta: {
@@ -241,7 +229,7 @@ export function usePdfTools() {
       last_modified_by?: string
       modified?: string
       created?: string
-    }
+    },
   ) {
     const fd = new FormData()
     fd.append('file', file)
@@ -252,7 +240,6 @@ export function usePdfTools() {
     await downloadBlob(resp, file.name.replace(/\.docx?$/i, '_meta.docx'))
   }
 
-  // Excel Metadata Read
   async function readExcelMetadata(file: File) {
     const fd = new FormData()
     fd.append('file', file)
@@ -260,7 +247,6 @@ export function usePdfTools() {
     return resp.json()
   }
 
-  // Excel Metadata Set
   async function setExcelMetadata(
     file: File,
     meta: {
@@ -273,7 +259,7 @@ export function usePdfTools() {
       last_modified_by?: string
       modified?: string
       created?: string
-    }
+    },
   ) {
     const fd = new FormData()
     fd.append('file', file)
