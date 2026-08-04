@@ -1,64 +1,44 @@
 <template>
-  <div
-    v-if="results.length > 0"
-    class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl space-y-3"
-  >
-    <div class="flex items-center justify-between flex-wrap gap-2">
-      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+  <UiPanel v-if="results.length" as="section" class="space-y-4" aria-labelledby="session-results-heading">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 id="session-results-heading" class="text-sm font-semibold text-gray-950 dark:text-white">
         Ergebnisse dieser Sitzung ({{ results.length }}, {{ formatSize(totalSize) }})
-      </h3>
-      <div class="flex gap-2">
-        <button
-          class="px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
-          :disabled="zipping"
-          @click="zipAll"
-        >
+      </h2>
+      <div class="flex flex-wrap gap-2">
+        <UiButton variant="primary" size="sm" :loading="zipping" @click="zipAll">
           {{ zipping ? 'Packe…' : 'Alle als ZIP' }}
-        </button>
-        <button
-          v-if="mailAvailable"
-          class="px-3 py-1.5 text-sm rounded-lg border border-primary-600 text-primary-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-          @click="showMailDialog = true"
-        >
-          Per E-Mail senden
-        </button>
-        <button
-          class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300
-                 hover:bg-gray-50 dark:hover:bg-gray-700"
-          @click="clearResults"
-        >
-          Leeren
-        </button>
+        </UiButton>
+        <UiButton v-if="mailAvailable" size="sm" @click="showMailDialog = true">Per E-Mail senden</UiButton>
+        <UiButton variant="danger" size="sm" @click="clearAll">Leeren</UiButton>
       </div>
     </div>
 
-    <ul class="divide-y divide-gray-100 dark:divide-gray-700">
-      <li v-for="r in results" :key="r.id" class="py-2 flex items-center justify-between gap-2 text-sm">
-        <span class="truncate text-gray-700 dark:text-gray-300">{{ r.name }}</span>
-        <span class="flex items-center gap-3 shrink-0">
-          <span class="text-xs text-gray-600 dark:text-gray-400">{{ formatSize(r.blob.size) }}</span>
-          <button
-            class="text-gray-600 dark:text-gray-400 hover:text-red-500"
-            :aria-label="`${r.name} entfernen`"
-            @click="removeResult(r.id)"
-          >
-            ✕
-          </button>
+    <ul class="divide-y divide-gray-200/80 dark:divide-gray-700">
+      <li v-for="result in results" :key="result.id" class="flex items-center justify-between gap-2 py-2 text-sm">
+        <span class="truncate text-gray-700 dark:text-gray-300">{{ result.name }}</span>
+        <span class="flex shrink-0 items-center gap-2">
+          <span class="text-xs text-gray-600 dark:text-gray-400">{{ formatSize(result.blob.size) }}</span>
+          <UiIconButton size="sm" variant="danger" :aria-label="`${result.name} entfernen`" @click="removeResult(result.id)">×</UiIconButton>
         </span>
       </li>
     </ul>
 
-    <p class="text-xs text-gray-600 dark:text-gray-400">
-      Die Liste existiert nur in Ihrem Browser und wird beim Neuladen der Seite geleert.
+    <p class="text-xs leading-5 text-gray-600 dark:text-gray-400">
+      Die Liste existiert nur im Browser-RAM, ist größenbegrenzt und wird beim Neuladen geleert.
     </p>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
 
     <EmailSendDialog v-if="showMailDialog" :items="results" @close="showMailDialog = false" />
-  </div>
+  </UiPanel>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import EmailSendDialog from '@/components/EmailSendDialog.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import { apiGetJson } from '@/lib/api'
 import { clearResults, formatSize, removeResult, results, totalSize } from '@/lib/results'
 import { downloadResultsAsZip } from '@/lib/zip'
@@ -66,22 +46,32 @@ import { downloadResultsAsZip } from '@/lib/zip'
 const zipping = ref(false)
 const showMailDialog = ref(false)
 const mailAvailable = ref(false)
+const error = ref<string | null>(null)
 
 onMounted(async () => {
   try {
     const status = await apiGetJson<{ available: boolean }>('/api/mail/status')
-    mailAvailable.value = status.available
+    mailAvailable.value = Boolean(status.available)
   } catch {
     mailAvailable.value = false
   }
 })
 
-async function zipAll() {
+async function zipAll(): Promise<void> {
   zipping.value = true
+  error.value = null
   try {
     await downloadResultsAsZip(results.value)
+  } catch (caught: unknown) {
+    error.value = caught instanceof Error ? caught.message : 'Die ZIP-Datei konnte nicht erzeugt werden.'
   } finally {
     zipping.value = false
   }
+}
+
+function clearAll(): void {
+  showMailDialog.value = false
+  error.value = null
+  clearResults()
 }
 </script>
