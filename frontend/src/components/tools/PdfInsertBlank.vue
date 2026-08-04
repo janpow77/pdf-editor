@@ -1,52 +1,47 @@
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Leere Seiten einfügen</h2>
-    </div>
+  <div class="space-y-5">
+    <ToolHeader title="Leere Seiten einfügen" description="Zusätzliche Seiten an einer definierten Position ergänzen." @back="$emit('back')" />
 
     <FileDrop v-model="file" />
 
-    <div v-if="file" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 grid grid-cols-2 gap-3">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Einfügen nach Seite (0 = am Anfang)</label>
-        <input v-model.number="afterPage" type="number" min="0" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+    <UiPanel v-if="file">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <UiField label="Einfügen nach Seite" for-id="blank-after" hint="0 fügt die Seiten am Anfang ein.">
+          <input id="blank-after" v-model.number="afterPage" type="number" min="0" class="ui-control w-full" />
+        </UiField>
+        <UiField label="Anzahl Seiten" for-id="blank-count">
+          <input id="blank-count" v-model.number="count" type="number" min="1" max="50" class="ui-control w-full" />
+        </UiField>
       </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Anzahl Seiten</label>
-        <input v-model.number="count" type="number" min="1" max="50" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-      </div>
-    </div>
+    </UiPanel>
 
-    <div v-if="done" class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-700 dark:text-green-300">
-      Seiten eingefügt, PDF heruntergeladen.
-    </div>
+    <UiAlert v-if="done" tone="success" live>Seiten eingefügt und PDF heruntergeladen.</UiAlert>
 
-    <button
-      v-if="file"
-      :disabled="loading"
-      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-      @click="apply"
-    >
+    <UiButton v-if="file" variant="primary" size="lg" :loading="loading" @click="apply">
       {{ loading ? 'Verarbeite…' : 'Seiten einfügen' }}
-    </button>
-    <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    </UiButton>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
+import ToolHeader from '@/components/ui/ToolHeader.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import { useToolRun } from '@/composables/useToolRun'
 
-defineEmits<{ (e: 'back'): void }>()
+defineEmits<{ (event: 'back'): void }>()
 
 const { loading, error, done, run } = useToolRun()
 const file = ref<File | null>(null)
 const afterPage = ref(1)
 const count = ref(1)
 
-async function apply() {
+async function apply(): Promise<void> {
   if (!file.value) return
   const fd = new FormData()
   fd.append('file', file.value)
