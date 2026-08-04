@@ -1,57 +1,48 @@
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Rechteverwaltung</h2>
-    </div>
+  <div class="space-y-5">
+    <ToolHeader title="Rechteverwaltung" description="Drucken, Kopieren, Ändern und Kommentieren gezielt erlauben oder sperren." @back="$emit('back')" />
 
-    <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-800 dark:text-blue-300">
-      Schränkt Nutzungsrechte ein (Drucken, Kopieren, Ändern, Kommentieren) — das PDF
-      bleibt ohne Passwort lesbar. Änderungen an den Rechten erfordern das
-      Besitzer-Passwort. Es wird nur für diese Verarbeitung verwendet, nicht gespeichert.
-    </div>
+    <UiAlert tone="info">
+      Das PDF bleibt ohne Passwort lesbar. Das Besitzer-Passwort wird ausschließlich für diese Verarbeitung verwendet und nicht gespeichert.
+    </UiAlert>
 
     <FileDrop v-model="file" />
 
-    <div v-if="file" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Besitzer-Passwort</label>
-        <input
-          v-model="ownerPassword"
-          type="password"
-          class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white"
-        />
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        <label v-for="p in permissionOptions" :key="p.key" class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-          <input v-model="perms[p.key]" type="checkbox" class="rounded border-gray-300" />
-          {{ p.label }}
-        </label>
-      </div>
-    </div>
+    <UiPanel v-if="file" class="space-y-4">
+      <UiField label="Besitzer-Passwort" for-id="permissions-owner-password" required>
+        <input id="permissions-owner-password" v-model="ownerPassword" type="password" class="ui-control w-full" autocomplete="new-password" />
+      </UiField>
+      <fieldset>
+        <legend class="ui-label">Erlaubte Aktionen</legend>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <label v-for="permission in permissionOptions" :key="permission.key" class="ui-choice">
+            <input v-model="perms[permission.key]" type="checkbox" class="rounded border-gray-300" />
+            {{ permission.label }}
+          </label>
+        </div>
+      </fieldset>
+    </UiPanel>
 
-    <div v-if="done" class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-700 dark:text-green-300">
-      Rechte gesetzt, PDF heruntergeladen.
-    </div>
+    <UiAlert v-if="done" tone="success" live>Rechte gesetzt und PDF heruntergeladen.</UiAlert>
 
-    <button
-      v-if="file"
-      :disabled="loading || !ownerPassword"
-      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-      @click="apply"
-    >
+    <UiButton v-if="file" variant="primary" size="lg" :loading="loading" :disabled="!ownerPassword" @click="apply">
       {{ loading ? 'Verarbeite…' : 'Rechte setzen' }}
-    </button>
-    <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    </UiButton>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
+import ToolHeader from '@/components/ui/ToolHeader.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import { useToolRun } from '@/composables/useToolRun'
 
-defineEmits<{ (e: 'back'): void }>()
+defineEmits<{ (event: 'back'): void }>()
 
 const { loading, error, done, run } = useToolRun()
 const file = ref<File | null>(null)
@@ -70,12 +61,12 @@ const permissionOptions = [
   { key: 'allow_annotate', label: 'Kommentieren erlauben' },
 ]
 
-async function apply() {
+async function apply(): Promise<void> {
   if (!file.value || !ownerPassword.value) return
   const fd = new FormData()
   fd.append('file', file.value)
   fd.append('owner_password', ownerPassword.value)
-  for (const [k, v] of Object.entries(perms)) fd.append(k, String(v))
+  for (const [key, value] of Object.entries(perms)) fd.append(key, String(value))
   await run('/api/pdf-more/permissions', fd, file.value.name.replace(/\.pdf$/i, '_rechte.pdf'))
 }
 </script>
