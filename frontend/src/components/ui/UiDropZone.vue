@@ -37,7 +37,7 @@ const zoneClass = computed(() => [
   'rounded-[1.5rem] border-2 border-dashed p-7 text-center shadow-inner backdrop-blur-xl transition',
   'border-gray-500/75 bg-white/65 hover:border-primary-500 hover:bg-primary-50/70',
   'dark:border-gray-400/75 dark:bg-white/[0.05] dark:hover:border-primary-400 dark:hover:bg-primary-500/10',
-  props.active ? 'border-primary-500 bg-primary-50/80 dark:border-primary-400 dark:bg-primary-500/12' : '',
+  props.active ? 'border-primary-500 bg-primary-50/80 dark:border-primary-400 dark:bg-primary-500/10' : '',
   props.accepted ? 'border-emerald-500 bg-emerald-50/75 dark:border-emerald-400 dark:bg-emerald-500/10' : '',
   props.invalid ? 'border-rose-500 bg-rose-50/75 dark:border-rose-400 dark:bg-rose-500/10' : '',
 ])
