@@ -215,9 +215,8 @@
 @layer utilities {
   /*
    * Zwei bewusst feinere Materialstufen werden im Rolodex und in Kacheln
-   * verwendet. Tailwinds Standard-Opacity-Skala enthält 45 und 82 nicht;
-   * die escaped Selektoren stellen deshalb sicher, dass die Klassen dennoch
-   * zuverlässig im Produktions-Build vorhanden sind.
+   * verwendet. Sie bleiben zusätzlich zur erweiterten Tailwind-Skala bestehen,
+   * damit auch ältere Build-Artefakte dieselben Werte sicher enthalten.
    */
   .bg-white\/45 {
     background-color: rgb(255 255 255 / 45%);
@@ -226,4 +225,80 @@
   .bg-white\/82 {
     background-color: rgb(255 255 255 / 82%);
   }
+}
+
+/*
+ * Kompatibilitätsschicht für ältere Fachmodule
+ * --------------------------------------------
+ * Nicht jedes der vielen bestehenden Werkzeuge musste einzeln umgeschrieben
+ * werden. Da alle Fachmodule innerhalb von `.apple-workspace` laufen, können
+ * wiederkehrende Alt-Muster hier gezielt an das neue Designsystem angebunden
+ * werden. Die Selektoren bleiben bewusst auf den Arbeitsbereich begrenzt und
+ * verändern weder Login-/Adminseiten noch speziell gestaltete neue Komponenten.
+ */
+.apple-workspace :where(
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  select,
+  textarea
+) {
+  border-radius: .9rem;
+  border-color: rgb(148 163 184 / 72%);
+  background-color: rgb(255 255 255 / 88%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 75%),
+    0 2px 8px rgb(15 23 42 / 6%);
+}
+
+.dark .apple-workspace :where(
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  select,
+  textarea
+) {
+  border-color: rgb(107 114 128 / 85%);
+  background-color: rgb(255 255 255 / 8%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    0 3px 12px rgb(0 0 0 / 20%);
+}
+
+.apple-workspace :where(button.bg-primary-600, a.bg-primary-600) {
+  border-radius: 9999px;
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 8%),
+    0 8px 20px rgb(0 113 227 / 16%);
+}
+
+.apple-workspace :where(button.bg-primary-600, a.bg-primary-600):hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 2px 5px rgb(15 23 42 / 9%),
+    0 13px 28px rgb(0 113 227 / 22%);
+}
+
+.apple-workspace :where(.border-2.border-dashed) {
+  border-radius: 1.5rem;
+  border-color: rgb(107 114 128 / 78%);
+  background-color: rgb(255 255 255 / 62%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 72%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.dark .apple-workspace :where(.border-2.border-dashed) {
+  border-color: rgb(156 163 175 / 78%);
+  background-color: rgb(255 255 255 / 5%);
+}
+
+.apple-workspace :where(.rounded-xl.border, .rounded-lg.border) {
+  border-color: rgb(148 163 184 / 52%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 68%),
+    0 10px 28px rgb(15 23 42 / 7%);
+}
+
+.dark .apple-workspace :where(.rounded-xl.border, .rounded-lg.border) {
+  border-color: rgb(107 114 128 / 64%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 7%),
+    0 12px 32px rgb(0 0 0 / 22%);
 }
