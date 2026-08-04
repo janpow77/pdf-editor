@@ -22,9 +22,14 @@ export function readStoredValue(key: string): string | null {
   const storage = browserStorage()
   if (storage) {
     try {
-      const value = storage.getItem(key)
-      if (value !== null) memoryFallback.set(key, value)
-      return value
+      const persisted = storage.getItem(key)
+      if (persisted !== null) {
+        memoryFallback.set(key, persisted)
+        return persisted
+      }
+      // Ein vorheriger Schreibzugriff kann trotz vorhandenem Storage-Objekt
+      // abgelehnt worden sein. Dann bleibt der Sitzungswert maßgeblich.
+      return memoryFallback.get(key) ?? null
     } catch {
       // Der In-Memory-Wert hält die aktuelle Sitzung funktionsfähig.
     }
