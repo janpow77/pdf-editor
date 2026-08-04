@@ -1,34 +1,47 @@
 /**
- * Fetch-Helfer der öffentlichen PDF-Editor-App — bewusst OHNE Authentifizierung.
+ * Zentrale Netzwerk- und Download-Helfer der PDF-Anwendung.
  *
- * Portierung von useAuthFetch.ts aus audit_designer: identische
- * FormData-Upload-, Timeout- und Blob-Download-Logik, aber ohne Bearer-Token
- * (die App ist anonym nutzbar). Zusätzlich landet jede heruntergeladene Datei
- * in der Sitzungs-Ergebnisliste (lib/results.ts) für ZIP-Download/Mailversand —
- * ausschließlich im Browser-Speicher, nie auf dem Server.
+ * Alle schreibenden Workflows laufen durch dieses Modul. Dadurch werden
+ * Serverfehler, Zeitüberschreitungen und erfolgreiche Downloads einheitlich
+ * als Apple-artige Toasts angezeigt, ohne dass jedes Werkzeug eigene Meldungs-
+ * logik duplizieren muss. Die Fachkomponenten behalten zusätzlich ihre
+ * dezenten Inline-Hinweise, damit Fehler direkt am Arbeitskontext sichtbar sind.
  */
-
+import { useNotifications } from '@/composables/useNotifications'
 import { authHeader, isAuthenticated, logout } from '@/lib/auth'
 import { addResult } from '@/lib/results'
 
-const DEFAULT_TIMEOUT = 5 * 60 * 1000 // 5 Minuten
+const DEFAULT_TIMEOUT = 5 * 60 * 1000
+const notifications = useNotifications()
 
-async function throwFromResponse(response: Response): Promise<never> {
-  // Abgelaufene/ungültige Anmeldung: Token verwerfen, Fehler durchreichen
-  if (response.status === 401 && isAuthenticated.value) logout()
-  const err = await response.json().catch(() => ({ detail: response.statusText }))
-  throw new Error(err.detail || `Fehler ${response.status}`)
+export interface ApiRequestOptions {
+  timeout?: number
+  /** Vorschau- oder Hintergrundaufrufe können die globale Meldung abschalten. */
+  notifyOnError?: boolean
 }
 
-/** POST einer FormData mit Per-Request-Timeout. Wirft bei !ok. */
+async function throwFromResponse(response: Response): Promise<never> {
+  if (response.status === 401 && isAuthenticated.value) logout()
+
+  const payload = await response.json().catch(() => ({ detail: response.statusText })) as {
+    detail?: string
+  }
+  throw new Error(payload.detail || `Serverfehler ${response.status}`)
+}
+
+/**
+ * POST einer FormData mit Abbruchsignal und verständlicher Fehlerbehandlung.
+ * Der Fehler wird nach der Toast-Ausgabe erneut geworfen, damit das aufrufende
+ * Werkzeug weiterhin seinen Inline-Zustand setzen kann.
+ */
 export async function apiPost(
   url: string,
   formData: FormData,
-  options?: { timeout?: number },
+  options?: ApiRequestOptions,
 ): Promise<Response> {
   const controller = new AbortController()
-  const timeout = options?.timeout ?? DEFAULT_TIMEOUT
-  const timer = setTimeout(() => controller.abort(), timeout)
+  const timer = window.setTimeout(() => controller.abort(), options?.timeout ?? DEFAULT_TIMEOUT)
+
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -38,51 +51,69 @@ export async function apiPost(
     })
     if (!response.ok) await throwFromResponse(response)
     return response
+  } catch (error: unknown) {
+    if (options?.notifyOnError !== false) {
+      notifications.error(
+        'Verarbeitung fehlgeschlagen',
+        notifications.errorFromUnknown(error),
+      )
+    }
+    throw error
   } finally {
-    clearTimeout(timer)
+    window.clearTimeout(timer)
   }
 }
 
-/** GET, gibt JSON zurück. Wirft bei !ok. */
+/** GET ohne automatische Toasts, weil Health- und Statusabfragen im Hintergrund laufen. */
 export async function apiGetJson<T = unknown>(url: string): Promise<T> {
   const response = await fetch(url, { headers: authHeader() })
   if (!response.ok) await throwFromResponse(response)
   return response.json() as Promise<T>
 }
 
-/** JSON-Request (PATCH/PUT/DELETE) mit optionaler Anmeldung. Wirft bei !ok. */
+/** JSON-Request mit derselben zentralen Fehlerdarstellung wie Datei-Uploads. */
 export async function apiJson<T = unknown>(
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   url: string,
   body?: unknown,
 ): Promise<T | null> {
-  const response = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...authHeader() },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-  if (!response.ok) await throwFromResponse(response)
-  if (response.status === 204) return null
-  return response.json() as Promise<T>
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    if (!response.ok) await throwFromResponse(response)
+    if (response.status === 204) return null
+    return response.json() as Promise<T>
+  } catch (error: unknown) {
+    notifications.error('Aktion fehlgeschlagen', notifications.errorFromUnknown(error))
+    throw error
+  }
 }
 
-/** Löst einen Browser-Download aus und merkt das Ergebnis für ZIP/Mail vor. */
-export function downloadBlob(response: Response, fallbackName: string): Promise<void> {
-  return response.blob().then((blob) => {
-    const disposition = response.headers.get('Content-Disposition')
-    let filename = fallbackName
-    if (disposition) {
-      const match = disposition.match(/filename="?([^";\n]+)"?/)
-      if (match) filename = match[1]
-    }
-    addResult(filename, blob)
-    const objectUrl = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = objectUrl
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(objectUrl)
-  })
+/**
+ * Löst den Download aus und übernimmt das Ergebnis in die lokale Ergebnisliste.
+ * Die Erfolgsmeldung wird erst nach dem Erzeugen des Browser-Downloads gezeigt.
+ */
+export async function downloadBlob(response: Response, fallbackName: string): Promise<void> {
+  const blob = await response.blob()
+  const disposition = response.headers.get('Content-Disposition')
+  let filename = fallbackName
+  if (disposition) {
+    const match = disposition.match(/filename="?([^";\n]+)"?/)
+    if (match) filename = match[1]
+  }
+
+  addResult(filename, blob)
+  const objectUrl = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = objectUrl
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(objectUrl)
+
+  notifications.success('Datei erstellt', `${filename} wurde zum Download bereitgestellt.`)
 }
