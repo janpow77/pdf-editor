@@ -116,7 +116,7 @@
             :key="tool.id"
             role="option"
             :aria-selected="i === rolodexIndex"
-            class="absolute left-1/2 top-1/2 w-52 h-56 flex flex-col items-center justify-center gap-3 p-5
+            class="absolute left-0 top-1/2 w-52 h-56 flex flex-col items-center justify-center gap-3 p-5
                    bg-white dark:bg-gray-800 border rounded-2xl shadow-lg
                    transition-all duration-300 ease-out will-change-transform
                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
@@ -170,7 +170,7 @@
           </button>
         </div>
         <p class="text-center text-xs text-gray-600 dark:text-gray-400">
-          Pfeiltasten oder Mausrad zum Blättern · Klick auf die mittlere Karte öffnet das Werkzeug
+          Pfeiltasten oder Mausrad zum Blättern · Klick auf die vordere Karte öffnet das Werkzeug
         </p>
       </div>
     </div>
@@ -423,14 +423,16 @@ function onWheel(e: WheelEvent) {
 }
 
 function cardStyle(i: number): Record<string, string> {
+  // Linksbündiger Fächer wie im Videoarchiv: die aktive Karte steht am linken
+  // Rand, die folgenden fächern nach rechts auf — kein Start in der Mitte.
   const offset = i - rolodexIndex.value
   const abs = Math.abs(offset)
-  const translateX = offset * 165
+  const translateX = 24 + offset * 165
   const rotateY = Math.max(-55, Math.min(55, offset * -35))
   const translateZ = -abs * 110
   const scale = offset === 0 ? 1 : Math.max(0.72, 1 - abs * 0.09)
   return {
-    transform: `translate(-50%, -50%) translateX(${translateX}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`,
+    transform: `translateY(-50%) translateX(${translateX}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`,
     // Bewusst kein Ausblenden per opacity: die Tiefe entsteht über Skalierung,
     // Drehung und z-Index. Ein Fade würde den Textkontrast der hinteren Karten
     // unter die 4,5:1-Schwelle der BITV drücken (axe-Befund color-contrast).

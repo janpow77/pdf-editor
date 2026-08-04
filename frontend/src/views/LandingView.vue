@@ -10,14 +10,15 @@
       </p>
     </header>
 
-    <NoticeBanner />
     <ResultsPanel />
     <ToolGrid />
 
-    <!-- Offenlegung der Bauteile. Steht bewusst auf der Startseite und nicht
-         nur im Fußbereich: Die AGPL verlangt, dass Nutzende des Dienstes vom
-         Quelltext erfahren — eine Angabe, die man erst suchen muss, erfüllt
-         das nur formal. -->
+    <!-- Hinweis- und Offenlegungskästen stehen unter den Werkzeugen: oben
+         sollen die Kacheln sofort sichtbar sein, die Erklärungen stören dort.
+         Die AGPL-Offenlegung bleibt bewusst auf der Startseite und nicht nur
+         im Fußbereich — eine Angabe, die man erst suchen muss, erfüllt die
+         Lizenzpflicht nur formal. -->
+    <NoticeBanner />
     <OpenSourceNotice />
   </div>
 </template>
