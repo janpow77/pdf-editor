@@ -1,26 +1,17 @@
 <template>
   <div>
-    <!--
-      Der Fokusmodus umschließt jedes Werkzeug mit derselben Breadcrumb- und
-      Oberflächenstruktur. Die Fachkomponenten müssen dadurch weder Kategorien
-      kennen noch eigene Seitenrahmen implementieren.
-    -->
     <section v-if="activeEntry" class="space-y-3">
       <nav aria-label="Brotkrümelnavigation" class="px-1">
         <ol class="flex flex-wrap items-center gap-1.5 text-sm font-medium text-gray-600 dark:text-gray-300">
           <li>
-            <button
-              type="button"
-              class="rounded-lg px-2 py-1 transition hover:bg-black/5 hover:text-gray-950 dark:hover:bg-white/10 dark:hover:text-white"
-              @click="closeTool"
-            >Startseite</button>
+            <button type="button" class="rounded-lg px-2 py-1 transition hover:bg-black/5 hover:text-gray-950 dark:hover:bg-white/10 dark:hover:text-white" @click="closeTool">
+              Startseite
+            </button>
           </li>
           <li aria-hidden="true" class="text-gray-400 dark:text-gray-500">›</li>
           <li class="px-1 text-gray-600 dark:text-gray-300">{{ activeEntry.group.title }}</li>
           <li aria-hidden="true" class="text-gray-400 dark:text-gray-500">›</li>
-          <li aria-current="page" class="truncate px-1 font-semibold text-gray-950 dark:text-white">
-            {{ activeEntry.tool.label }}
-          </li>
+          <li aria-current="page" class="truncate px-1 font-semibold text-gray-950 dark:text-white">{{ activeEntry.tool.label }}</li>
         </ol>
       </nav>
 
@@ -30,61 +21,33 @@
     </section>
 
     <div v-else class="space-y-8">
-      <!--
-        Das Raster bleibt die platzsparende Standardansicht. Der segmentierte
-        Schalter erhält das Rolodex als gleichberechtigte Alternative. Ein
-        blockierter Browser-Speicher beeinflusst nur die Persistenz, niemals die
-        Funktionsfähigkeit der Oberfläche.
-      -->
       <div v-if="!normalizedSearch" class="flex justify-end">
-        <div
-          class="inline-flex rounded-full bg-gray-200/80 p-1 shadow-inner ring-1 ring-black/5 dark:bg-white/10 dark:ring-white/10"
-          role="group"
-          aria-label="Darstellung der Werkzeuge"
-        >
+        <div class="inline-flex rounded-full bg-gray-200/80 p-1 shadow-inner ring-1 ring-black/5 dark:bg-white/10 dark:ring-white/10" role="group" aria-label="Darstellung der Werkzeuge">
           <button
             type="button"
             class="rounded-full px-4 py-2 text-sm font-semibold transition duration-200"
-            :class="viewMode === 'grid'
-              ? 'bg-white text-gray-950 shadow-sm dark:bg-white dark:text-gray-950'
-              : 'text-gray-600 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white'"
+            :class="viewMode === 'grid' ? 'bg-white text-gray-950 shadow-sm dark:bg-white dark:text-gray-950' : 'text-gray-600 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white'"
             :aria-pressed="viewMode === 'grid'"
             @click="setViewMode('grid')"
           >▦ Raster</button>
           <button
             type="button"
             class="rounded-full px-4 py-2 text-sm font-semibold transition duration-200"
-            :class="viewMode === 'rolodex'
-              ? 'bg-white text-gray-950 shadow-sm dark:bg-white dark:text-gray-950'
-              : 'text-gray-600 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white'"
+            :class="viewMode === 'rolodex' ? 'bg-white text-gray-950 shadow-sm dark:bg-white dark:text-gray-950' : 'text-gray-600 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white'"
             :aria-pressed="viewMode === 'rolodex'"
             @click="setViewMode('rolodex')"
           >▤ Rolodex</button>
         </div>
       </div>
 
-      <!-- Raster: effizient, responsiv und als Standard gewählt. -->
       <template v-if="effectiveViewMode === 'grid'">
-        <section
-          v-for="group in filteredGroups"
-          :key="group.key"
-          :aria-labelledby="`werkzeuggruppe-${group.key}`"
-        >
+        <section v-for="group in filteredGroups" :key="group.key" :aria-labelledby="`werkzeuggruppe-${group.key}`">
           <div class="mb-4 flex flex-wrap items-end justify-between gap-2 px-1">
             <div class="flex items-center gap-3">
-              <span
-                class="grid h-10 w-10 place-items-center rounded-2xl text-xl shadow-sm"
-                :class="groupIconClass(group.key)"
-                aria-hidden="true"
-              >{{ group.icon }}</span>
+              <span class="grid h-10 w-10 place-items-center rounded-2xl text-xl shadow-sm" :class="groupIconClass(group.key)" aria-hidden="true">{{ group.icon }}</span>
               <div>
-                <h2
-                  :id="`werkzeuggruppe-${group.key}`"
-                  class="text-lg font-semibold tracking-[-0.025em] text-gray-950 dark:text-white"
-                >{{ group.title }}</h2>
-                <p class="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  {{ group.tools.length }} {{ group.tools.length === 1 ? 'Werkzeug' : 'Werkzeuge' }}
-                </p>
+                <h2 :id="`werkzeuggruppe-${group.key}`" class="text-lg font-semibold tracking-[-0.025em] text-gray-950 dark:text-white">{{ group.title }}</h2>
+                <p class="text-sm font-medium text-gray-600 dark:text-gray-400">{{ group.tools.length }} {{ group.tools.length === 1 ? 'Werkzeug' : 'Werkzeuge' }}</p>
               </div>
             </div>
           </div>
@@ -94,47 +57,22 @@
               v-for="tool in group.tools"
               :key="tool.id"
               type="button"
-              class="group relative min-h-44 overflow-hidden rounded-[1.35rem] bg-white/82 p-5 text-left
-                     shadow-apple-sm ring-1 ring-gray-300/80 backdrop-blur-xl transition duration-200
-                     hover:-translate-y-1 hover:shadow-apple focus-visible:ring-2 focus-visible:ring-primary-500
-                     dark:bg-white/[0.075] dark:ring-gray-600 dark:hover:bg-white/[0.105]"
+              :data-tool-id="tool.id"
+              class="group relative min-h-44 overflow-hidden rounded-[1.35rem] bg-white/82 p-5 text-left shadow-apple-sm ring-1 ring-gray-300/80 backdrop-blur-xl transition duration-200 hover:-translate-y-1 hover:shadow-apple focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-white/[0.075] dark:ring-gray-600 dark:hover:bg-white/[0.105]"
               :class="isLocked(tool.id) ? 'opacity-75' : ''"
               :aria-label="`${tool.label}: ${isLocked(tool.id) ? LOCK_HINT : tool.description}`"
               @click="openTool(tool.id)"
             >
-              <span
-                class="mb-5 grid h-12 w-12 place-items-center rounded-2xl text-2xl shadow-sm transition duration-200 group-hover:scale-105"
-                :class="groupIconClass(group.key)"
-                aria-hidden="true"
-              >{{ tool.icon }}</span>
-
-              <span class="block text-base font-semibold tracking-[-0.02em] text-gray-950 dark:text-white">
-                {{ tool.label }}
-              </span>
-              <span class="mt-1.5 block text-sm leading-5 text-gray-600 dark:text-gray-300">
-                {{ tool.description }}
-              </span>
-
-              <span
-                v-if="isLocked(tool.id)"
-                class="mt-4 inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-2.5 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-500/15 dark:text-primary-300"
-              ><span aria-hidden="true">🔒</span> Anmeldung erforderlich</span>
-              <span
-                v-else
-                class="absolute bottom-5 right-5 grid h-8 w-8 place-items-center rounded-full bg-gray-950 text-white opacity-0 transition duration-200 group-hover:opacity-100 dark:bg-white dark:text-gray-950"
-                aria-hidden="true"
-              >→</span>
+              <span class="mb-5 grid h-12 w-12 place-items-center rounded-2xl text-2xl shadow-sm transition duration-200 group-hover:scale-105" :class="groupIconClass(group.key)" aria-hidden="true">{{ tool.icon }}</span>
+              <span class="block text-base font-semibold tracking-[-0.02em] text-gray-950 dark:text-white">{{ tool.label }}</span>
+              <span class="mt-1.5 block text-sm leading-5 text-gray-600 dark:text-gray-300">{{ tool.description }}</span>
+              <span v-if="isLocked(tool.id)" class="mt-4 inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-2.5 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-500/15 dark:text-primary-300"><span aria-hidden="true">🔒</span> Anmeldung erforderlich</span>
+              <span v-else class="absolute bottom-5 right-5 grid h-8 w-8 place-items-center rounded-full bg-gray-950 text-white opacity-0 transition duration-200 group-hover:opacity-100 dark:bg-white dark:text-gray-950" aria-hidden="true">→</span>
             </button>
           </div>
         </section>
       </template>
 
-      <!--
-        Das Rolodex verwendet bewusst keine nachgebildete Listbox. Die Karten
-        bleiben native Buttons; der umgebende Bereich bietet zusätzlich
-        Pfeiltasten, Pos1, Ende und Eingabe. Dadurch entstehen keine
-        widersprüchlichen Rollen zwischen `button`, `listbox` und `option`.
-      -->
       <section v-else class="space-y-5" aria-label="Rolodex-Ansicht der Werkzeuge">
         <nav class="flex flex-wrap justify-center gap-2" aria-label="Werkzeugkategorie auswählen">
           <button
@@ -142,14 +80,10 @@
             :key="group.key"
             type="button"
             class="rounded-full px-3.5 py-2 text-sm font-semibold shadow-sm ring-1 transition duration-200"
-            :class="group.key === activeGroupKey
-              ? 'bg-gray-950 text-white ring-gray-950 dark:bg-white dark:text-gray-950 dark:ring-white'
-              : 'bg-white/75 text-gray-700 ring-gray-400/70 hover:bg-white hover:text-gray-950 dark:bg-white/10 dark:text-gray-200 dark:ring-gray-600 dark:hover:bg-white/15'"
-            :aria-current="group.key === activeGroupKey ? 'true' : undefined"
+            :class="group.key === activeGroupKey ? 'bg-gray-950 text-white ring-gray-950 dark:bg-white dark:text-gray-950 dark:ring-white' : 'bg-white/75 text-gray-700 ring-gray-400/70 hover:bg-white hover:text-gray-950 dark:bg-white/10 dark:text-gray-200 dark:ring-gray-600 dark:hover:bg-white/15'"
+            :aria-pressed="group.key === activeGroupKey"
             @click="setGroup(group.key)"
-          >
-            <span aria-hidden="true">{{ group.icon }}</span> {{ group.title }}
-          </button>
+          ><span aria-hidden="true">{{ group.icon }}</span> {{ group.title }}</button>
         </nav>
 
         <div
@@ -159,10 +93,10 @@
           tabindex="0"
           role="region"
           :aria-label="`Werkzeug-Rolodex ${activeGroup?.title ?? ''}. Pfeiltasten zum Blättern, Pos1 und Ende zum Springen, Eingabetaste zum Öffnen.`"
-          @keydown.left.prevent="step(-1)"
-          @keydown.right.prevent="step(1)"
-          @keydown.home.prevent="selectRolodexIndex(0)"
-          @keydown.end.prevent="selectRolodexIndex(Math.max(0, groupTools.length - 1))"
+          @keydown.left.prevent="step(-1, true)"
+          @keydown.right.prevent="step(1, true)"
+          @keydown.home.prevent="selectRolodexIndex(0, true)"
+          @keydown.end.prevent="selectRolodexIndex(Math.max(0, groupTools.length - 1), true)"
           @keydown.enter.prevent="openActiveRolodexTool"
           @wheel.prevent="onWheel"
         >
@@ -170,84 +104,56 @@
             v-for="(tool, index) in groupTools"
             :key="tool.id"
             type="button"
-            class="absolute left-1/2 top-1/2 flex h-64 w-60 flex-col rounded-[1.5rem] bg-white p-5 text-left
-                   shadow-apple ring-1 ring-gray-300 transition-all duration-300 ease-out will-change-transform
-                   focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-900 dark:ring-gray-600"
+            :data-tool-id="tool.id"
+            :data-rolodex-index="index"
+            class="absolute left-1/2 top-1/2 flex h-64 w-60 flex-col rounded-[1.5rem] bg-white p-5 text-left shadow-apple ring-1 ring-gray-300 transition-all duration-300 ease-out will-change-transform focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-900 dark:ring-gray-600"
             :class="isLocked(tool.id) ? 'grayscale' : ''"
             :style="cardStyle(index)"
             :tabindex="index === rolodexIndex ? 0 : -1"
-            :aria-current="index === rolodexIndex ? 'true' : undefined"
+            :aria-pressed="index === rolodexIndex"
             :aria-label="`${tool.label}: ${isLocked(tool.id) ? LOCK_HINT : tool.description}`"
             @focus="selectRolodexIndex(index)"
-            @click="index === rolodexIndex ? openTool(tool.id) : selectRolodexIndex(index)"
+            @click="index === rolodexIndex ? openTool(tool.id) : selectRolodexIndex(index, true)"
           >
-            <span
-              class="grid h-14 w-14 place-items-center rounded-2xl text-3xl shadow-sm"
-              :class="groupIconClass(activeGroupKey)"
-              aria-hidden="true"
-            >{{ tool.icon }}</span>
-            <span class="mt-5 text-lg font-semibold tracking-[-0.025em] text-gray-950 dark:text-white">
-              {{ tool.label }}
-            </span>
+            <span class="grid h-14 w-14 place-items-center rounded-2xl text-3xl shadow-sm" :class="groupIconClass(activeGroupKey)" aria-hidden="true">{{ tool.icon }}</span>
+            <span class="mt-5 text-lg font-semibold tracking-[-0.025em] text-gray-950 dark:text-white">{{ tool.label }}</span>
             <span class="mt-2 text-sm leading-5 text-gray-600 dark:text-gray-300">{{ tool.description }}</span>
-            <span v-if="isLocked(tool.id)" class="mt-auto text-xs font-semibold text-primary-700 dark:text-primary-300">
-              🔒 Anmeldung erforderlich
-            </span>
+            <span v-if="isLocked(tool.id)" class="mt-auto text-xs font-semibold text-primary-700 dark:text-primary-300">🔒 Anmeldung erforderlich</span>
             <span v-else class="mt-auto text-sm font-semibold text-primary-600 dark:text-primary-400">Öffnen →</span>
           </button>
 
-          <p class="sr-only" aria-live="polite">
-            {{ activeRolodexTool ? `${activeRolodexTool.label}, ${rolodexIndex + 1} von ${groupTools.length}` : 'Keine Werkzeuge verfügbar' }}
-          </p>
+          <p class="sr-only" aria-live="polite" aria-atomic="true">{{ activeRolodexTool ? `${activeRolodexTool.label}, ${rolodexIndex + 1} von ${groupTools.length}` : 'Keine Werkzeuge verfügbar' }}</p>
         </div>
 
         <div class="flex items-center justify-center gap-4">
-          <button
-            type="button"
-            class="apple-icon-button"
-            :disabled="rolodexIndex === 0"
-            aria-label="Vorheriges Werkzeug"
-            @click="step(-1)"
-          >←</button>
-          <span class="min-w-24 text-center text-sm font-medium tabular-nums text-gray-600 dark:text-gray-300">
-            {{ groupTools.length ? rolodexIndex + 1 : 0 }} / {{ groupTools.length }}
-          </span>
-          <button
-            type="button"
-            class="apple-icon-button"
-            :disabled="rolodexIndex >= groupTools.length - 1"
-            aria-label="Nächstes Werkzeug"
-            @click="step(1)"
-          >→</button>
+          <UiIconButton :disabled="rolodexIndex === 0" aria-label="Vorheriges Werkzeug" @click="step(-1, true)">←</UiIconButton>
+          <span class="min-w-24 text-center text-sm font-medium tabular-nums text-gray-600 dark:text-gray-300">{{ groupTools.length ? rolodexIndex + 1 : 0 }} / {{ groupTools.length }}</span>
+          <UiIconButton :disabled="rolodexIndex >= groupTools.length - 1" aria-label="Nächstes Werkzeug" @click="step(1, true)">→</UiIconButton>
         </div>
       </section>
 
-      <div
-        v-if="filteredGroups.length === 0"
-        class="apple-surface mx-auto max-w-xl px-6 py-12 text-center"
-        role="status"
-      >
+      <div v-if="filteredGroups.length === 0" class="apple-surface mx-auto max-w-xl px-6 py-12 text-center" role="status">
         <div class="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-gray-100 text-2xl dark:bg-white/10" aria-hidden="true">⌕</div>
         <h2 class="mt-4 text-lg font-semibold text-gray-950 dark:text-white">Kein Werkzeug gefunden</h2>
-        <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-          Prüfen Sie die Schreibweise oder verwenden Sie einen allgemeineren Begriff.
-        </p>
+        <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">Prüfen Sie die Schreibweise oder verwenden Sie einen allgemeineren Begriff.</p>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
 import { useRouter } from 'vue-router'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import { useWorkspace } from '@/composables/useWorkspace'
 import { isAuthenticated } from '@/lib/auth'
 import { getHealth } from '@/lib/health'
-import { findTool, TOOL_GROUPS, type ToolDefinition } from '@/lib/toolCatalog'
+import { findTool, TOOL_GROUPS, type CatalogTool, type ToolId } from '@/lib/toolCatalog'
+import { readStoredValue, writeStoredValue } from '@/lib/safeStorage'
 
 const props = withDefaults(defineProps<{ searchQuery?: string }>(), { searchQuery: '' })
 const router = useRouter()
-const activeTool = ref<string | null>(null)
+const activeTool = ref<ToolId | null>(null)
 const aiAvailable = ref(false)
 const lockedTools = ref<Set<string>>(new Set())
 const { openWorkspace, closeWorkspace } = useWorkspace()
@@ -257,28 +163,8 @@ const VIEW_KEY = 'pdfapp_view_mode'
 const GROUP_KEY = 'pdfapp_rolodex_group'
 type ViewMode = 'grid' | 'rolodex'
 
-/** Liest eine Präferenz, ohne SSR, Privatmodus oder blockierten Speicher zu gefährden. */
-function readPreference(key: string): string | null {
-  if (typeof window === 'undefined') return null
-  try {
-    return window.localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-/** Persistenz ist Komfort: Fehler dürfen niemals die Werkzeugauswahl blockieren. */
-function writePreference(key: string, value: string): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(key, value)
-  } catch {
-    // Die aktuelle Sitzung funktioniert weiter; lediglich die Auswahl wird nicht gespeichert.
-  }
-}
-
-const viewMode = ref<ViewMode>(readPreference(VIEW_KEY) === 'rolodex' ? 'rolodex' : 'grid')
-const activeGroupKey = ref(readPreference(GROUP_KEY) ?? 'bearbeiten')
+const viewMode = ref<ViewMode>(readStoredValue(VIEW_KEY) === 'rolodex' ? 'rolodex' : 'grid')
+const activeGroupKey = ref(readStoredValue(GROUP_KEY) ?? 'bearbeiten')
 const rolodexIndex = ref(0)
 const rolodexEl = ref<HTMLElement | null>(null)
 
@@ -287,10 +173,7 @@ const normalizedSearch = computed(() => props.searchQuery.trim().toLocaleLowerCa
 const effectiveViewMode = computed<ViewMode>(() => normalizedSearch.value ? 'grid' : viewMode.value)
 
 const availableGroups = computed(() => TOOL_GROUPS
-  .map((group) => ({
-    ...group,
-    tools: group.tools.filter((tool) => !tool.requiresAi || aiAvailable.value),
-  }))
+  .map((group) => ({ ...group, tools: group.tools.filter((tool) => !tool.requiresAi || aiAvailable.value) }))
   .filter((group) => group.tools.length > 0))
 
 const filteredGroups = computed(() => {
@@ -298,23 +181,16 @@ const filteredGroups = computed(() => {
   return availableGroups.value
     .map((group) => ({
       ...group,
-      tools: group.tools.filter((tool) => {
-        if (!query) return true
-        return `${tool.label} ${tool.description} ${group.title}`.toLocaleLowerCase('de').includes(query)
-      }),
+      tools: group.tools.filter((tool) => !query || `${tool.label} ${tool.description} ${group.title}`.toLocaleLowerCase('de').includes(query)),
     }))
     .filter((group) => group.tools.length > 0)
 })
 
-const activeGroup = computed(() =>
-  availableGroups.value.find((group) => group.key === activeGroupKey.value)
-  ?? availableGroups.value[0]
-  ?? null,
-)
-const groupTools = computed<ToolDefinition[]>(() => activeGroup.value?.tools ?? [])
+const activeGroup = computed(() => availableGroups.value.find((group) => group.key === activeGroupKey.value) ?? availableGroups.value[0] ?? null)
+const groupTools = computed<readonly CatalogTool[]>(() => activeGroup.value?.tools ?? [])
 const activeRolodexTool = computed(() => groupTools.value[rolodexIndex.value] ?? null)
 
-function isLocked(id: string): boolean {
+function isLocked(id: ToolId): boolean {
   return lockedTools.value.has(id) && !isAuthenticated.value
 }
 
@@ -322,12 +198,11 @@ function scrollToTop(): void {
   if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-function openTool(id: string): void {
+function openTool(id: ToolId): void {
   if (isLocked(id)) {
     void router.push({ path: '/login', query: { werkzeug: id } })
     return
   }
-
   const entry = findTool(id)
   if (!entry) return
   activeTool.value = id
@@ -335,33 +210,37 @@ function openTool(id: string): void {
   scrollToTop()
 }
 
-function closeTool(): void {
+async function closeTool(): Promise<void> {
+  const previous = activeTool.value
   activeTool.value = null
   closeWorkspace()
   scrollToTop()
+  await nextTick()
+  if (previous) document.querySelector<HTMLButtonElement>(`[data-tool-id="${previous}"]`)?.focus()
 }
 
 function setViewMode(mode: ViewMode): void {
   viewMode.value = mode
-  writePreference(VIEW_KEY, mode)
-  if (mode === 'rolodex') {
-    rolodexIndex.value = Math.min(rolodexIndex.value, Math.max(0, groupTools.value.length - 1))
-  }
+  writeStoredValue(VIEW_KEY, mode)
+  if (mode === 'rolodex') rolodexIndex.value = Math.min(rolodexIndex.value, Math.max(0, groupTools.value.length - 1))
 }
 
 function setGroup(key: string): void {
   activeGroupKey.value = key
-  writePreference(GROUP_KEY, key)
+  writeStoredValue(GROUP_KEY, key)
   rolodexIndex.value = 0
   rolodexEl.value?.focus()
 }
 
-function selectRolodexIndex(index: number): void {
+async function selectRolodexIndex(index: number, focus = false): Promise<void> {
   rolodexIndex.value = Math.max(0, Math.min(index, Math.max(0, groupTools.value.length - 1)))
+  if (!focus) return
+  await nextTick()
+  rolodexEl.value?.querySelector<HTMLButtonElement>(`[data-rolodex-index="${rolodexIndex.value}"]`)?.focus()
 }
 
-function step(direction: number): void {
-  selectRolodexIndex(rolodexIndex.value + direction)
+function step(direction: number, focus = false): void {
+  void selectRolodexIndex(rolodexIndex.value + direction, focus)
 }
 
 function openActiveRolodexTool(): void {
@@ -392,7 +271,6 @@ function cardStyle(index: number): Record<string, string> {
   }
 }
 
-/** Farbflächen bleiben bewusst weich und systematisch je Kategorie. */
 function groupIconClass(key: string): string {
   return {
     bearbeiten: 'bg-blue-100 text-blue-700 dark:bg-blue-400/15 dark:text-blue-300',
@@ -405,9 +283,7 @@ function groupIconClass(key: string): string {
   }[key] ?? 'bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300'
 }
 
-// Werkzeuge werden erst beim Öffnen geladen. Dadurch bleibt das große Raster
-// trotz pdf.js und der vielen Fachmodule schnell und reagiert unmittelbar.
-const toolComponents: Record<string, Component> = {
+const toolComponents = {
   merge: defineAsyncComponent(() => import('@/components/tools/PdfMerge.vue')),
   split: defineAsyncComponent(() => import('@/components/tools/PdfSplit.vue')),
   rotate: defineAsyncComponent(() => import('@/components/tools/PdfRotate.vue')),
@@ -454,16 +330,14 @@ const toolComponents: Record<string, Component> = {
   wordDiff: defineAsyncComponent(() => import('@/components/tools/WordDiff.vue')),
   wordMeta: defineAsyncComponent(() => import('@/components/tools/WordMetadata.vue')),
   excelMeta: defineAsyncComponent(() => import('@/components/tools/ExcelMetadata.vue')),
-}
+} satisfies Record<ToolId, Component>
 
 onMounted(async () => {
   try {
     const health = await getHealth()
     aiAvailable.value = Boolean(health.features?.ai)
     lockedTools.value = new Set(health.login_required_tools ?? [])
-    if (!availableGroups.value.some((group) => group.key === activeGroupKey.value)) {
-      activeGroupKey.value = availableGroups.value[0]?.key ?? 'bearbeiten'
-    }
+    if (!availableGroups.value.some((group) => group.key === activeGroupKey.value)) activeGroupKey.value = availableGroups.value[0]?.key ?? 'bearbeiten'
   } catch {
     aiAvailable.value = false
     lockedTools.value = new Set()
