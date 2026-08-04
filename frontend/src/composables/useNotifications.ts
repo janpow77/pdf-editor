@@ -3,7 +3,9 @@
  *
  * Der Zustand liegt außerhalb einzelner Komponenten und ist deshalb in allen
  * Werkzeugen identisch verfügbar. Meldungen werden automatisch entfernt,
- * können aber für wichtige Fehler dauerhaft angezeigt werden.
+ * können aber für wichtige Fehler dauerhaft angezeigt werden. Duplikate und
+ * eine unbegrenzte Toast-Schlange werden bewusst verhindert, damit mehrere
+ * parallele Preview-Aufrufe die Oberfläche nicht überdecken.
  */
 import { readonly, ref } from 'vue'
 
@@ -17,10 +19,15 @@ export interface AppNotification {
   timeout: number
 }
 
+const MAX_VISIBLE_NOTIFICATIONS = 4
 const notifications = ref<AppNotification[]>([])
+const timers = new Map<number, number>()
 let nextId = 1
 
 function remove(id: number): void {
+  const timer = timers.get(id)
+  if (timer !== undefined && typeof window !== 'undefined') window.clearTimeout(timer)
+  timers.delete(id)
   notifications.value = notifications.value.filter((item) => item.id !== id)
 }
 
@@ -30,11 +37,25 @@ function notify(
   message?: string,
   timeout = type === 'error' ? 6500 : 4200,
 ): number {
+  // Identische parallele Fehler werden zu einer sichtbaren Meldung zusammengefasst.
+  const duplicate = notifications.value.find((item) =>
+    item.type === type && item.title === title && item.message === message,
+  )
+  if (duplicate) {
+    remove(duplicate.id)
+  }
+
   const id = nextId++
   notifications.value.push({ id, type, title, message, timeout })
 
-  if (timeout > 0) {
-    window.setTimeout(() => remove(id), timeout)
+  while (notifications.value.length > MAX_VISIBLE_NOTIFICATIONS) {
+    const oldest = notifications.value[0]
+    if (oldest) remove(oldest.id)
+  }
+
+  if (timeout > 0 && typeof window !== 'undefined') {
+    const timer = window.setTimeout(() => remove(id), timeout)
+    timers.set(id, timer)
   }
   return id
 }
