@@ -1,10 +1,10 @@
 /**
  * Zentraler Katalog aller in der Startansicht angebotenen Werkzeuge.
  *
- * Die Metadaten waren zuvor direkt in der großen Raster-Komponente hinterlegt.
- * Durch die Trennung können Suche, Breadcrumbs, Fokus-Header und spätere
- * Favoriten dieselbe verlässliche Datenquelle verwenden. Das verhindert, dass
- * Bezeichnungen oder Kategorien an mehreren Stellen auseinanderlaufen.
+ * Suche, Breadcrumbs, Fokus-Header und Komponenten-Mapping verwenden dieselben
+ * Metadaten. `ToolId` wird direkt aus diesem unveränderlichen Katalog abgeleitet;
+ * fehlende oder falsch geschriebene Komponenten-IDs fallen damit bereits bei
+ * der TypeScript-Prüfung auf.
  */
 
 export interface ToolDefinition {
@@ -12,7 +12,6 @@ export interface ToolDefinition {
   label: string
   description: string
   icon: string
-  /** KI-Werkzeuge werden nur angezeigt, wenn das Backend sie meldet. */
   requiresAi?: boolean
 }
 
@@ -20,10 +19,10 @@ export interface ToolGroupDefinition {
   key: string
   title: string
   icon: string
-  tools: ToolDefinition[]
+  tools: readonly ToolDefinition[]
 }
 
-export const TOOL_GROUPS: ToolGroupDefinition[] = [
+export const TOOL_GROUPS = [
   {
     key: 'bearbeiten',
     title: 'Bearbeiten & Anmerken',
@@ -119,11 +118,16 @@ export const TOOL_GROUPS: ToolGroupDefinition[] = [
       { id: 'officeToPdf', label: 'Office → PDF', description: 'Excel, PowerPoint, ODF und RTF konvertieren', icon: '🗃️' },
     ],
   },
-]
+] as const satisfies readonly ToolGroupDefinition[]
+
+export type ToolId = typeof TOOL_GROUPS[number]['tools'][number]['id']
+export type ToolGroupKey = typeof TOOL_GROUPS[number]['key']
+export type CatalogTool = typeof TOOL_GROUPS[number]['tools'][number]
+export type CatalogGroup = typeof TOOL_GROUPS[number]
 
 /** Liefert Werkzeug und Kategorie für Fokus-Header und Breadcrumbs. */
 export function findTool(toolId: string | null | undefined):
-  | { tool: ToolDefinition; group: ToolGroupDefinition }
+  | { tool: CatalogTool; group: CatalogGroup }
   | null {
   if (!toolId) return null
   for (const group of TOOL_GROUPS) {
