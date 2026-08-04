@@ -15,7 +15,7 @@
       <input ref="fileInput" type="file" accept=".pdf,application/pdf" multiple class="hidden" @change="onFileSelect" />
       <div class="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-violet-100 text-2xl text-violet-700 dark:bg-violet-400/15 dark:text-violet-300" aria-hidden="true">📎</div>
       <p class="mt-3 font-semibold text-gray-950 dark:text-white">PDF-Dateien ablegen</p>
-      <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Die Reihenfolge kann anschließend per Drag & Drop geändert werden.</p>
+      <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Die Reihenfolge kann per Drag & Drop oder mit den Pfeiltasten geändert werden.</p>
       <button type="button" class="mt-4 rounded-full bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 hover:shadow-apple" @click="fileInput?.click()">Dateien auswählen</button>
     </div>
 
@@ -34,7 +34,7 @@
         <li
           v-for="(item, index) in items"
           :key="item.id"
-          class="group relative grid min-h-48 grid-cols-[8rem,1fr] gap-4 rounded-[1.35rem] bg-white/85 p-3 shadow-apple-sm ring-1 ring-gray-300/80 transition hover:-translate-y-0.5 hover:shadow-apple dark:bg-white/[0.07] dark:ring-gray-600"
+          class="group relative grid min-h-48 grid-cols-[8rem,1fr] gap-4 rounded-[1.35rem] bg-white/[0.85] p-3 shadow-apple-sm ring-1 ring-gray-300/80 transition hover:-translate-y-0.5 hover:shadow-apple dark:bg-white/[0.07] dark:ring-gray-600"
           draggable="true"
           @dragstart="dragIdx = index"
           @dragover.prevent
@@ -56,9 +56,25 @@
             <p class="mt-1 text-xs text-gray-600 dark:text-gray-300">{{ formatFileSize(item.file.size) }}</p>
             <p v-if="item.previewError" class="mt-2 text-xs leading-5 text-rose-700 dark:text-rose-300">{{ item.previewError }}</p>
 
-            <div class="mt-auto flex items-center justify-between gap-2 pt-4">
+            <div class="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
               <span class="cursor-grab text-xs font-semibold text-gray-500 dark:text-gray-400" title="Zum Umsortieren ziehen">☰ Verschieben</span>
-              <button type="button" class="grid h-9 w-9 place-items-center rounded-full text-rose-700 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/10" :aria-label="`${item.file.name} entfernen`" @click="removeItem(item.id)">×</button>
+              <div class="flex items-center gap-1">
+                <button
+                  type="button"
+                  class="grid h-9 w-9 place-items-center rounded-full text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-35 dark:text-gray-200 dark:hover:bg-white/10"
+                  :disabled="index === 0"
+                  :aria-label="`${item.file.name} nach oben verschieben`"
+                  @click="moveItem(index, -1)"
+                >↑</button>
+                <button
+                  type="button"
+                  class="grid h-9 w-9 place-items-center rounded-full text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-35 dark:text-gray-200 dark:hover:bg-white/10"
+                  :disabled="index === items.length - 1"
+                  :aria-label="`${item.file.name} nach unten verschieben`"
+                  @click="moveItem(index, 1)"
+                >↓</button>
+                <button type="button" class="grid h-9 w-9 place-items-center rounded-full text-rose-700 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/10" :aria-label="`${item.file.name} entfernen`" @click="removeItem(item.id)">×</button>
+              </div>
             </div>
           </div>
         </li>
@@ -69,7 +85,7 @@
       <button
         type="button"
         :disabled="items.length < 2 || loading"
-        class="rounded-full bg-primary-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-primary-700 hover:shadow-apple disabled:cursor-not-allowed disabled:opacity-45"
+        class="rounded-full bg-primary-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-primary-700 hover:shadow-apple disabled:cursor-not-allowed disabled:opacity-50"
         @click="doMerge"
       >{{ loading ? 'PDFs werden zusammengeführt…' : 'PDFs zusammenführen' }}</button>
       <span v-if="items.length === 1" class="text-sm font-medium text-amber-700 dark:text-amber-300">Mindestens zwei Dateien erforderlich.</span>
@@ -95,6 +111,7 @@ interface MergeItem {
   previewError: string
 }
 
+const MAX_FILES = 50
 const { loading, error, withLoading, mergePdfs, getThumbnails } = usePdfTools()
 const notifications = useNotifications()
 const items = ref<MergeItem[]>([])
@@ -118,9 +135,9 @@ function onDrop(event: DragEvent): void {
 }
 
 /**
- * Jede Datei wird einzeln validiert. Erst wenn auch die gemeinsame Größen-
- * grenze eingehalten ist, werden Listeneinträge angelegt und ihre Vorschauen
- * parallel geladen. Die ID bleibt beim Umsortieren stabil.
+ * Jede Datei wird einzeln validiert. Erst wenn auch Anzahl und gemeinsame
+ * Größengrenze eingehalten sind, werden Listeneinträge angelegt und ihre
+ * Vorschauen parallel geladen. Die ID bleibt beim Umsortieren stabil.
  */
 async function addFiles(selectedFiles: File[]): Promise<void> {
   uploadError.value = ''
@@ -138,6 +155,12 @@ async function addFiles(selectedFiles: File[]): Promise<void> {
     notifications.error('Einige Dateien wurden abgelehnt', uploadError.value)
   }
   if (!accepted.length) return
+
+  if (items.value.length + accepted.length > MAX_FILES) {
+    uploadError.value = `Es können maximal ${MAX_FILES} PDF-Dateien gleichzeitig zusammengeführt werden.`
+    notifications.error('Zu viele Dateien', uploadError.value)
+    return
+  }
 
   const combinedFiles = [...items.value.map((item) => item.file), ...accepted]
   const totalValidation = validateTotalFileSize(combinedFiles)
@@ -185,6 +208,14 @@ function removeItem(id: string): void {
 function clearFiles(): void {
   items.value = []
   uploadError.value = ''
+}
+
+/** Tastaturbedienbare Alternative zum Drag-&-Drop. */
+function moveItem(index: number, direction: -1 | 1): void {
+  const target = index + direction
+  if (target < 0 || target >= items.value.length) return
+  const [item] = items.value.splice(index, 1)
+  if (item) items.value.splice(target, 0, item)
 }
 
 function reorderFile(targetIdx: number): void {
