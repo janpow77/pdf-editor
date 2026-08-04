@@ -1,22 +1,53 @@
 /**
- * Gemeinsame Validierung für PDF-Uploads.
+ * Gemeinsame Validierung für Datei- und PDF-Uploads.
  *
- * Die Prüfung erfolgt vor dem Netzwerkaufruf. Dadurch erhalten Nutzende sofort
- * eine verständliche Rückmeldung, statt erst nach einem fehlgeschlagenen
- * Server-Upload. Neben Endung und Größe wird auch die PDF-Signatur `%PDF-`
- * geprüft; eine lediglich umbenannte Fremddatei wird damit zuverlässig erkannt.
+ * Die Prüfung erfolgt vor dem Netzwerkaufruf. Die zunächst verwendeten Defaults
+ * entsprechen der Standardkonfiguration des Backends; `/api/health` ersetzt sie
+ * anschließend durch die im jeweiligen Deployment tatsächlich aktiven Werte.
  */
 import { isAuthenticated } from '@/lib/auth'
 
 const MEBIBYTE = 1024 * 1024
-const ANONYMOUS_FILE_LIMIT = 50 * MEBIBYTE
-const AUTHENTICATED_FILE_LIMIT = 100 * MEBIBYTE
-const ANONYMOUS_TOTAL_LIMIT = 200 * MEBIBYTE
-const AUTHENTICATED_TOTAL_LIMIT = 400 * MEBIBYTE
+
+export interface UploadLimitTier {
+  max_file: number
+  max_total: number
+}
+
+export interface UploadLimitConfiguration {
+  anonymous: UploadLimitTier
+  authenticated: UploadLimitTier
+}
+
+const DEFAULT_LIMITS: UploadLimitConfiguration = {
+  anonymous: { max_file: 50 * MEBIBYTE, max_total: 200 * MEBIBYTE },
+  authenticated: { max_file: 100 * MEBIBYTE, max_total: 400 * MEBIBYTE },
+}
+
+let configuredLimits: UploadLimitConfiguration = structuredClone(DEFAULT_LIMITS)
 
 export interface FileValidationResult {
   valid: boolean
   message?: string
+}
+
+function positiveLimit(value: unknown, fallback: number): number {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : fallback
+}
+
+/** Übernimmt ausschließlich plausible, positive Grenzwerte vom Health-Endpunkt. */
+export function configureUploadLimits(value: UploadLimitConfiguration): void {
+  configuredLimits = {
+    anonymous: {
+      max_file: positiveLimit(value.anonymous?.max_file, DEFAULT_LIMITS.anonymous.max_file),
+      max_total: positiveLimit(value.anonymous?.max_total, DEFAULT_LIMITS.anonymous.max_total),
+    },
+    authenticated: {
+      max_file: positiveLimit(value.authenticated?.max_file, DEFAULT_LIMITS.authenticated.max_file),
+      max_total: positiveLimit(value.authenticated?.max_total, DEFAULT_LIMITS.authenticated.max_total),
+    },
+  }
 }
 
 export function formatFileSize(bytes: number): string {
@@ -25,12 +56,27 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / MEBIBYTE).toFixed(1).replace('.', ',')} MB`
 }
 
+function activeTier(): UploadLimitTier {
+  return isAuthenticated.value ? configuredLimits.authenticated : configuredLimits.anonymous
+}
+
 export function currentFileLimit(): number {
-  return isAuthenticated.value ? AUTHENTICATED_FILE_LIMIT : ANONYMOUS_FILE_LIMIT
+  return activeTier().max_file
 }
 
 export function currentTotalLimit(): number {
-  return isAuthenticated.value ? AUTHENTICATED_TOTAL_LIMIT : ANONYMOUS_TOTAL_LIMIT
+  return activeTier().max_total
+}
+
+function hasPdfSignature(bytes: Uint8Array): boolean {
+  const signature = [0x25, 0x50, 0x44, 0x46, 0x2d] // %PDF-
+  outer: for (let offset = 0; offset <= bytes.length - signature.length; offset += 1) {
+    for (let index = 0; index < signature.length; index += 1) {
+      if (bytes[offset + index] !== signature[index]) continue outer
+    }
+    return true
+  }
+  return false
 }
 
 export async function validatePdfFile(file: File): Promise<FileValidationResult> {
@@ -53,12 +99,12 @@ export async function validatePdfFile(file: File): Promise<FileValidationResult>
   try {
     /*
      * Übliche PDFs beginnen direkt mit `%PDF-`. Einige zulässige Dateien
-     * enthalten jedoch wenige Präfix-Bytes. Die Suche in den ersten 1.024 Bytes
-     * ist deshalb robuster als ein strikter Vergleich nur der ersten fünf Bytes,
-     * lehnt umbenannte Fremdformate aber weiterhin zuverlässig ab.
+     * enthalten wenige Präfix-Bytes. Die bytegenaue Suche in den ersten 1.024
+     * Bytes ist deshalb robuster als ein Textdecoder und akzeptiert keine bloß
+     * umbenannten Fremdformate.
      */
-    const header = new TextDecoder('latin1').decode(await file.slice(0, 1024).arrayBuffer())
-    if (!header.includes('%PDF-')) {
+    const bytes = new Uint8Array(await file.slice(0, 1024).arrayBuffer())
+    if (!hasPdfSignature(bytes)) {
       return {
         valid: false,
         message: 'Die Datei besitzt keine gültige PDF-Signatur und ist möglicherweise beschädigt.',
