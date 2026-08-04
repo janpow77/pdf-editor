@@ -11,12 +11,19 @@
 export function createBlankA4Pdf(): Blob {
   const encoder = new TextEncoder()
   const header = '%PDF-1.4\n% Blank A4 form generated locally\n'
+
+  // Der Inhaltsstrom ist absichtlich leer. `stream\nendstream` enthält nach dem
+  // vorgeschriebenen Zeilenende hinter `stream` exakt null Datenbytes. Dadurch
+  // stimmt `/Length 0` bytegenau und ein strenger PDF-Parser muss nichts reparieren.
+  const emptyStream = ''
+  const emptyStreamLength = encoder.encode(emptyStream).byteLength
+
   const objects = [
     '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
     '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
     // DIN A4 im PDF-Punktmaß: 210 × 297 mm entsprechen rund 595,28 × 841,89 pt.
     '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << >> /Contents 4 0 R >>\nendobj\n',
-    '4 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj\n',
+    `4 0 obj\n<< /Length ${emptyStreamLength} >>\nstream\n${emptyStream}endstream\nendobj\n`,
   ]
 
   let body = header
