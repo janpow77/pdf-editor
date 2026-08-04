@@ -15,9 +15,9 @@
         v-for="item in notifications"
         :key="item.id"
         class="pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-[1.15rem]
-               border border-white/45 bg-gray-950/90 px-4 py-3 text-white
+               border border-white/[0.45] bg-gray-950/90 px-4 py-3 text-white
                shadow-[0_18px_50px_rgba(0,0,0,0.28),0_2px_8px_rgba(0,0,0,0.18)]
-               backdrop-blur-2xl dark:border-white/10 dark:bg-gray-900/88"
+               backdrop-blur-2xl dark:border-white/10 dark:bg-gray-900/[0.88]"
         :role="item.type === 'error' ? 'alert' : 'status'"
       >
         <span
