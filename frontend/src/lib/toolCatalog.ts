@@ -24,9 +24,7 @@ export interface ToolGroupDefinition {
 
 export const TOOL_GROUPS = [
   {
-    key: 'bearbeiten',
-    title: 'Bearbeiten & Anmerken',
-    icon: '✏️',
+    key: 'bearbeiten', title: 'Bearbeiten & Anmerken', icon: '✏️',
     tools: [
       { id: 'textEditor', label: 'Text bearbeiten', description: 'WYSIWYG direkt im Dokument', icon: '✏️' },
       { id: 'annotate', label: 'Anmerkungen', description: 'Markieren, stempeln und zeichnen', icon: '🖍️' },
@@ -39,9 +37,7 @@ export const TOOL_GROUPS = [
     ],
   },
   {
-    key: 'seiten',
-    title: 'Seiten & Struktur',
-    icon: '📑',
+    key: 'seiten', title: 'Seiten & Struktur', icon: '📑',
     tools: [
       { id: 'merge', label: 'Zusammenführen', description: 'Mehrere PDFs in Reihenfolge verbinden', icon: '📎' },
       { id: 'split', label: 'Teilen', description: 'PDF in definierte Bereiche aufteilen', icon: '✂️' },
@@ -52,9 +48,7 @@ export const TOOL_GROUPS = [
     ],
   },
   {
-    key: 'umwandeln',
-    title: 'Umwandeln & Exportieren',
-    icon: '🔁',
+    key: 'umwandeln', title: 'Umwandeln & Exportieren', icon: '🔁',
     tools: [
       { id: 'pdfToWord', label: 'PDF → Word', description: 'In eine bearbeitbare DOCX-Datei exportieren', icon: '📝' },
       { id: 'pdfToExcel', label: 'PDF → Excel', description: 'Tabellen als Arbeitsmappe extrahieren', icon: '📊' },
@@ -67,9 +61,7 @@ export const TOOL_GROUPS = [
     ],
   },
   {
-    key: 'schuetzen',
-    title: 'Schützen & Signieren',
-    icon: '🔏',
+    key: 'schuetzen', title: 'Schützen & Signieren', icon: '🔏',
     tools: [
       { id: 'protect', label: 'Schützen / Entsperren', description: 'Passwortschutz setzen oder entfernen', icon: '🔒' },
       { id: 'permissions', label: 'Rechteverwaltung', description: 'Drucken und Kopieren einschränken', icon: '🛡️' },
@@ -81,9 +73,7 @@ export const TOOL_GROUPS = [
     ],
   },
   {
-    key: 'stempel',
-    title: 'Stempel & Nummern',
-    icon: '🏷️',
+    key: 'stempel', title: 'Stempel & Nummern', icon: '🏷️',
     tools: [
       { id: 'watermark', label: 'Wasserzeichen', description: 'Text oder Bild dezent überlagern', icon: '💧' },
       { id: 'pageNumbers', label: 'Seitenzahlen', description: 'Flexible Nummerierungen ergänzen', icon: '🔢' },
@@ -93,9 +83,7 @@ export const TOOL_GROUPS = [
     ],
   },
   {
-    key: 'pruefen',
-    title: 'Prüfen & Optimieren',
-    icon: '🩺',
+    key: 'pruefen', title: 'Prüfen & Optimieren', icon: '🩺',
     tools: [
       { id: 'compress', label: 'Komprimieren', description: 'Dateigröße kontrolliert reduzieren', icon: '🗜️' },
       { id: 'scanOptimize', label: 'Scan optimieren', description: 'Geraderücken, säubern und erkennen', icon: '🧹' },
@@ -106,9 +94,7 @@ export const TOOL_GROUPS = [
     ],
   },
   {
-    key: 'office',
-    title: 'Word & Office',
-    icon: '🗃️',
+    key: 'office', title: 'Word & Office', icon: '🗃️',
     tools: [
       { id: 'wordToPdf', label: 'Word → PDF', description: 'DOCX zuverlässig konvertieren', icon: '📝' },
       { id: 'wordMerge', label: 'Word verbinden', description: 'Mehrere DOCX-Dateien zusammenführen', icon: '📋' },
@@ -122,10 +108,10 @@ export const TOOL_GROUPS = [
 
 export type ToolId = typeof TOOL_GROUPS[number]['tools'][number]['id']
 export type ToolGroupKey = typeof TOOL_GROUPS[number]['key']
-export type CatalogTool = typeof TOOL_GROUPS[number]['tools'][number]
+/** Die Schnittstellen-Intersection ergänzt optionale Merkmale, ohne die ID-Literale zu verlieren. */
+export type CatalogTool = typeof TOOL_GROUPS[number]['tools'][number] & ToolDefinition
 export type CatalogGroup = typeof TOOL_GROUPS[number]
 
-/** Liefert Werkzeug und Kategorie für Fokus-Header und Breadcrumbs. */
 export function findTool(toolId: string | null | undefined):
   | { tool: CatalogTool; group: CatalogGroup }
   | null {
