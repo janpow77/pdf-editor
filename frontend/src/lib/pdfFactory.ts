@@ -2,12 +2,14 @@
  * Erzeugt ein minimales, standardskonformes PDF mit einer leeren DIN-A4-Seite.
  *
  * Für diesen Anwendungsfall wäre eine zusätzliche PDF-Bibliothek unnötig groß.
- * Die vier benötigten PDF-Objekte werden deshalb direkt als ASCII aufgebaut.
- * Die Byte-Offsets der Querverweistabelle werden programmatisch berechnet,
- * damit das Dokument von pdf.js, PyMuPDF und üblichen PDF-Readern akzeptiert
- * wird. Das Dokument verbleibt vollständig im Arbeitsspeicher des Browsers.
+ * Die vier benötigten PDF-Objekte werden deshalb direkt aufgebaut. Wichtig ist,
+ * dass PDF-Querverweise Byte-Offsets und keine JavaScript-Zeichenpositionen
+ * enthalten. `TextEncoder` macht die Berechnung deshalb auch dann korrekt, wenn
+ * später Kommentare oder Inhalte mit Umlauten beziehungsweise Unicode ergänzt
+ * werden. Das Dokument verbleibt vollständig im Arbeitsspeicher des Browsers.
  */
 export function createBlankA4Pdf(): Blob {
+  const encoder = new TextEncoder()
   const header = '%PDF-1.4\n% Blank A4 form generated locally\n'
   const objects = [
     '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
@@ -20,11 +22,11 @@ export function createBlankA4Pdf(): Blob {
   let body = header
   const offsets = [0]
   for (const object of objects) {
-    offsets.push(body.length)
+    offsets.push(encoder.encode(body).byteLength)
     body += object
   }
 
-  const xrefOffset = body.length
+  const xrefOffset = encoder.encode(body).byteLength
   const xrefRows = offsets
     .slice(1)
     .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
@@ -34,5 +36,5 @@ export function createBlankA4Pdf(): Blob {
     + `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`
     + `startxref\n${xrefOffset}\n%%EOF\n`
 
-  return new Blob([pdf], { type: 'application/pdf' })
+  return new Blob([encoder.encode(pdf)], { type: 'application/pdf' })
 }
