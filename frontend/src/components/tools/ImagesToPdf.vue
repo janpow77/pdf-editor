@@ -115,6 +115,7 @@ interface ImageItem {
   previewUrl: string
 }
 
+const MAX_IMAGES = 100
 const { loading, error, withLoading, imagesToPdf } = usePdfTools()
 const notifications = useNotifications()
 const items = ref<ImageItem[]>([])
@@ -129,8 +130,9 @@ let nextId = 1
 const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.webp']
 
 function isSupportedImage(file: File): boolean {
-  return file.type.startsWith('image/')
-    && imageExtensions.some((extension) => file.name.toLowerCase().endsWith(extension))
+  const extensionAllowed = imageExtensions.some((extension) => file.name.toLowerCase().endsWith(extension))
+  const mimeAllowed = !file.type || file.type.startsWith('image/')
+  return extensionAllowed && mimeAllowed
 }
 
 function onFileSelect(event: Event): void {
@@ -146,15 +148,17 @@ function onDrop(event: DragEvent): void {
   if (selected.length) addItems(selected)
 }
 
-/** Prüft Dateityp sowie Einzel- und Gesamtgröße vor dem Erzeugen der Object-URLs. */
+/** Prüft Dateityp, Anzahl sowie Einzel- und Gesamtgröße vor den Object-URLs. */
 function addItems(selected: File[]): void {
   uploadError.value = ''
   const accepted: File[] = []
   const rejected: string[] = []
   const fileLimit = currentFileLimit()
+  const freeSlots = Math.max(0, MAX_IMAGES - items.value.length)
 
-  for (const file of selected) {
-    if (!isSupportedImage(file)) rejected.push(`${file.name}: nicht unterstütztes Bildformat`)
+  for (const [index, file] of selected.entries()) {
+    if (index >= freeSlots) rejected.push(`${file.name}: Maximum von ${MAX_IMAGES} Bildern erreicht`)
+    else if (!isSupportedImage(file)) rejected.push(`${file.name}: nicht unterstütztes Bildformat`)
     else if (file.size > fileLimit) rejected.push(`${file.name}: größer als ${formatFileSize(fileLimit)}`)
     else accepted.push(file)
   }
