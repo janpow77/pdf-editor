@@ -12,7 +12,6 @@ import { authHeader, isAuthenticated, logout } from '@/lib/auth'
 import { addResult } from '@/lib/results'
 
 const DEFAULT_TIMEOUT = 5 * 60 * 1000
-const notifications = useNotifications()
 
 export interface ApiRequestOptions {
   timeout?: number
@@ -20,19 +19,35 @@ export interface ApiRequestOptions {
   notifyOnError?: boolean
 }
 
+/** Übersetzt unterschiedliche FastAPI-Fehlerformen in einen lesbaren Text. */
+function detailMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((entry) => {
+        if (typeof entry === 'string') return entry
+        if (entry && typeof entry === 'object' && 'msg' in entry) return String(entry.msg)
+        return ''
+      })
+      .filter(Boolean)
+    if (messages.length) return messages.join(' ')
+  }
+  return fallback
+}
+
 async function throwFromResponse(response: Response): Promise<never> {
   if (response.status === 401 && isAuthenticated.value) logout()
 
   const payload = await response.json().catch(() => ({ detail: response.statusText })) as {
-    detail?: string
+    detail?: unknown
   }
-  throw new Error(payload.detail || `Serverfehler ${response.status}`)
+  throw new Error(detailMessage(payload.detail, `Serverfehler ${response.status}`))
 }
 
 /**
  * POST einer FormData mit Abbruchsignal und verständlicher Fehlerbehandlung.
- * Der Fehler wird nach der Toast-Ausgabe erneut geworfen, damit das aufrufende
- * Werkzeug weiterhin seinen Inline-Zustand setzen kann.
+ * `useNotifications()` wird erst im Fehlerpfad aufgerufen. Dadurch besitzt das
+ * Modul beim Import keine UI-Seiteneffekte und bleibt in Tests robuster.
  */
 export async function apiPost(
   url: string,
@@ -40,7 +55,10 @@ export async function apiPost(
   options?: ApiRequestOptions,
 ): Promise<Response> {
   const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), options?.timeout ?? DEFAULT_TIMEOUT)
+  const timer = globalThis.setTimeout(
+    () => controller.abort(),
+    options?.timeout ?? DEFAULT_TIMEOUT,
+  )
 
   try {
     const response = await fetch(url, {
@@ -53,6 +71,7 @@ export async function apiPost(
     return response
   } catch (error: unknown) {
     if (options?.notifyOnError !== false) {
+      const notifications = useNotifications()
       notifications.error(
         'Verarbeitung fehlgeschlagen',
         notifications.errorFromUnknown(error),
@@ -60,7 +79,7 @@ export async function apiPost(
     }
     throw error
   } finally {
-    window.clearTimeout(timer)
+    globalThis.clearTimeout(timer)
   }
 }
 
@@ -87,9 +106,18 @@ export async function apiJson<T = unknown>(
     if (response.status === 204) return null
     return response.json() as Promise<T>
   } catch (error: unknown) {
+    const notifications = useNotifications()
     notifications.error('Aktion fehlgeschlagen', notifications.errorFromUnknown(error))
     throw error
   }
+}
+
+/** Entfernt Pfad- und Steuerzeichen aus serverseitig gelieferten Dateinamen. */
+function safeFilename(value: string, fallback: string): string {
+  const cleaned = value
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
+    .trim()
+  return cleaned || fallback
 }
 
 /**
@@ -104,16 +132,20 @@ export async function downloadBlob(response: Response, fallbackName: string): Pr
     const match = disposition.match(/filename="?([^";\n]+)"?/)
     if (match) filename = match[1]
   }
+  filename = safeFilename(filename, fallbackName)
 
   addResult(filename, blob)
   const objectUrl = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
-  anchor.href = objectUrl
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  document.body.removeChild(anchor)
-  URL.revokeObjectURL(objectUrl)
+  try {
+    anchor.href = objectUrl
+    anchor.download = filename
+    document.body.appendChild(anchor)
+    anchor.click()
+  } finally {
+    anchor.remove()
+    URL.revokeObjectURL(objectUrl)
+  }
 
-  notifications.success('Datei erstellt', `${filename} wurde zum Download bereitgestellt.`)
+  useNotifications().success('Datei erstellt', `${filename} wurde zum Download bereitgestellt.`)
 }
