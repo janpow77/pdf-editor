@@ -3,6 +3,7 @@
     v-bind="$attrs"
     :type="type"
     :disabled="disabled || loading"
+    :aria-busy="loading || undefined"
     :class="buttonClass"
   >
     <span
@@ -20,7 +21,8 @@
  *
  * Varianten, Radien, Abstände, Ladezustand und Interaktionen werden an einer
  * Stelle gepflegt. Fachkomponenten beschreiben nur noch die fachliche Variante
- * und wiederholen keine langen Tailwind-Kombinationen.
+ * und wiederholen keine langen Tailwind-Kombinationen. Der globale
+ * `:focus-visible`-Indikator aus `style.css` bleibt bewusst unangetastet.
  */
 import { computed } from 'vue'
 
@@ -44,8 +46,7 @@ const props = withDefaults(defineProps<{
 
 const buttonClass = computed(() => [
   'inline-flex items-center justify-center gap-2 rounded-full font-semibold shadow-sm transition',
-  'focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45',
-  'active:scale-[0.97]',
+  'disabled:cursor-not-allowed disabled:opacity-45 active:scale-[0.97]',
   props.block ? 'w-full' : '',
   {
     sm: 'min-h-9 px-3.5 py-2 text-sm',
