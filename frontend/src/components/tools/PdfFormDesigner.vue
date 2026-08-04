@@ -39,7 +39,7 @@
                 ref="canvasBox"
                 class="absolute inset-0 touch-none cursor-crosshair"
                 tabindex="0"
-                role="application"
+                role="region"
                 aria-label="Formularzeichenfläche. Feldtyp wählen und Enter drücken oder mit Zeiger ein Rechteck aufziehen."
                 @keydown.enter.prevent="addDefaultField"
                 @pointerdown="onPointerDown"
@@ -68,7 +68,7 @@
         <div class="space-y-4">
           <UiPanel v-if="selected" class="space-y-4">
             <div class="flex items-center justify-between gap-2"><h3 class="font-semibold">Feld-Eigenschaften</h3><span class="text-xs text-gray-600 dark:text-gray-400">Seite {{ selected.page }}</span></div>
-            <UiField label="Feldname" :for-id="`designer-name-${selected.id}`" :error="nameConflict ? 'Der Name wird bereits verwendet.' : ''">
+            <UiField label="Feldname" :for-id="`designer-name-${selected.id}`" :error="selectedNameError">
               <input :id="`designer-name-${selected.id}`" v-model="selected.name" type="text" maxlength="120" class="ui-control w-full" />
             </UiField>
             <UiField label="Typ" :for-id="`designer-type-${selected.id}`">
@@ -128,7 +128,7 @@
 
       <UiAlert v-if="checkResult" :tone="checkResult.warnings.length ? 'warning' : 'success'">
         {{ checkResult.created }} Feld(er) werden angelegt, {{ checkResult.skipped }} übersprungen.
-        <ul v-if="checkResult.warnings.length" class="mt-2 list-disc space-y-1 pl-5"><li v-for="warning in checkResult.warnings" :key="warning">{{ warning }}</li></ul>
+        <ul v-if="checkResult.warnings.length" class="mt-2 list-disc space-y-1 pl-5"><li v-for="(warning, index) in checkResult.warnings" :key="`${index}-${warning}`">{{ warning }}</li></ul>
       </UiAlert>
       <UiAlert v-if="summary" tone="success" live>{{ summary }}</UiAlert>
       <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
@@ -142,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
 import ToolHeader from '@/components/ui/ToolHeader.vue'
 import UiAlert from '@/components/ui/UiAlert.vue'
@@ -174,8 +174,9 @@ interface Draft { x0: number; y0: number; x1: number; y1: number }
 const LAYOUT_KEY = 'pdfapp_form_layout'
 const MAX_FIELDS = 200
 const MAX_LAYOUT_BYTES = 5 * 1024 * 1024
+const DEFAULT_FIELD = { value: 'text' as const, label: 'Textfeld', icon: '▭', w: .35, h: .04 }
 const fieldTypes: { value: FieldType; label: string; icon: string; w: number; h: number }[] = [
-  { value: 'text', label: 'Textfeld', icon: '▭', w: .35, h: .04 },
+  DEFAULT_FIELD,
   { value: 'textarea', label: 'Mehrzeilig', icon: '▤', w: .5, h: .1 },
   { value: 'checkbox', label: 'Kontrollkästchen', icon: '☑', w: .04, h: .035 },
   { value: 'dropdown', label: 'Auswahl', icon: '▾', w: .3, h: .04 },
@@ -204,128 +205,55 @@ let nextId = 1
 let documentGeneration = 0
 let drawingPointer: number | null = null
 let resizeObserver: ResizeObserver | null = null
+let ignoreNextFileReset = false
 
 const pageFields = computed(() => fields.value.filter((field) => field.page === page.value))
 const selected = computed(() => fields.value.find((field) => field.id === selectedId.value) ?? null)
 const nameConflict = computed(() => fields.value.some((field, index) => !field.name.trim() || fields.value.findIndex((other) => other.name.trim() === field.name.trim()) !== index))
+const selectedNameError = computed(() => {
+  const current = selected.value
+  if (!current) return ''
+  if (!current.name.trim()) return 'Der Feldname darf nicht leer sein.'
+  return fields.value.some((field) => field.id !== current.id && field.name.trim() === current.name.trim()) ? 'Der Feldname wird bereits verwendet.' : ''
+})
 const sessionState = computed(() => ({ fields: fields.value, page: page.value }))
 
 function typeIcon(type: FieldType): string { return fieldTypes.find((item) => item.value === type)?.icon ?? '▭' }
 function round4(value: number): number { return Math.round(value * 10000) / 10000 }
-function clamp(value: number, min = 0, max = 1): number { return Math.max(min, Math.min(max, value)) }
+function clamp(value: number, min = 0, max = 1): number { return Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : min }
+function uniqueName(base: string, ignoredId?: number): string { let candidate = base || 'feld'; let suffix = 2; while (fields.value.some((field) => field.id !== ignoredId && field.name === candidate)) candidate = `${base || 'feld'}_${suffix++}`; return candidate }
 
 function createField(type: FieldType, pageNumber: number, x0: number, y0: number, x1?: number, y1?: number): DesignerField {
-  const preset = fieldTypes.find((item) => item.value === type) ?? fieldTypes[0]
+  const preset = fieldTypes.find((item) => item.value === type) ?? DEFAULT_FIELD
   const base = type === 'signature' ? 'unterschrift' : 'feld'
-  let number = fields.value.length + 1
-  while (fields.value.some((field) => field.name === `${base}_${number}`)) number += 1
-  const endX = clamp(x1 ?? x0 + preset.w, .01, 1)
-  const endY = clamp(y1 ?? y0 + preset.h, .01, 1)
-  return {
-    id: nextId++, page: Math.max(1, pageNumber), type, name: `${base}_${number}`, value: '', checked: false,
-    options: type === 'dropdown' || type === 'listbox' ? 'Option A, Option B' : '', font_size: 11,
-    required: false, readonly: false, tooltip: '', x0: round4(clamp(Math.min(x0, endX), 0, .99)),
-    y0: round4(clamp(Math.min(y0, endY), 0, .99)), x1: round4(clamp(Math.max(x0, endX), .01, 1)),
-    y1: round4(clamp(Math.max(y0, endY), .01, 1)), format_kind: 'none', format_decimals: 2,
-    format_currency: 'EUR', calc_kind: 'none', calc_fields: '', calc_formula: '', calc_readonly: true,
-    validate_min: '', validate_max: '',
-  }
+  const name = uniqueName(`${base}_${fields.value.length + 1}`)
+  const endX = clamp(x1 ?? x0 + preset.w, .01, 1); const endY = clamp(y1 ?? y0 + preset.h, .01, 1)
+  return { id: nextId++, page: Math.max(1, pageNumber), type, name, value: '', checked: false, options: type === 'dropdown' || type === 'listbox' ? 'Option A, Option B' : '', font_size: 11, required: false, readonly: false, tooltip: '', x0: round4(clamp(Math.min(x0, endX), 0, .99)), y0: round4(clamp(Math.min(y0, endY), 0, .99)), x1: round4(clamp(Math.max(x0, endX), .01, 1)), y1: round4(clamp(Math.max(y0, endY), .01, 1)), format_kind: 'none', format_decimals: 2, format_currency: 'EUR', calc_kind: 'none', calc_fields: '', calc_formula: '', calc_readonly: true, validate_min: '', validate_max: '' }
 }
 
-function addDefaultField(): void {
-  if (fields.value.length >= MAX_FIELDS) { error.value = `Maximal ${MAX_FIELDS} Felder pro Dokument.`; return }
-  const offset = (fields.value.filter((field) => field.page === page.value).length % 8) * .045
-  const field = createField(activeType.value, page.value, .08 + offset, .08 + offset)
-  fields.value.push(field)
-  selectedId.value = field.id
-  restoredHint.value = ''
-  checkResult.value = null
-}
+function addDefaultField(): void { if (fields.value.length >= MAX_FIELDS) { error.value = `Maximal ${MAX_FIELDS} Felder pro Dokument.`; return } const offset = (fields.value.filter((field) => field.page === page.value).length % 8) * .045; const field = createField(activeType.value, page.value, .08 + offset, .08 + offset); fields.value.push(field); selectedId.value = field.id; restoredHint.value = ''; checkResult.value = null }
 
 function normalizeField(value: unknown): DesignerField | null {
   if (!value || typeof value !== 'object') return null
-  const raw = value as Record<string, unknown>
-  const type = String(raw.designer_type ?? raw.type ?? 'text') as FieldType
+  const raw = value as Record<string, unknown>; const type = String(raw.designer_type ?? raw.type ?? 'text') as FieldType
   if (!fieldTypes.some((item) => item.value === type)) return null
   const number = (item: unknown, fallback: number) => Number.isFinite(Number(item)) ? Number(item) : fallback
-  const x0 = clamp(number(raw.x0, .1), 0, .99); const y0 = clamp(number(raw.y0, .1), 0, .99)
-  const x1 = clamp(number(raw.x1, .4), x0 + .005, 1); const y1 = clamp(number(raw.y1, .15), y0 + .005, 1)
+  const x0 = clamp(number(raw.x0, .1), 0, .99); const y0 = clamp(number(raw.y0, .1), 0, .99); const x1 = clamp(number(raw.x1, .4), x0 + .005, 1); const y1 = clamp(number(raw.y1, .15), y0 + .005, 1)
   const options = Array.isArray(raw.options) ? raw.options.map(String).join(', ') : String(raw.options ?? '')
-  return {
-    ...createField(type, Math.max(1, Math.trunc(number(raw.page, 1))), x0, y0, x1, y1),
-    name: String(raw.name ?? '').slice(0, 120) || `feld_${nextId}`,
-    value: type === 'checkbox' ? '' : String(raw.value ?? ''), checked: type === 'checkbox' && String(raw.value ?? raw.checked) !== 'Off' && Boolean(raw.value ?? raw.checked),
-    options, font_size: clamp(number(raw.font_size, 11), 4, 72), required: Boolean(raw.required), readonly: Boolean(raw.readonly), tooltip: String(raw.tooltip ?? '').slice(0, 500),
-    format_kind: ['number', 'currency', 'percent'].includes(String(raw.format_kind)) ? String(raw.format_kind) as FormatKind : 'none',
-    format_decimals: clamp(Math.trunc(number(raw.format_decimals, 2)), 0, 6), format_currency: String(raw.format_currency ?? 'EUR').slice(0, 8),
-    calc_kind: ['sum', 'product', 'average', 'min', 'max', 'formula'].includes(String(raw.calc_kind)) ? String(raw.calc_kind) as CalcKind : 'none',
-    calc_fields: Array.isArray(raw.calc_fields) ? raw.calc_fields.map(String).join(', ') : String(raw.calc_fields ?? ''),
-    calc_formula: String(raw.calc_formula ?? ''), calc_readonly: raw.calc_readonly === undefined ? true : Boolean(raw.calc_readonly),
-    validate_min: raw.validate_min == null ? '' : String(raw.validate_min), validate_max: raw.validate_max == null ? '' : String(raw.validate_max),
-  }
+  return { ...createField(type, Math.max(1, Math.trunc(number(raw.page, 1))), x0, y0, x1, y1), name: String(raw.name ?? '').slice(0, 120) || uniqueName('feld'), value: type === 'checkbox' ? '' : String(raw.value ?? ''), checked: type === 'checkbox' && String(raw.value ?? raw.checked) !== 'Off' && Boolean(raw.value ?? raw.checked), options, font_size: clamp(number(raw.font_size, 11), 4, 72), required: Boolean(raw.required), readonly: Boolean(raw.readonly), tooltip: String(raw.tooltip ?? '').slice(0, 500), format_kind: ['number', 'currency', 'percent'].includes(String(raw.format_kind)) ? String(raw.format_kind) as FormatKind : 'none', format_decimals: clamp(Math.trunc(number(raw.format_decimals, 2)), 0, 6), format_currency: String(raw.format_currency ?? 'EUR').slice(0, 8), calc_kind: ['sum', 'product', 'average', 'min', 'max', 'formula'].includes(String(raw.calc_kind)) ? String(raw.calc_kind) as CalcKind : 'none', calc_fields: Array.isArray(raw.calc_fields) ? raw.calc_fields.map(String).join(', ') : String(raw.calc_fields ?? ''), calc_formula: String(raw.calc_formula ?? ''), calc_readonly: raw.calc_readonly === undefined ? true : Boolean(raw.calc_readonly), validate_min: raw.validate_min == null ? '' : String(raw.validate_min), validate_max: raw.validate_max == null ? '' : String(raw.validate_max) }
 }
 
-function loadFieldArray(values: unknown[], keepPageLimit = true): number {
-  const loaded = values.slice(0, MAX_FIELDS).flatMap((value) => { const field = normalizeField(value); return field ? [field] : [] })
-  if (keepPageLimit) loaded.forEach((field) => { field.page = Math.min(Math.max(1, field.page), pageCount.value) })
-  fields.value = loaded
-  selectedId.value = loaded[0]?.id ?? null
-  return loaded.length
-}
+function loadFieldArray(values: unknown[], keepPageLimit = true): number { const loaded: DesignerField[] = []; for (const value of values.slice(0, MAX_FIELDS)) { const field = normalizeField(value); if (!field) continue; field.name = uniqueName(field.name, field.id); if (keepPageLimit) field.page = Math.min(Math.max(1, field.page), pageCount.value); loaded.push(field) } fields.value = loaded; selectedId.value = loaded[0]?.id ?? null; return loaded.length }
+function serializedField(field: DesignerField): Omit<DesignerField, 'id'> { const { id, ...rest } = field; void id; return rest }
+function serializeLayout(): object { return { version: 1, app: 'pdf-editor-formular', document: workingName.value, created: new Date().toISOString(), fields: fields.value.map(serializedField) } }
 
-function serializeLayout(): object {
-  return { version: 1, app: 'pdf-editor-formular', document: workingName.value, created: new Date().toISOString(), fields: fields.value.map(({ id: _id, ...field }) => field) }
-}
+watch(fields, () => { if (!workingBlob.value || !fields.value.length) { removeStoredValue(LAYOUT_KEY); return } try { writeStoredValue(LAYOUT_KEY, JSON.stringify(serializeLayout())) } catch { /* Editor bleibt ohne Persistenz nutzbar. */ } }, { deep: true })
+watch(file, (currentFile) => { if (ignoreNextFileReset) { ignoreNextFileReset = false; return } documentGeneration += 1; clearEditorState(); if (!currentFile) { workingBlob.value = null; return } workingBlob.value = currentFile; workingName.value = currentFile.name; restoreMatchingLayout() })
+watch(canvasBox, (element) => { resizeObserver?.disconnect(); resizeObserver = null; if (!element || typeof ResizeObserver === 'undefined') return; resizeObserver = new ResizeObserver(measure); resizeObserver.observe(element); void nextTick(measure) })
 
-watch(fields, () => {
-  if (!workingBlob.value || !fields.value.length) { removeStoredValue(LAYOUT_KEY); return }
-  try { writeStoredValue(LAYOUT_KEY, JSON.stringify(serializeLayout())) } catch { /* JSON-Sonderfall; Editor bleibt nutzbar. */ }
-}, { deep: true })
-
-watch(file, (currentFile) => {
-  documentGeneration += 1
-  clearEditorState()
-  if (!currentFile) { workingBlob.value = null; return }
-  workingBlob.value = currentFile
-  workingName.value = currentFile.name
-  restoreMatchingLayout()
-})
-
-watch(canvasBox, (element) => {
-  resizeObserver?.disconnect()
-  resizeObserver = null
-  if (!element || typeof ResizeObserver === 'undefined') return
-  resizeObserver = new ResizeObserver(measure)
-  resizeObserver.observe(element)
-  void nextTick(measure)
-})
-
-function clearEditorState(): void {
-  fields.value = []; selectedId.value = null; page.value = 1; pageCount.value = 1
-  error.value = null; summary.value = ''; restoredHint.value = ''; checkResult.value = null
-  draft.value = null; drawingPointer = null
-}
-
-function restoreMatchingLayout(): void {
-  const stored = readStoredValue(LAYOUT_KEY)
-  if (!stored) return
-  try {
-    const parsed = JSON.parse(stored) as { document?: string; fields?: unknown[] }
-    if (parsed.document !== workingName.value || !Array.isArray(parsed.fields)) return
-    const count = loadFieldArray(parsed.fields, false)
-    if (count) restoredHint.value = `Zuletzt gespeichertes Layout mit ${count} Feld(ern) wiederhergestellt.`
-  } catch { removeStoredValue(LAYOUT_KEY) }
-}
-
-function restoreSession(payload: { name: string; blob: Blob; state: unknown }): void {
-  documentGeneration += 1
-  file.value = null
-  workingBlob.value = payload.blob; workingName.value = payload.name
-  clearEditorState()
-  const state = payload.state && typeof payload.state === 'object' ? payload.state as { fields?: unknown[]; page?: number } : null
-  if (state?.fields) loadFieldArray(state.fields, false)
-  page.value = Math.max(1, Math.trunc(Number(state?.page) || 1))
-}
+function clearEditorState(): void { fields.value = []; selectedId.value = null; page.value = 1; pageCount.value = 1; error.value = null; summary.value = ''; restoredHint.value = ''; checkResult.value = null; draft.value = null; drawingPointer = null }
+function restoreMatchingLayout(): void { const stored = readStoredValue(LAYOUT_KEY); if (!stored || new TextEncoder().encode(stored).byteLength > MAX_LAYOUT_BYTES) return; try { const parsed = JSON.parse(stored) as { document?: string; fields?: unknown[] }; if (parsed.document !== workingName.value || !Array.isArray(parsed.fields)) return; const count = loadFieldArray(parsed.fields, false); if (count) restoredHint.value = `Zuletzt gespeichertes Layout mit ${count} Feld(ern) wiederhergestellt.` } catch { removeStoredValue(LAYOUT_KEY) } }
+function restoreSession(payload: { name: string; blob: Blob; state: unknown }): void { documentGeneration += 1; if (file.value) { ignoreNextFileReset = true; file.value = null } workingBlob.value = payload.blob; workingName.value = payload.name; clearEditorState(); const state = payload.state && typeof payload.state === 'object' ? payload.state as { fields?: unknown[]; page?: number } : null; if (state?.fields) loadFieldArray(state.fields, false); page.value = Math.max(1, Math.trunc(Number(state?.page) || 1)) }
 
 function onDocumentLoaded(count: number): void { pageCount.value = Math.max(1, count); page.value = Math.min(page.value, pageCount.value); fields.value.forEach((field) => { field.page = Math.min(field.page, pageCount.value) }) }
 function measure(): void { if (canvasBox.value) boxSize.value = { w: Math.max(1, canvasBox.value.clientWidth), h: Math.max(1, canvasBox.value.clientHeight) } }
@@ -334,53 +262,27 @@ function py(value: number): number { return value * boxSize.value.h }
 function pw(value: number): number { return Math.max(2, value * boxSize.value.w) }
 function ph(value: number): number { return Math.max(2, value * boxSize.value.h) }
 function pointerPosition(event: PointerEvent): { x: number; y: number } { const rect = canvasBox.value!.getBoundingClientRect(); return { x: clamp((event.clientX - rect.left) / rect.width), y: clamp((event.clientY - rect.top) / rect.height) } }
-
-function onPointerDown(event: PointerEvent): void {
-  if (!canvasBox.value || event.button !== 0 || fields.value.length >= MAX_FIELDS) return
-  measure(); const point = pointerPosition(event); drawingPointer = event.pointerId; canvasBox.value.setPointerCapture(event.pointerId)
-  draft.value = { x0: point.x, y0: point.y, x1: point.x, y1: point.y }
-}
+function onPointerDown(event: PointerEvent): void { if (!canvasBox.value || event.button !== 0 || fields.value.length >= MAX_FIELDS) return; measure(); const point = pointerPosition(event); drawingPointer = event.pointerId; canvasBox.value.setPointerCapture(event.pointerId); draft.value = { x0: point.x, y0: point.y, x1: point.x, y1: point.y } }
 function onPointerMove(event: PointerEvent): void { if (drawingPointer !== event.pointerId || !draft.value) return; const point = pointerPosition(event); draft.value = { ...draft.value, x1: point.x, y1: point.y } }
-function onPointerUp(event: PointerEvent): void {
-  if (drawingPointer !== event.pointerId || !draft.value) return
-  const currentDraft = draft.value; cancelDrawing(event)
-  const tiny = Math.abs(currentDraft.x1 - currentDraft.x0) < .015 || Math.abs(currentDraft.y1 - currentDraft.y0) < .01
-  const field = createField(activeType.value, page.value, currentDraft.x0, currentDraft.y0, tiny ? undefined : currentDraft.x1, tiny ? undefined : currentDraft.y1)
-  fields.value.push(field); selectedId.value = field.id; restoredHint.value = ''; checkResult.value = null
-}
+function onPointerUp(event: PointerEvent): void { if (drawingPointer !== event.pointerId || !draft.value) return; const currentDraft = draft.value; cancelDrawing(event); const tiny = Math.abs(currentDraft.x1 - currentDraft.x0) < .015 || Math.abs(currentDraft.y1 - currentDraft.y0) < .01; const field = createField(activeType.value, page.value, currentDraft.x0, currentDraft.y0, tiny ? undefined : currentDraft.x1, tiny ? undefined : currentDraft.y1); fields.value.push(field); selectedId.value = field.id; restoredHint.value = ''; checkResult.value = null }
 function cancelDrawing(event?: PointerEvent): void { if (event && canvasBox.value?.hasPointerCapture(event.pointerId)) canvasBox.value.releasePointerCapture(event.pointerId); drawingPointer = null; draft.value = null }
 function selectField(id: number): void { selectedId.value = id }
 function jumpTo(field: DesignerField): void { selectedId.value = field.id; page.value = field.page }
 function removeSelected(): void { fields.value = fields.value.filter((field) => field.id !== selectedId.value); selectedId.value = null }
-function duplicateSelected(): void { if (!selected.value || fields.value.length >= MAX_FIELDS) return; const source = selected.value; const copy = { ...source, id: nextId++, name: `${source.name}_kopie`, y0: clamp(source.y0 + .04, 0, .95), y1: clamp(source.y1 + .04, .01, 1) }; fields.value.push(copy); selectedId.value = copy.id }
+function duplicateSelected(): void { if (!selected.value || fields.value.length >= MAX_FIELDS) return; const source = selected.value; const copy: DesignerField = { ...source, id: nextId++, name: uniqueName(`${source.name}_kopie`), y0: clamp(source.y0 + .04, 0, .95), y1: clamp(source.y1 + .04, .01, 1) }; fields.value.push(copy); selectedId.value = copy.id }
 function clearAll(): void { fields.value = []; selectedId.value = null; checkResult.value = null; restoredHint.value = ''; removeStoredValue(LAYOUT_KEY) }
 function reset(): void { documentGeneration += 1; resizeObserver?.disconnect(); resizeObserver = null; file.value = null; workingBlob.value = null; clearEditorState() }
 
 function geometryValue(field: DesignerField, key: 'x' | 'y' | 'width' | 'height'): number { const value = key === 'x' ? field.x0 : key === 'y' ? field.y0 : key === 'width' ? field.x1 - field.x0 : field.y1 - field.y0; return Math.round(value * 1000) / 10 }
-function setGeometry(field: DesignerField, key: 'x' | 'y' | 'width' | 'height', event: Event): void {
-  const value = clamp(Number((event.target as HTMLInputElement).value) / 100)
-  if (!Number.isFinite(value)) return
-  const width = field.x1 - field.x0; const height = field.y1 - field.y0
-  if (key === 'x') { field.x0 = clamp(value, 0, 1 - width); field.x1 = field.x0 + width }
-  else if (key === 'y') { field.y0 = clamp(value, 0, 1 - height); field.y1 = field.y0 + height }
-  else if (key === 'width') field.x1 = clamp(field.x0 + Math.max(.01, value), field.x0 + .01, 1)
-  else field.y1 = clamp(field.y0 + Math.max(.01, value), field.y0 + .01, 1)
-}
+function setGeometry(field: DesignerField, key: 'x' | 'y' | 'width' | 'height', event: Event): void { const parsed = Number((event.target as HTMLInputElement).value) / 100; if (!Number.isFinite(parsed)) return; const value = clamp(parsed); const width = field.x1 - field.x0; const height = field.y1 - field.y0; if (key === 'x') { field.x0 = clamp(value, 0, 1 - width); field.x1 = field.x0 + width } else if (key === 'y') { field.y0 = clamp(value, 0, 1 - height); field.y1 = field.y0 + height } else if (key === 'width') field.x1 = clamp(field.x0 + Math.max(.01, value), field.x0 + .01, 1); else field.y1 = clamp(field.y0 + Math.max(.01, value), field.y0 + .01, 1) }
 
-function saveLayoutFile(): void {
-  const blob = new Blob([JSON.stringify(serializeLayout(), null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const anchor = document.createElement('a')
-  try { anchor.href = url; anchor.download = workingName.value.replace(/\.pdf$/i, '') + '_formular-layout.json'; document.body.appendChild(anchor); anchor.click() } finally { anchor.remove(); URL.revokeObjectURL(url) }
-  summary.value = 'Layout als JSON-Datei gespeichert.'
-}
-async function onLayoutFile(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement; const selectedFile = input.files?.[0]; input.value = ''; if (!selectedFile) return
-  if (selectedFile.size > MAX_LAYOUT_BYTES) { error.value = 'Die Layoutdatei ist ungewöhnlich groß.'; return }
-  try { const parsed = JSON.parse(await selectedFile.text()) as unknown; const list = Array.isArray(parsed) ? parsed : parsed && typeof parsed === 'object' && 'fields' in parsed ? (parsed as { fields?: unknown }).fields : null; if (!Array.isArray(list)) throw new Error('Keine Feldliste gefunden.'); const count = loadFieldArray(list); if (!count) throw new Error('Keine gültigen Felder gefunden.'); summary.value = `${count} Feld(er) aus Layoutdatei importiert.` } catch (caught: unknown) { error.value = caught instanceof Error ? caught.message : 'Layout-Import fehlgeschlagen.' }
-}
+function saveLayoutFile(): void { try { const blob = new Blob([JSON.stringify(serializeLayout(), null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); try { anchor.href = url; anchor.download = workingName.value.replace(/\.pdf$/i, '') + '_formular-layout.json'; document.body.appendChild(anchor); anchor.click() } finally { anchor.remove(); URL.revokeObjectURL(url) } summary.value = 'Layout als JSON-Datei gespeichert.' } catch { error.value = 'Das Layout konnte nicht serialisiert werden.' } }
+async function onLayoutFile(event: Event): Promise<void> { const input = event.target as HTMLInputElement; const selectedFile = input.files?.[0]; input.value = ''; if (!selectedFile) return; if (selectedFile.size > MAX_LAYOUT_BYTES) { error.value = 'Die Layoutdatei ist ungewöhnlich groß.'; return } try { const parsed = JSON.parse(await selectedFile.text()) as unknown; const list = Array.isArray(parsed) ? parsed : parsed && typeof parsed === 'object' && 'fields' in parsed ? (parsed as { fields?: unknown }).fields : null; if (!Array.isArray(list)) throw new Error('Keine Feldliste gefunden.'); const count = loadFieldArray(list); if (!count) throw new Error('Keine gültigen Felder gefunden.'); summary.value = `${count} Feld(er) aus Layoutdatei importiert.` } catch (caught: unknown) { error.value = caught instanceof Error ? caught.message : 'Layout-Import fehlgeschlagen.' } }
 
 function payload(): object[] { return fields.value.map((field) => ({ page: field.page, type: field.type, name: field.name.trim(), value: field.type === 'checkbox' ? field.checked : field.value, options: field.type === 'dropdown' || field.type === 'listbox' ? field.options.split(',').map((item) => item.trim()).filter(Boolean) : [], font_size: field.font_size, required: field.required, readonly: field.readonly, tooltip: field.tooltip, x0: field.x0, y0: field.y0, x1: field.x1, y1: field.y1, format: field.format_kind === 'none' ? {} : { kind: field.format_kind, decimals: field.format_decimals, currency: field.format_currency }, calc: field.calc_kind === 'none' ? {} : { kind: field.calc_kind, fields: field.calc_fields.split(',').map((item) => item.trim()).filter(Boolean), formula: field.calc_formula }, calc_readonly: field.calc_readonly, validate: field.validate_min === '' && field.validate_max === '' ? {} : { min: field.validate_min === '' ? null : Number(field.validate_min), max: field.validate_max === '' ? null : Number(field.validate_max) } })) }
-
 async function importFromPdf(): Promise<void> { const blob = workingBlob.value; if (!blob || busy.value) return; const generation = documentGeneration; busy.value = true; error.value = null; summary.value = ''; try { const data = new FormData(); data.append('file', blob, workingName.value); const response = await apiPost('/api/pdf-extras/form/fields', data); const body = await response.json() as { fields?: unknown[] }; if (generation !== documentGeneration) return; const count = loadFieldArray(body.fields ?? []); summary.value = count ? `${count} vorhandene(s) Feld(er) übernommen.` : 'Dieses PDF enthält noch keine Formularfelder.' } catch (caught: unknown) { if (generation === documentGeneration) error.value = caught instanceof Error ? caught.message : 'Import fehlgeschlagen.' } finally { if (generation === documentGeneration) busy.value = false } }
 async function check(): Promise<void> { const blob = workingBlob.value; if (!blob || busy.value) return; const generation = documentGeneration; busy.value = true; error.value = null; summary.value = ''; try { const data = new FormData(); data.append('file', blob, workingName.value); data.append('fields', JSON.stringify(payload())); data.append('dry_run', 'true'); const response = await apiPost('/api/pdf-extras/form/create', data); const body = await response.json() as { created?: number; skipped?: number; warnings?: unknown[] }; if (generation !== documentGeneration) return; checkResult.value = { created: Number(body.created) || 0, skipped: Number(body.skipped) || 0, warnings: Array.isArray(body.warnings) ? body.warnings.map(String) : [] } } catch (caught: unknown) { if (generation === documentGeneration) error.value = caught instanceof Error ? caught.message : 'Prüfung fehlgeschlagen.' } finally { if (generation === documentGeneration) busy.value = false } }
 async function generate(): Promise<void> { const blob = workingBlob.value; if (!blob || !fields.value.length || busy.value || nameConflict.value) return; const generation = documentGeneration; busy.value = true; error.value = null; summary.value = ''; checkResult.value = null; try { const data = new FormData(); data.append('file', blob, workingName.value); data.append('fields', JSON.stringify(payload())); const response = await apiPost('/api/pdf-extras/form/create', data); const created = response.headers.get('X-Fields-Created') || '0'; const skipped = response.headers.get('X-Fields-Skipped') || '0'; await downloadBlob(response, workingName.value.replace(/\.pdf$/i, '_formular.pdf')); if (generation === documentGeneration) summary.value = `PDF erzeugt: ${created} Feld(er) angelegt, ${skipped} übersprungen.` } catch (caught: unknown) { if (generation === documentGeneration) error.value = caught instanceof Error ? caught.message : 'Erzeugen fehlgeschlagen.' } finally { if (generation === documentGeneration) busy.value = false } }
+
+onBeforeUnmount(() => { documentGeneration += 1; resizeObserver?.disconnect(); cancelDrawing() })
 </script>
