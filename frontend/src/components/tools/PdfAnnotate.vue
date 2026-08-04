@@ -24,12 +24,18 @@
         <span class="text-sm text-gray-600 dark:text-gray-300">{{ pending.length }} Anmerkung(en) ausstehend</span>
         <UiButton v-if="pending.length" size="sm" @click="undoLast">Letzte rückgängig</UiButton>
         <span class="flex-1"></span>
-        <UiButton variant="primary" size="sm" :loading="applying" :disabled="!pending.length" @click="applyAnnotations">Anwenden</UiButton>
+        <UiButton variant="primary" size="sm" :loading="applying" :disabled="!canApply" @click="applyAnnotations">Anwenden</UiButton>
         <UiButton size="sm" :disabled="Boolean(pending.length)" @click="download">Herunterladen</UiButton>
         <UiButton variant="danger" size="sm" @click="reset">Neues Dokument</UiButton>
       </UiPanel>
 
       <UiAlert v-if="tool === 'redact'" tone="warning">Schwärzungen entfernen den Inhalt beim Anwenden dauerhaft und nicht nur visuell.</UiAlert>
+      <UiAlert v-if="hasRedactions" tone="warning">
+        <label class="ui-choice">
+          <input v-model="redactionConfirmed" type="checkbox" class="rounded" />
+          Ich habe die {{ redactionCount }} Schwärzungsbereich(e) geprüft und bestätige die endgültige Entfernung.
+        </label>
+      </UiAlert>
       <UiAlert v-if="pending.length >= MAX_PENDING" tone="warning">Maximal {{ MAX_PENDING }} ausstehende Anmerkungen. Bitte anwenden oder Einträge löschen.</UiAlert>
 
       <PdfViewer v-model="page" :source="workingBlob" @loaded="onDocumentLoaded" @rendered="measure">
@@ -146,15 +152,23 @@ const promptInput = ref<HTMLTextAreaElement | null>(null)
 const boxSize = ref({ w: 1, h: 1 })
 const sessionState = computed(() => ({ pending: pending.value, page: page.value }))
 const pagePending = computed(() => pending.value.filter((annotation) => annotation.page === page.value))
+const redactionCount = computed(() => pending.value.filter((annotation) => annotation.type === 'redact').length)
+const hasRedactions = computed(() => redactionCount.value > 0)
+const canApply = computed(() => pending.value.length > 0 && (!hasRedactions.value || redactionConfirmed.value))
+const redactionConfirmed = ref(false)
 let nextId = 1
 let documentGeneration = 0
 let drawingPointer: number | null = null
 let resizeObserver: ResizeObserver | null = null
 let previousPromptFocus: HTMLElement | null = null
+let promptPreviousOverflow = ''
 let ignoreNextFileReset = false
 
 function id(): string { return `annotation-${Date.now()}-${nextId++}` }
-function clamp(value: number): number { return Math.max(0, Math.min(1, value)) }
+function clamp(value: number): number { return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0 }
+function number(value: unknown, fallback: number): number { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback }
+function pointFrom(value: unknown, fallback: Point): Point { if (!value || typeof value !== 'object') return fallback; const raw = value as Record<string, unknown>; return { x: clamp(number(raw.x, fallback.x)), y: clamp(number(raw.y, fallback.y)) } }
+function boxFrom(value: unknown, fallback: Box = { x0: .1, y0: .1, x1: .3, y1: .16 }): Box { if (!value || typeof value !== 'object') return fallback; const raw = value as Record<string, unknown>; const x = number(raw.x, fallback.x0); const y = number(raw.y, fallback.y0); const width = number(raw.width, fallback.x1 - fallback.x0); const height = number(raw.height, fallback.y1 - fallback.y0); return normalizedBox({ x0: clamp(number(raw.x0, x)), y0: clamp(number(raw.y0, y)), x1: clamp(number(raw.x1, x + width)), y1: clamp(number(raw.y1, y + height)) }) }
 function measure(): void { if (canvasBox.value) boxSize.value = { w: Math.max(1, canvasBox.value.clientWidth), h: Math.max(1, canvasBox.value.clientHeight) } }
 function x(value: number): number { return value * boxSize.value.w }
 function y(value: number): number { return value * boxSize.value.h }
@@ -162,47 +176,61 @@ function w(value: number): number { return Math.max(1, value * boxSize.value.w) 
 function h(value: number): number { return Math.max(1, value * boxSize.value.h) }
 function inkPoints(points: Point[]): string { return points.map((point) => `${x(point.x)},${y(point.y)}`).join(' ') }
 function point(event: PointerEvent): Point { const rect = canvasBox.value!.getBoundingClientRect(); return { x: clamp((event.clientX - rect.left) / rect.width), y: clamp((event.clientY - rect.top) / rect.height) } }
-function normalizedBox(box: Box): Box { return { x0: Math.min(box.x0, box.x1), y0: Math.min(box.y0, box.y1), x1: Math.max(box.x0, box.x1), y1: Math.max(box.y0, box.y1) } }
+function normalizedBox(box: Box): Box { const x0 = Math.min(box.x0, box.x1); const y0 = Math.min(box.y0, box.y1); const x1 = Math.max(box.x0, box.x1); const y1 = Math.max(box.y0, box.y1); return { x0: clamp(x0), y0: clamp(y0), x1: clamp(Math.max(x0 + .001, x1)), y1: clamp(Math.max(y0 + .001, y1)) } }
 
 watch(file, (currentFile) => {
   if (ignoreNextFileReset) { ignoreNextFileReset = false; return }
   documentGeneration += 1
-  resetDrafts()
-  pending.value = []
-  page.value = 1
-  error.value = null
+  resetDrafts(); pending.value = []; page.value = 1; error.value = null; redactionConfirmed.value = false
   if (!currentFile) { workingBlob.value = null; return }
   workingBlob.value = currentFile; workingName.value = currentFile.name
 })
 watch(canvasBox, (element) => { resizeObserver?.disconnect(); resizeObserver = null; if (element && typeof ResizeObserver !== 'undefined') { resizeObserver = new ResizeObserver(measure); resizeObserver.observe(element); void nextTick(measure) } })
-watch(textPrompt, async (value) => { if (value) { previousPromptFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null; document.addEventListener('keydown', onPromptKeydown); await nextTick(); promptInput.value?.focus() } else { document.removeEventListener('keydown', onPromptKeydown); previousPromptFocus?.focus(); previousPromptFocus = null } })
+watch(textPrompt, async (value) => {
+  if (value) {
+    previousPromptFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    promptPreviousOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', onPromptKeydown); await nextTick(); promptInput.value?.focus()
+  } else {
+    document.removeEventListener('keydown', onPromptKeydown); document.body.style.overflow = promptPreviousOverflow
+    previousPromptFocus?.focus(); previousPromptFocus = null
+  }
+})
 
+function isTool(value: unknown): value is Tool { return tools.some((item) => item.id === value) }
 function normalizeAnnotation(value: unknown): Annotation | null {
   if (!value || typeof value !== 'object') return null
-  const raw = value as Record<string, unknown>; const type = String(raw.type) as Tool; const pageNumber = Math.max(1, Math.trunc(Number(raw.page) || 1)); const annotationColor = String(raw.color ?? '#ffde21')
-  const boxFrom = (): Box => ({ x0: clamp(Number(raw.x0 ?? (raw.x as number) ?? .1)), y0: clamp(Number(raw.y0 ?? (raw.y as number) ?? .1)), x1: clamp(Number(raw.x1 ?? .3)), y1: clamp(Number(raw.y1 ?? .15)) })
-  if (type === 'highlight') { const quad = Array.isArray(raw.quads) && raw.quads[0] && typeof raw.quads[0] === 'object' ? raw.quads[0] as Record<string, unknown> : raw; return { id: id(), type, page: pageNumber, color: annotationColor, box: normalizedBox({ x0: clamp(Number(quad.x0) || .1), y0: clamp(Number(quad.y0) || .1), x1: clamp(Number(quad.x1) || .3), y1: clamp(Number(quad.y1) || .15) }), opacity: Number(raw.opacity) || .4 } }
-  if (type === 'rect') return { id: id(), type, page: pageNumber, color: annotationColor, box: normalizedBox(boxFrom()), width: Number(raw.width) || 2 }
-  if (type === 'redact') return { id: id(), type, page: pageNumber, color: '#000000', box: normalizedBox(boxFrom()), fill_color: '#000000' }
-  if (type === 'line') return { id: id(), type, page: pageNumber, color: annotationColor, from: { x: clamp(Number(raw.x0) || .1), y: clamp(Number(raw.y0) || .1) }, to: { x: clamp(Number(raw.x1) || .3), y: clamp(Number(raw.y1) || .2) }, width: Number(raw.width) || 2 }
-  if (type === 'freetext') { const box = boxFrom(); box.x1 = clamp(Number(raw.x) + Number(raw.width) || box.x1); box.y1 = clamp(Number(raw.y) + Number(raw.height) || box.y1); return { id: id(), type, page: pageNumber, color: annotationColor, box: normalizedBox(box), text: String(raw.text ?? '').slice(0, 5000), font_size: Number(raw.font_size) || 11 } }
-  if (type === 'text_comment') return { id: id(), type, page: pageNumber, color: annotationColor, point: { x: clamp(Number(raw.x) || .1), y: clamp(Number(raw.y) || .1) }, content: String(raw.content ?? '').slice(0, 5000) }
-  if (type === 'stamp') return { id: id(), type, page: pageNumber, color: annotationColor, box: normalizedBox(boxFrom()), text: String(raw.text ?? 'ENTWURF').slice(0, 100) }
-  if (type === 'ink') { const paths = Array.isArray(raw.paths) ? raw.paths : []; const first = Array.isArray(paths[0]) ? paths[0] : []; const points = first.flatMap((entry) => entry && typeof entry === 'object' ? [{ x: clamp(Number((entry as Record<string, unknown>).x) || 0), y: clamp(Number((entry as Record<string, unknown>).y) || 0) }] : []); return points.length > 1 ? { id: id(), type, page: pageNumber, color: annotationColor, points, width: Number(raw.width) || 2 } : null }
-  return null
+  const raw = value as Record<string, unknown>; const typeValue = String(raw.type); if (!isTool(typeValue)) return null
+  const pageNumber = Math.max(1, Math.trunc(number(raw.page, 1))); const annotationColor = String(raw.color ?? '#ffde21')
+  if (typeValue === 'highlight') { const quad = Array.isArray(raw.quads) ? raw.quads[0] : null; return { id: id(), type: typeValue, page: pageNumber, color: annotationColor, box: boxFrom(raw.box ?? quad ?? raw), opacity: number(raw.opacity, .4) } }
+  if (typeValue === 'rect') return { id: id(), type: typeValue, page: pageNumber, color: annotationColor, box: boxFrom(raw.box ?? raw), width: number(raw.width, 2) }
+  if (typeValue === 'redact') return { id: id(), type: typeValue, page: pageNumber, color: '#000000', box: boxFrom(raw.box ?? raw), fill_color: '#000000' }
+  if (typeValue === 'line') return { id: id(), type: typeValue, page: pageNumber, color: annotationColor, from: pointFrom(raw.from, { x: clamp(number(raw.x0, .1)), y: clamp(number(raw.y0, .1)) }), to: pointFrom(raw.to, { x: clamp(number(raw.x1, .3)), y: clamp(number(raw.y1, .2)) }), width: number(raw.width, 2) }
+  if (typeValue === 'freetext') return { id: id(), type: typeValue, page: pageNumber, color: annotationColor, box: boxFrom(raw.box ?? raw), text: String(raw.text ?? '').slice(0, 5000), font_size: number(raw.font_size, 11) }
+  if (typeValue === 'text_comment') return { id: id(), type: typeValue, page: pageNumber, color: annotationColor, point: pointFrom(raw.point, { x: clamp(number(raw.x, .1)), y: clamp(number(raw.y, .1)) }), content: String(raw.content ?? '').slice(0, 5000) }
+  if (typeValue === 'stamp') return { id: id(), type: typeValue, page: pageNumber, color: annotationColor, box: boxFrom(raw.box ?? raw), text: String(raw.text ?? 'ENTWURF').slice(0, 100) }
+  const directPoints = Array.isArray(raw.points) ? raw.points : null; const paths = Array.isArray(raw.paths) ? raw.paths : []; const sourcePoints = directPoints ?? (Array.isArray(paths[0]) ? paths[0] : [])
+  const points = sourcePoints.flatMap((entry) => entry && typeof entry === 'object' ? [pointFrom(entry, { x: 0, y: 0 })] : [])
+  return points.length > 1 ? { id: id(), type: typeValue, page: pageNumber, color: annotationColor, points, width: number(raw.width, 2) } : null
 }
 
-function restoreSession(payload: { name: string; blob: Blob; state: unknown }): void { documentGeneration += 1; if (file.value) { ignoreNextFileReset = true; file.value = null } workingBlob.value = payload.blob; workingName.value = payload.name; resetDrafts(); const state = payload.state && typeof payload.state === 'object' ? payload.state as { pending?: unknown[]; page?: number } : null; pending.value = Array.isArray(state?.pending) ? state.pending.slice(0, MAX_PENDING).flatMap((item) => { const normalized = normalizeAnnotation(item); return normalized ? [normalized] : [] }) : []; page.value = Math.max(1, Math.trunc(Number(state?.page) || 1)); error.value = null }
+function restoreSession(payload: { name: string; blob: Blob; state: unknown }): void {
+  documentGeneration += 1
+  if (file.value) { ignoreNextFileReset = true; file.value = null }
+  workingBlob.value = payload.blob; workingName.value = payload.name; resetDrafts()
+  const state = payload.state && typeof payload.state === 'object' ? payload.state as { pending?: unknown[]; page?: number } : null
+  pending.value = Array.isArray(state?.pending) ? state.pending.slice(0, MAX_PENDING).flatMap((item) => { const normalized = normalizeAnnotation(item); return normalized ? [normalized] : [] }) : []
+  page.value = Math.max(1, Math.trunc(number(state?.page, 1))); error.value = null; redactionConfirmed.value = false
+}
 function onDocumentLoaded(count: number): void { pageCount.value = Math.max(1, count); page.value = Math.min(page.value, pageCount.value) }
 function resetDrafts(): void { draft.value = null; inkPath.value = []; drawingPointer = null; textPrompt.value = null }
 
 function onPointerDown(event: PointerEvent): void { if (!canvasBox.value || event.button !== 0 || pending.value.length >= MAX_PENDING) return; measure(); const current = point(event); if (tool.value === 'text_comment') { openTextPrompt('text_comment', { x0: current.x, y0: current.y, x1: current.x, y1: current.y }); return } drawingPointer = event.pointerId; canvasBox.value.setPointerCapture(event.pointerId); if (tool.value === 'ink') inkPath.value = [current]; else draft.value = { x0: current.x, y0: current.y, x1: current.x, y1: current.y } }
 function onPointerMove(event: PointerEvent): void { if (drawingPointer !== event.pointerId) return; const current = point(event); if (tool.value === 'ink') inkPath.value.push(current); else if (draft.value) draft.value = { ...draft.value, x1: current.x, y1: current.y } }
-function onPointerUp(event: PointerEvent): void { if (drawingPointer !== event.pointerId) return; const currentDraft = draft.value; const currentInk = [...inkPath.value]; cancelDrawing(event); if (tool.value === 'ink') { if (currentInk.length > 2) add({ id: id(), type: 'ink', page: page.value, color: color.value, points: currentInk, width: 2 }); return } if (!currentDraft) return; finishBox(currentDraft) }
+function onPointerUp(event: PointerEvent): void { if (drawingPointer !== event.pointerId) return; const currentDraft = draft.value; const currentInk = [...inkPath.value]; cancelDrawing(event); if (tool.value === 'ink') { if (currentInk.length > 2) add({ id: id(), type: 'ink', page: page.value, color: color.value, points: currentInk, width: 2 }); return } if (currentDraft) finishBox(currentDraft) }
 function cancelDrawing(event?: PointerEvent): void { if (event && canvasBox.value?.hasPointerCapture(event.pointerId)) canvasBox.value.releasePointerCapture(event.pointerId); drawingPointer = null; draft.value = null; inkPath.value = [] }
-
 function finishBox(raw: Box): void { const box = normalizedBox(raw); if (tool.value !== 'line' && (box.x1 - box.x0 < .005 || box.y1 - box.y0 < .005)) return; if (tool.value === 'highlight') add({ id: id(), type: 'highlight', page: page.value, color: color.value, box, opacity: .4 }); else if (tool.value === 'rect') add({ id: id(), type: 'rect', page: page.value, color: color.value, box, width: 2 }); else if (tool.value === 'redact') add({ id: id(), type: 'redact', page: page.value, color: '#000000', box, fill_color: '#000000' }); else if (tool.value === 'line') add({ id: id(), type: 'line', page: page.value, color: color.value, from: { x: raw.x0, y: raw.y0 }, to: { x: raw.x1, y: raw.y1 }, width: 2 }); else if (tool.value === 'stamp') add({ id: id(), type: 'stamp', page: page.value, color: color.value, box, text: stampText.value }); else if (tool.value === 'freetext') openTextPrompt('freetext', box) }
-function add(annotation: Annotation): void { if (pending.value.length < MAX_PENDING) pending.value.push(annotation) }
+function add(annotation: Annotation): void { if (pending.value.length >= MAX_PENDING) return; pending.value.push(annotation); if (annotation.type === 'redact') redactionConfirmed.value = false }
 function addKeyboardAnnotation(): void { if (pending.value.length >= MAX_PENDING) return; const offset = (pagePending.value.length % 8) * .04; const box = { x0: .08 + offset, y0: .08 + offset, x1: .38 + offset, y1: .16 + offset }; if (tool.value === 'text_comment' || tool.value === 'freetext') openTextPrompt(tool.value, box); else if (tool.value === 'ink') add({ id: id(), type: 'ink', page: page.value, color: color.value, width: 2, points: [{ x: box.x0, y: box.y0 }, { x: box.x0 + .08, y: box.y0 + .04 }, { x: box.x0 + .16, y: box.y0 }] }); else finishBox(box) }
 
 function openTextPrompt(kind: TextPrompt['kind'], box: Box): void { textPrompt.value = { kind, text: '', box } }
@@ -211,13 +239,13 @@ function confirmText(): void { const prompt = textPrompt.value; if (!prompt?.tex
 function onPromptKeydown(event: KeyboardEvent): void { if (event.key === 'Escape') { event.preventDefault(); closeTextPrompt(); return } if (event.key !== 'Tab' || !promptDialog.value) return; const items = Array.from(promptDialog.value.querySelectorAll<HTMLElement>('textarea, button:not([disabled])')); if (!items.length) return; const first = items[0]; const last = items[items.length - 1]; if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() } }
 
 function annotationLabel(annotation: Annotation): string { return tools.find((item) => item.id === annotation.type)?.label ?? annotation.type }
-function removeAnnotation(annotationId: string): void { pending.value = pending.value.filter((annotation) => annotation.id !== annotationId) }
-function undoLast(): void { pending.value = pending.value.slice(0, -1) }
-function backendPayload(annotation: Annotation): object { if (annotation.type === 'highlight') return { type: annotation.type, page: annotation.page, quads: [annotation.box], color: annotation.color, opacity: annotation.opacity }; if (annotation.type === 'rect' || annotation.type === 'redact' || annotation.type === 'stamp') return { type: annotation.type, page: annotation.page, ...annotation.box, color: annotation.color, width: 'width' in annotation ? annotation.width : undefined, fill_color: 'fill_color' in annotation ? annotation.fill_color : undefined, text: 'text' in annotation ? annotation.text : undefined }; if (annotation.type === 'line') return { type: annotation.type, page: annotation.page, x0: annotation.from.x, y0: annotation.from.y, x1: annotation.to.x, y1: annotation.to.y, color: annotation.color, width: annotation.width }; if (annotation.type === 'freetext') return { type: annotation.type, page: annotation.page, x: annotation.box.x0, y: annotation.box.y0, width: annotation.box.x1 - annotation.box.x0, height: annotation.box.y1 - annotation.box.y0, text: annotation.text, font_size: annotation.font_size, color: annotation.color }; if (annotation.type === 'text_comment') return { type: annotation.type, page: annotation.page, x: annotation.point.x, y: annotation.point.y, content: annotation.content, color: annotation.color }; return { type: annotation.type, page: annotation.page, paths: [annotation.points], color: annotation.color, width: annotation.width } }
+function removeAnnotation(annotationId: string): void { pending.value = pending.value.filter((annotation) => annotation.id !== annotationId); if (!hasRedactions.value) redactionConfirmed.value = false }
+function undoLast(): void { pending.value = pending.value.slice(0, -1); if (!hasRedactions.value) redactionConfirmed.value = false }
+function backendPayload(annotation: Annotation): object { if (annotation.type === 'highlight') return { type: annotation.type, page: annotation.page, quads: [annotation.box], color: annotation.color, opacity: annotation.opacity }; if (annotation.type === 'rect') return { type: annotation.type, page: annotation.page, ...annotation.box, color: annotation.color, width: annotation.width }; if (annotation.type === 'redact') return { type: annotation.type, page: annotation.page, ...annotation.box, fill_color: annotation.fill_color }; if (annotation.type === 'stamp') return { type: annotation.type, page: annotation.page, ...annotation.box, color: annotation.color, text: annotation.text }; if (annotation.type === 'line') return { type: annotation.type, page: annotation.page, x0: annotation.from.x, y0: annotation.from.y, x1: annotation.to.x, y1: annotation.to.y, color: annotation.color, width: annotation.width }; if (annotation.type === 'freetext') return { type: annotation.type, page: annotation.page, x: annotation.box.x0, y: annotation.box.y0, width: annotation.box.x1 - annotation.box.x0, height: annotation.box.y1 - annotation.box.y0, text: annotation.text, font_size: annotation.font_size, color: annotation.color }; if (annotation.type === 'text_comment') return { type: annotation.type, page: annotation.page, x: annotation.point.x, y: annotation.point.y, content: annotation.content, color: annotation.color }; return { type: annotation.type, page: annotation.page, paths: [annotation.points], color: annotation.color, width: annotation.width } }
 
-async function applyAnnotations(): Promise<void> { const blob = workingBlob.value; if (!blob || !pending.value.length || applying.value) return; const generation = documentGeneration; applying.value = true; error.value = null; try { const formData = new FormData(); formData.append('file', blob, workingName.value); formData.append('annotations', JSON.stringify(pending.value.map(backendPayload))); const response = await apiPost('/api/pdf-editor/annotations', formData); const newBlob = await response.blob(); if (generation !== documentGeneration || workingBlob.value !== blob) return; workingBlob.value = newBlob; pending.value = [] } catch (caught: unknown) { if (generation === documentGeneration) error.value = caught instanceof Error ? caught.message : 'Anwenden fehlgeschlagen.' } finally { if (generation === documentGeneration) applying.value = false } }
-async function download(): Promise<void> { if (!workingBlob.value) return; await downloadBlob(new Response(workingBlob.value), workingName.value.replace(/\.pdf$/i, '_annotiert.pdf')) }
-function reset(): void { documentGeneration += 1; resizeObserver?.disconnect(); resizeObserver = null; file.value = null; workingBlob.value = null; pending.value = []; page.value = 1; pageCount.value = 1; resetDrafts(); error.value = null }
+async function applyAnnotations(): Promise<void> { const blob = workingBlob.value; if (!blob || !canApply.value || applying.value) return; const generation = documentGeneration; applying.value = true; error.value = null; try { const formData = new FormData(); formData.append('file', blob, workingName.value); formData.append('annotations', JSON.stringify(pending.value.map(backendPayload))); const response = await apiPost('/api/pdf-editor/annotations', formData); const newBlob = await response.blob(); if (generation !== documentGeneration || workingBlob.value !== blob) return; workingBlob.value = newBlob; pending.value = []; redactionConfirmed.value = false } catch (caught: unknown) { if (generation === documentGeneration) error.value = caught instanceof Error ? caught.message : 'Anwenden fehlgeschlagen.' } finally { if (generation === documentGeneration) applying.value = false } }
+async function download(): Promise<void> { if (workingBlob.value) await downloadBlob(new Response(workingBlob.value), workingName.value.replace(/\.pdf$/i, '_annotiert.pdf')) }
+function reset(): void { documentGeneration += 1; resizeObserver?.disconnect(); resizeObserver = null; file.value = null; workingBlob.value = null; pending.value = []; page.value = 1; pageCount.value = 1; redactionConfirmed.value = false; resetDrafts(); error.value = null }
 
-onBeforeUnmount(() => { documentGeneration += 1; resizeObserver?.disconnect(); document.removeEventListener('keydown', onPromptKeydown) })
+onBeforeUnmount(() => { documentGeneration += 1; resizeObserver?.disconnect(); document.removeEventListener('keydown', onPromptKeydown); document.body.style.overflow = promptPreviousOverflow })
 </script>
