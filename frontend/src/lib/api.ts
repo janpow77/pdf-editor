@@ -13,13 +13,10 @@ const DEFAULT_TIMEOUT = 5 * 60 * 1000
 
 export interface ApiRequestOptions {
   timeout?: number
-  /** Vorschau- oder Hintergrundaufrufe können die globale Meldung abschalten. */
   notifyOnError?: boolean
-  /** Ein Werkzeug kann einen überholten Datei-/Preview-Aufruf aktiv abbrechen. */
   signal?: AbortSignal
 }
 
-/** Übersetzt unterschiedliche FastAPI-Fehlerformen in einen lesbaren Text. */
 function detailMessage(detail: unknown, fallback: string): string {
   if (typeof detail === 'string' && detail.trim()) return detail
   if (Array.isArray(detail)) {
@@ -37,17 +34,17 @@ function detailMessage(detail: unknown, fallback: string): string {
 
 async function throwFromResponse(response: Response): Promise<never> {
   if (response.status === 401 && isAuthenticated.value) logout()
-
-  const payload = await response.json().catch(() => ({ detail: response.statusText })) as {
-    detail?: unknown
-  }
+  const payload = await response.json().catch(() => ({ detail: response.statusText })) as { detail?: unknown }
   throw new Error(detailMessage(payload.detail, `Serverfehler ${response.status}`))
 }
 
-/**
- * Erstellt ein eigenes Abbruchsignal und verbindet es mit einem optionalen
- * Werkzeugsignal. Listener und Timer werden in jedem Ausgangspfad entfernt.
- */
+function timeoutReason(): Error {
+  const error = new Error('Die Verarbeitung hat das Zeitlimit überschritten.')
+  error.name = 'AbortError'
+  return error
+}
+
+/** Eigenes Zeitlimit mit optionalem externen Abbruchsignal. */
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
@@ -61,7 +58,7 @@ async function fetchWithTimeout(
   else externalSignal?.addEventListener('abort', abortFromExternal, { once: true })
 
   const timer = globalThis.setTimeout(
-    () => controller.abort(new DOMException('Zeitlimit überschritten', 'AbortError')),
+    () => controller.abort(timeoutReason()),
     options.timeout ?? DEFAULT_TIMEOUT,
   )
 
@@ -79,7 +76,6 @@ function notifyFailure(title: string, error: unknown, options?: ApiRequestOption
   notifications.error(title, notifications.errorFromUnknown(error))
 }
 
-/** POST einer FormData mit Abbruchsignal und zentraler Fehlerbehandlung. */
 export async function apiPost(
   url: string,
   formData: FormData,
@@ -99,11 +95,6 @@ export async function apiPost(
   }
 }
 
-/**
- * GET für Health-, Status- und Ergebnisabfragen. Hintergrundabfragen bleiben
- * standardmäßig still, können aber bei einer sichtbaren Nutzeraktion Toasts
- * aktivieren.
- */
 export async function apiGetJson<T = unknown>(
   url: string,
   options: ApiRequestOptions = { notifyOnError: false },
@@ -118,7 +109,6 @@ export async function apiGetJson<T = unknown>(
   }
 }
 
-/** JSON-Request mit derselben Timeout- und Fehlerdarstellung wie Uploads. */
 export async function apiJson<T = unknown>(
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   url: string,
@@ -140,11 +130,8 @@ export async function apiJson<T = unknown>(
   }
 }
 
-/** Entfernt Pfad- und Steuerzeichen aus serverseitig gelieferten Dateinamen. */
 function safeFilename(value: string, fallback: string): string {
-  const cleaned = value
-    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
-    .trim()
+  const cleaned = value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim()
   return cleaned || fallback
 }
 
@@ -162,8 +149,9 @@ function filenameFromDisposition(disposition: string | null): string | null {
 }
 
 /**
- * Löst den Download aus und übernimmt das Ergebnis in die lokale Ergebnisliste.
- * Object-URL und temporärer Link werden auch bei einem Browserfehler freigegeben.
+ * Löst den Download aus und übernimmt das Ergebnis – soweit das RAM-Limit dies
+ * zulässt – in die lokale Ergebnisliste. Der unmittelbare Download findet auch
+ * dann statt, wenn die Sitzungsliste keinen weiteren großen Blob halten kann.
  */
 export async function downloadBlob(response: Response, fallbackName: string): Promise<void> {
   const blob = await response.blob()
@@ -172,7 +160,7 @@ export async function downloadBlob(response: Response, fallbackName: string): Pr
     fallbackName,
   )
 
-  addResult(filename, blob)
+  const outcome = addResult(filename, blob)
   const objectUrl = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   try {
@@ -185,5 +173,11 @@ export async function downloadBlob(response: Response, fallbackName: string): Pr
     URL.revokeObjectURL(objectUrl)
   }
 
-  useNotifications().success('Datei erstellt', `${filename} wurde zum Download bereitgestellt.`)
+  const notifications = useNotifications()
+  notifications.success('Datei erstellt', `${filename} wurde zum Download bereitgestellt.`)
+  if (!outcome.stored) {
+    notifications.warning('Nicht in Ergebnisliste gespeichert', 'Die Datei ist für den verfügbaren Sitzungsspeicher zu groß, wurde aber normal heruntergeladen.')
+  } else if (outcome.removed.length) {
+    notifications.warning('Ältere Ergebnisse entfernt', `${outcome.removed.length} ältere Datei(en) wurden aus der RAM-Liste entfernt, um das Speicherlimit einzuhalten.`)
+  }
 }
