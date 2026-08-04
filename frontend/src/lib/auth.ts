@@ -1,11 +1,13 @@
 /**
  * Auth-Modul-Store (bewusst ohne Pinia, Muster wie lib/results.ts).
  *
- * Token in localStorage ('pdfapp_token'), Nutzer + Preferences im Modul-State.
- * Anonyme Nutzung bleibt der Normalfall — alles hier ist optional.
+ * Token, Nutzer und Preferences bleiben zentral im Modul-State. Die optionale
+ * Token-Persistenz läuft über `safeStorage`, damit Privatmodus, eingebettete
+ * Browser und Tests ohne verfügbares `localStorage` die App nicht abbrechen.
  */
 
 import { computed, ref } from 'vue'
+import { readStoredValue, removeStoredValue, writeStoredValue } from '@/lib/safeStorage'
 
 const TOKEN_KEY = 'pdfapp_token'
 
@@ -19,30 +21,30 @@ export interface AuthUser {
   last_login: string | null
 }
 
-export const token = ref<string | null>(localStorage.getItem(TOKEN_KEY))
+export const token = ref<string | null>(readStoredValue(TOKEN_KEY))
 export const user = ref<AuthUser | null>(null)
 export const preferences = ref<Record<string, unknown>>({})
 
 export const isAuthenticated = computed(() => !!token.value)
 export const isAdmin = computed(() => user.value?.role === 'ADMIN')
 
-function setToken(value: string | null) {
+function setToken(value: string | null): void {
   token.value = value
-  if (value) localStorage.setItem(TOKEN_KEY, value)
-  else localStorage.removeItem(TOKEN_KEY)
+  if (value) writeStoredValue(TOKEN_KEY, value)
+  else removeStoredValue(TOKEN_KEY)
 }
 
 export function authHeader(): Record<string, string> {
   return token.value ? { Authorization: `Bearer ${token.value}` } : {}
 }
 
-export function logout() {
+export function logout(): void {
   setToken(null)
   user.value = null
   preferences.value = {}
 }
 
-async function jsonOrThrow(response: Response) {
+async function jsonOrThrow(response: Response): Promise<any> {
   if (!response.ok) {
     const err = await response.json().catch(() => ({ detail: response.statusText }))
     const detail = err.detail
@@ -125,6 +127,6 @@ export async function deleteAccount(password: string): Promise<void> {
 
 /** Default-Wert eines Werkzeugs aus den Konto-Einstellungen (falls angemeldet). */
 export function prefDefault<T>(key: string, fallback: T): T {
-  const v = preferences.value[key]
-  return v === undefined || v === null || v === '' ? fallback : (v as T)
+  const value = preferences.value[key]
+  return value === undefined || value === null || value === '' ? fallback : (value as T)
 }
