@@ -10,12 +10,13 @@
  *
  * Die Komponente bündelt Material, Radius, Kontrast und Tonalität. Dadurch
  * müssen Fachmodule keine eigenen Kombinationen aus Hintergrund, Rahmen und
- * Schatten pflegen.
+ * Schatten pflegen. `as` erlaubt dabei passende semantische Elemente wie
+ * section, article oder li, ohne die Gestaltung zu duplizieren.
  */
 import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{
-  as?: 'div' | 'section' | 'aside' | 'fieldset'
+  as?: string
   tone?: 'default' | 'info' | 'success' | 'warning' | 'danger'
   padding?: 'sm' | 'md' | 'lg'
 }>(), {
