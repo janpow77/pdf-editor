@@ -30,14 +30,30 @@ function onSystemThemeChanged(event: MediaQueryListEvent): void {
   if (preference.value === 'system') applyTheme()
 }
 
+/** Browser können localStorage in besonders strikten Datenschutzmodi sperren. */
+function readStoredPreference(): ThemePreference | null {
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY)
+    return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : null
+  } catch {
+    return null
+  }
+}
+
+function storePreference(next: ThemePreference): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, next)
+  } catch {
+    // Die aktuelle Auswahl bleibt für die Sitzung wirksam, auch ohne Persistenz.
+  }
+}
+
 export function initializeTheme(): void {
   if (initialized || typeof window === 'undefined') return
   initialized = true
 
-  const stored = localStorage.getItem(STORAGE_KEY)
-  if (stored === 'light' || stored === 'dark' || stored === 'system') {
-    preference.value = stored
-  }
+  const stored = readStoredPreference()
+  if (stored) preference.value = stored
 
   mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
   systemIsDark.value = mediaQuery.matches
@@ -48,7 +64,7 @@ export function initializeTheme(): void {
 export function useTheme() {
   function setPreference(next: ThemePreference): void {
     preference.value = next
-    localStorage.setItem(STORAGE_KEY, next)
+    storePreference(next)
     applyTheme()
   }
 
