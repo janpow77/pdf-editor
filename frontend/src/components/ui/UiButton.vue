@@ -49,13 +49,13 @@ const buttonClass = computed(() => [
   props.block ? 'w-full' : '',
   {
     sm: 'min-h-9 px-3.5 py-2 text-sm',
-    md: 'min-h-10 px-4.5 py-2.5 text-sm',
+    md: 'min-h-10 px-4 py-2.5 text-sm',
     lg: 'min-h-12 px-6 py-3 text-base',
   }[props.size],
   {
     primary: 'bg-primary-600 text-white hover:-translate-y-0.5 hover:bg-primary-700 hover:shadow-apple',
     secondary: 'bg-white/85 text-gray-800 ring-1 ring-gray-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-apple dark:bg-white/10 dark:text-gray-100 dark:ring-gray-600 dark:hover:bg-white/15',
-    danger: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200 hover:-translate-y-0.5 hover:bg-rose-100 dark:bg-rose-500/12 dark:text-rose-200 dark:ring-rose-400/30 dark:hover:bg-rose-500/18',
+    danger: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200 hover:-translate-y-0.5 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-200 dark:ring-rose-400/30 dark:hover:bg-rose-500/20',
     ghost: 'bg-transparent text-gray-600 shadow-none hover:bg-black/5 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white',
   }[props.variant],
 ])
