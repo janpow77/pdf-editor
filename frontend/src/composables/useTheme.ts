@@ -7,6 +7,7 @@
  * `prefers-color-scheme` und reagiert auch auf spätere Systemänderungen.
  */
 import { computed, readonly, ref } from 'vue'
+import { readStoredValue, writeStoredValue } from '@/lib/safeStorage'
 
 export type ThemePreference = 'system' | 'light' | 'dark'
 
@@ -21,6 +22,7 @@ const isDark = computed(() =>
 )
 
 function applyTheme(): void {
+  if (typeof document === 'undefined') return
   document.documentElement.classList.toggle('dark', isDark.value)
   document.documentElement.style.colorScheme = isDark.value ? 'dark' : 'light'
 }
@@ -30,22 +32,9 @@ function onSystemThemeChanged(event: MediaQueryListEvent): void {
   if (preference.value === 'system') applyTheme()
 }
 
-/** Browser können localStorage in besonders strikten Datenschutzmodi sperren. */
 function readStoredPreference(): ThemePreference | null {
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY)
-    return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : null
-  } catch {
-    return null
-  }
-}
-
-function storePreference(next: ThemePreference): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, next)
-  } catch {
-    // Die aktuelle Auswahl bleibt für die Sitzung wirksam, auch ohne Persistenz.
-  }
+  const stored = readStoredValue(STORAGE_KEY)
+  return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : null
 }
 
 export function initializeTheme(): void {
@@ -64,7 +53,7 @@ export function initializeTheme(): void {
 export function useTheme() {
   function setPreference(next: ThemePreference): void {
     preference.value = next
-    storePreference(next)
+    writeStoredValue(STORAGE_KEY, next)
     applyTheme()
   }
 
