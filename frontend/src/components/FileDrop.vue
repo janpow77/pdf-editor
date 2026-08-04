@@ -61,8 +61,14 @@ import { createBlankA4Pdf } from '@/lib/pdfFactory'
 import { removeStoredValue } from '@/lib/safeStorage'
 
 const props = withDefaults(
-  defineProps<{ modelValue: File | null; accept?: string; label?: string }>(),
-  { accept: '.pdf', label: 'PDF' },
+  defineProps<{
+    modelValue: File | null
+    accept?: string
+    label?: string
+    /** Optionales werkzeugspezifisches Limit, z. B. 10 MB für Wasserzeichenbilder. */
+    maxBytes?: number
+  }>(),
+  { accept: '.pdf', label: 'PDF', maxBytes: undefined },
 )
 const emit = defineEmits<{ (event: 'update:modelValue', file: File | null): void }>()
 const input = ref<HTMLInputElement | null>(null)
@@ -71,16 +77,28 @@ const notifications = useNotifications()
 const { activeWorkspace } = useWorkspace()
 const isFormDesigner = computed(() => activeWorkspace.value?.toolId === 'formDesigner')
 
-function matches(name: string): boolean {
-  return props.accept.split(',').some((extension) => name.toLowerCase().endsWith(extension.trim().toLowerCase()))
+/** Prüft sowohl Dateiendungen als auch MIME-Angaben aus dem accept-Attribut. */
+function matches(file: File): boolean {
+  const name = file.name.toLowerCase()
+  const mime = file.type.toLowerCase()
+  return props.accept.split(',').some((rawToken) => {
+    const token = rawToken.trim().toLowerCase()
+    if (!token) return false
+    if (token.startsWith('.')) return name.endsWith(token)
+    if (token.endsWith('/*')) return mime.startsWith(token.slice(0, -1))
+    if (token.includes('/')) return mime === token
+    return name.endsWith(token)
+  })
 }
 
-/** Prüft Dateityp und bei PDFs zusätzlich Größe sowie Dateisignatur. */
+/** Prüft Dateityp, optionales Fachlimit und bei PDFs zusätzlich Signatur und Kontolimit. */
 async function acceptFile(file: File): Promise<void> {
   validationError.value = ''
 
-  if (!matches(file.name)) {
+  if (!matches(file)) {
     validationError.value = `Dieser Dateityp wird nicht unterstützt. Zulässig: ${props.accept}.`
+  } else if (props.maxBytes !== undefined && file.size > props.maxBytes) {
+    validationError.value = `${file.name} ist ${formatFileSize(file.size)} groß. Zulässig sind maximal ${formatFileSize(props.maxBytes)}.`
   } else if (props.accept.toLowerCase().includes('.pdf')) {
     const result = await validatePdfFile(file)
     if (!result.valid) validationError.value = result.message ?? 'Die PDF-Datei ist ungültig.'
@@ -88,7 +106,8 @@ async function acceptFile(file: File): Promise<void> {
 
   if (validationError.value) {
     notifications.error('Datei nicht angenommen', validationError.value)
-    emit('update:modelValue', null)
+    // Eine bereits ausgewählte gültige Datei bleibt erhalten. Ein fehlerhafter
+    // Ersatzversuch darf nicht unbemerkt den aktuellen Arbeitsstand löschen.
     return
   }
 
