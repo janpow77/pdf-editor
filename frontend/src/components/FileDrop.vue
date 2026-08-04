@@ -2,8 +2,10 @@
   <div class="space-y-2">
     <div :class="isFormDesigner && !modelValue ? 'grid gap-4 md:grid-cols-2' : ''">
       <UiDropZone
+        :active="isDragging"
         :accepted="Boolean(modelValue)"
         :invalid="Boolean(validationError)"
+        @drag-active="isDragging = $event"
         @drop="onDroppedFiles"
       >
         <input ref="input" type="file" :accept="accept" class="hidden" @change="onSelect" />
@@ -27,8 +29,7 @@
         Nur im Formular-Designer erscheint eine gleichwertige zweite
         Einstiegskarte. Das PDF wird vollständig im Browser erzeugt und
         anschließend wie eine hochgeladene Datei an den bestehenden Editor
-        übergeben. So bleibt die komplexe Designer-Logik unverändert und erhält
-        dennoch einen echten Blank-Canvas-Workflow.
+        übergeben.
       -->
       <UiPanel
         v-if="isFormDesigner && !modelValue"
@@ -56,7 +57,7 @@ import UiDropZone from '@/components/ui/UiDropZone.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import { useNotifications } from '@/composables/useNotifications'
 import { useWorkspace } from '@/composables/useWorkspace'
-import { formatFileSize, validatePdfFile } from '@/lib/fileValidation'
+import { currentFileLimit, formatFileSize, validatePdfFile } from '@/lib/fileValidation'
 import { createBlankA4Pdf } from '@/lib/pdfFactory'
 import { removeStoredValue } from '@/lib/safeStorage'
 
@@ -73,9 +74,11 @@ const props = withDefaults(
 const emit = defineEmits<{ (event: 'update:modelValue', file: File | null): void }>()
 const input = ref<HTMLInputElement | null>(null)
 const validationError = ref('')
+const isDragging = ref(false)
 const notifications = useNotifications()
 const { activeWorkspace } = useWorkspace()
 const isFormDesigner = computed(() => activeWorkspace.value?.toolId === 'formDesigner')
+let validationGeneration = 0
 
 /** Prüft sowohl Dateiendungen als auch MIME-Angaben aus dem accept-Attribut. */
 function matches(file: File): boolean {
@@ -91,21 +94,37 @@ function matches(file: File): boolean {
   })
 }
 
-/** Prüft Dateityp, optionales Fachlimit und bei PDFs zusätzlich Signatur und Kontolimit. */
+function acceptsPdf(): boolean {
+  const normalized = props.accept.toLowerCase()
+  return normalized.includes('.pdf') || normalized.includes('application/pdf')
+}
+
+/**
+ * Prüft Dateityp, allgemeines Kontolimit, optionales Fachlimit und bei PDFs
+ * zusätzlich die Signatur. Der Generationszähler verhindert, dass eine
+ * langsamere ältere Auswahl eine neuere Datei oder einen Reset überschreibt.
+ */
 async function acceptFile(file: File): Promise<void> {
+  const generation = ++validationGeneration
   validationError.value = ''
 
+  const effectiveLimit = Math.min(currentFileLimit(), props.maxBytes ?? Number.POSITIVE_INFINITY)
+  let nextError = ''
+
   if (!matches(file)) {
-    validationError.value = `Dieser Dateityp wird nicht unterstützt. Zulässig: ${props.accept}.`
-  } else if (props.maxBytes !== undefined && file.size > props.maxBytes) {
-    validationError.value = `${file.name} ist ${formatFileSize(file.size)} groß. Zulässig sind maximal ${formatFileSize(props.maxBytes)}.`
-  } else if (props.accept.toLowerCase().includes('.pdf')) {
+    nextError = `Dieser Dateityp wird nicht unterstützt. Zulässig: ${props.accept}.`
+  } else if (file.size > effectiveLimit) {
+    nextError = `${file.name} ist ${formatFileSize(file.size)} groß. Zulässig sind maximal ${formatFileSize(effectiveLimit)}.`
+  } else if (acceptsPdf()) {
     const result = await validatePdfFile(file)
-    if (!result.valid) validationError.value = result.message ?? 'Die PDF-Datei ist ungültig.'
+    if (!result.valid) nextError = result.message ?? 'Die PDF-Datei ist ungültig.'
   }
 
-  if (validationError.value) {
-    notifications.error('Datei nicht angenommen', validationError.value)
+  if (generation !== validationGeneration) return
+  validationError.value = nextError
+
+  if (nextError) {
+    notifications.error('Datei nicht angenommen', nextError)
     // Eine bereits ausgewählte gültige Datei bleibt erhalten. Ein fehlerhafter
     // Ersatzversuch darf nicht unbemerkt den aktuellen Arbeitsstand löschen.
     return
@@ -123,16 +142,24 @@ function onSelect(event: Event): void {
 }
 
 function onDroppedFiles(files: File[]): void {
+  isDragging.value = false
   const file = files[0]
-  if (file) void acceptFile(file)
+  if (!file) return
+  if (files.length > 1) {
+    notifications.warning('Nur eine Datei möglich', 'Für dieses Werkzeug wird nur die erste abgelegte Datei verwendet.')
+  }
+  void acceptFile(file)
 }
 
 function removeFile(): void {
+  validationGeneration += 1
   validationError.value = ''
+  isDragging.value = false
   emit('update:modelValue', null)
 }
 
 function createBlankForm(): void {
+  validationGeneration += 1
   // „Von Grund auf“ bedeutet bewusst ohne automatisch restauriertes Alt-Layout.
   removeStoredValue('pdfapp_form_layout')
 
