@@ -5,29 +5,33 @@
       class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[110]
              focus:rounded-full focus:bg-primary-600 focus:px-4 focus:py-2 focus:text-white focus:shadow-apple"
       @click="focusMain"
-    >
-      Zum Hauptinhalt springen
-    </a>
+    >Zum Hauptinhalt springen</a>
 
     <!--
-      Transparenz und backdrop-filter erzeugen den Apple-typischen Material-
-      Effekt. Der Header bleibt bewusst kompakt, damit Werkzeugflächen maximal
-      viel vertikalen Raum erhalten.
+      Der transparente Header nutzt backdrop-filter für den Apple-typischen
+      Materialeffekt. Im Fokusmodus zeigt er nur Logo und Werkzeugname, damit
+      möglichst viel vertikaler Raum für die PDF-Arbeitsfläche verbleibt.
     -->
-    <header class="sticky top-0 z-40 border-b border-black/5 bg-white/72 backdrop-blur-2xl
-                   dark:border-white/10 dark:bg-gray-950/72">
-      <div class="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
+    <header
+      class="sticky top-0 z-40 border-b border-black/5 bg-white/[0.72] backdrop-blur-2xl
+             dark:border-white/10 dark:bg-gray-950/[0.72]"
+    >
+      <div
+        class="mx-auto flex items-center justify-between gap-3 px-4 transition-all duration-200 sm:px-6"
+        :class="isWorkspaceActive ? 'max-w-[1800px] py-2' : 'max-w-[1600px] py-2.5'"
+      >
         <RouterLink
           to="/"
-          class="group flex items-center gap-2.5 rounded-full pr-3 text-sm font-semibold tracking-[-0.01em]
+          class="group flex min-w-0 items-center gap-2.5 rounded-full pr-3 text-sm font-semibold tracking-[-0.01em]
                  text-gray-950 transition hover:bg-black/[0.035] active:scale-[0.98]
                  dark:text-white dark:hover:bg-white/[0.07]"
+          @click="closeWorkspace"
         >
-          <img src="/auditlogo.png" alt="" aria-hidden="true" class="h-9 w-9 rounded-xl object-contain" />
-          <span>PDF-Editor</span>
+          <img src="/auditlogo.png" alt="" aria-hidden="true" class="h-9 w-9 shrink-0 rounded-xl object-contain" />
+          <span class="truncate">{{ isWorkspaceActive ? activeWorkspace?.toolName : 'PDF-Editor' }}</span>
         </RouterLink>
 
-        <div class="flex items-center gap-2">
+        <div class="flex shrink-0 items-center gap-2">
           <button
             type="button"
             class="grid h-10 w-10 place-items-center rounded-full bg-white/80 text-gray-700 shadow-sm ring-1 ring-black/5
@@ -56,26 +60,27 @@
 
           <div v-else class="relative">
             <button
-              class="flex items-center gap-1.5 rounded-full bg-white/80 px-3.5 py-2 text-sm font-medium text-gray-700
+              type="button"
+              class="flex max-w-56 items-center gap-1.5 rounded-full bg-white/80 px-3.5 py-2 text-sm font-medium text-gray-700
                      shadow-sm ring-1 ring-black/5 backdrop-blur-xl transition hover:shadow-apple active:scale-[0.98]
                      dark:bg-white/10 dark:text-gray-200 dark:ring-white/10"
               :aria-expanded="menuOpen"
               aria-haspopup="menu"
               @click="menuOpen = !menuOpen"
             >
-              {{ user?.email }}
-              <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+              <span class="truncate">{{ user?.email }}</span>
+              <svg class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
             </button>
             <div
               v-if="menuOpen"
-              class="absolute right-0 mt-2 w-48 rounded-2xl border border-white/50 bg-white/88 p-1.5 text-sm
-                     shadow-apple backdrop-blur-2xl dark:border-white/10 dark:bg-gray-900/92"
+              class="absolute right-0 mt-2 w-48 rounded-2xl border border-white/50 bg-white/[0.92] p-1.5 text-sm
+                     shadow-apple backdrop-blur-2xl dark:border-white/10 dark:bg-gray-900/[0.94]"
               role="menu"
               @click="menuOpen = false"
             >
               <RouterLink to="/konto" class="block rounded-xl px-3 py-2 text-gray-700 transition hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/10">Mein Konto</RouterLink>
               <RouterLink v-if="isAdmin" to="/admin" class="block rounded-xl px-3 py-2 text-gray-700 transition hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/10">Administration</RouterLink>
-              <button class="block w-full rounded-xl px-3 py-2 text-left text-gray-700 transition hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/10" @click="doLogout">Abmelden</button>
+              <button type="button" class="block w-full rounded-xl px-3 py-2 text-left text-gray-700 transition hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/10" @click="doLogout">Abmelden</button>
             </div>
           </div>
         </div>
@@ -97,14 +102,16 @@ import { RouterLink, RouterView, useRouter } from 'vue-router'
 import AppFooter from '@/components/AppFooter.vue'
 import NotificationHost from '@/components/NotificationHost.vue'
 import { useTheme } from '@/composables/useTheme'
+import { useWorkspace } from '@/composables/useWorkspace'
 import { fetchMe, isAdmin, isAuthenticated, logout, user } from '@/lib/auth'
 
 const router = useRouter()
 const menuOpen = ref(false)
 const mainEl = ref<HTMLElement | null>(null)
 const { isDark, toggleTheme } = useTheme()
+const { activeWorkspace, isWorkspaceActive, closeWorkspace } = useWorkspace()
 
-function focusMain() {
+function focusMain(): void {
   mainEl.value?.focus()
 }
 
@@ -112,8 +119,9 @@ onMounted(() => {
   if (isAuthenticated.value) fetchMe()
 })
 
-function doLogout() {
+function doLogout(): void {
   logout()
+  closeWorkspace()
   router.push('/')
 }
 </script>
