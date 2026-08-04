@@ -36,8 +36,8 @@ export function usePdfTools() {
     error.value = null
     try {
       return await fn()
-    } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Unbekannter Fehler'
+    } catch (caught: unknown) {
+      error.value = caught instanceof Error ? caught.message : 'Unbekannter Fehler'
       return null
     } finally {
       loading.value = false
@@ -48,20 +48,26 @@ export function usePdfTools() {
     return apiGet('/status')
   }
 
+  /**
+   * `pages` und `max_width` sind FastAPI-Queryparameter. Eine frühere Fassung
+   * legte `pages` irrtümlich in FormData ab; das Backend ignorierte den Wert und
+   * renderte beispielsweise beim Merge alle Seiten statt nur Seite 1.
+   */
   async function getThumbnails(file: File, pages?: string, maxWidth = 320) {
     const fd = new FormData()
     fd.append('file', file)
-    if (pages) fd.append('pages', pages)
-    const resp = await apiRequest(`/thumbnails?max_width=${maxWidth}`, fd)
-    return resp.json()
+    const query = new URLSearchParams({ max_width: String(maxWidth) })
+    if (pages) query.set('pages', pages)
+    const response = await apiRequest(`/thumbnails?${query.toString()}`, fd)
+    return response.json()
   }
 
   async function mergePdfs(files: File[], pageSelections?: Record<string, string>) {
     const fd = new FormData()
-    files.forEach((f) => fd.append('files', f))
+    files.forEach((file) => fd.append('files', file))
     if (pageSelections) fd.append('page_selections', JSON.stringify(pageSelections))
-    const resp = await apiRequest('/merge', fd)
-    await downloadBlob(resp, 'zusammengefuehrt.pdf')
+    const response = await apiRequest('/merge', fd)
+    await downloadBlob(response, 'zusammengefuehrt.pdf')
   }
 
   async function splitPdf(file: File, mode: string, ranges?: string, everyN?: number) {
@@ -70,18 +76,18 @@ export function usePdfTools() {
     fd.append('mode', mode)
     if (ranges) fd.append('ranges', ranges)
     if (everyN) fd.append('every_n', String(everyN))
-    const resp = await apiRequest('/split', fd)
-    const ct = resp.headers.get('Content-Type') || ''
-    const ext = ct.includes('zip') ? 'zip' : 'pdf'
-    await downloadBlob(resp, `geteilt.${ext}`)
+    const response = await apiRequest('/split', fd)
+    const contentType = response.headers.get('Content-Type') || ''
+    const extension = contentType.includes('zip') ? 'zip' : 'pdf'
+    await downloadBlob(response, `geteilt.${extension}`)
   }
 
   async function rotatePdf(file: File, rotations: Record<number, number>) {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('rotations', JSON.stringify(rotations))
-    const resp = await apiRequest('/rotate', fd)
-    await downloadBlob(resp, 'rotiert.pdf')
+    const response = await apiRequest('/rotate', fd)
+    await downloadBlob(response, 'rotiert.pdf')
   }
 
   async function pdfToImages(file: File, pages?: string, format = 'png', dpi = 150) {
@@ -90,28 +96,28 @@ export function usePdfTools() {
     if (pages) fd.append('pages', pages)
     fd.append('format', format)
     fd.append('dpi', String(dpi))
-    const resp = await apiRequest('/to-images', fd)
-    await downloadBlob(resp, 'bilder.zip')
+    const response = await apiRequest('/to-images', fd)
+    await downloadBlob(response, 'bilder.zip')
   }
 
   async function compressPdf(file: File, quality = 'medium') {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('quality', quality)
-    const resp = await apiRequest('/compress', fd)
-    const meta = {
-      originalSize: Number(resp.headers.get('X-Original-Size') || 0),
-      compressedSize: Number(resp.headers.get('X-Compressed-Size') || 0),
-      savings: Number(resp.headers.get('X-Savings-Bytes') || 0),
-      ratio: Number(resp.headers.get('X-Compression-Ratio') || 0),
+    const response = await apiRequest('/compress', fd)
+    const metadata = {
+      originalSize: Number(response.headers.get('X-Original-Size') || 0),
+      compressedSize: Number(response.headers.get('X-Compressed-Size') || 0),
+      savings: Number(response.headers.get('X-Savings-Bytes') || 0),
+      ratio: Number(response.headers.get('X-Compression-Ratio') || 0),
     }
-    await downloadBlob(resp, 'komprimiert.pdf')
-    return meta
+    await downloadBlob(response, 'komprimiert.pdf')
+    return metadata
   }
 
   async function addWatermark(
     file: File,
-    opts: {
+    options: {
       text?: string
       image?: File
       position?: string
@@ -124,45 +130,45 @@ export function usePdfTools() {
   ) {
     const fd = new FormData()
     fd.append('file', file)
-    if (opts.text) fd.append('text', opts.text)
-    if (opts.image) fd.append('image', opts.image)
-    if (opts.position) fd.append('position', opts.position)
-    if (opts.opacity !== undefined) fd.append('opacity', String(opts.opacity))
-    if (opts.rotation !== undefined) fd.append('rotation', String(opts.rotation))
-    if (opts.fontSize !== undefined) fd.append('font_size', String(opts.fontSize))
-    if (opts.color) fd.append('color', opts.color)
-    if (opts.pages) fd.append('pages', opts.pages)
-    const resp = await apiRequest('/watermark', fd)
-    await downloadBlob(resp, 'wasserzeichen.pdf')
+    if (options.text) fd.append('text', options.text)
+    if (options.image) fd.append('image', options.image)
+    if (options.position) fd.append('position', options.position)
+    if (options.opacity !== undefined) fd.append('opacity', String(options.opacity))
+    if (options.rotation !== undefined) fd.append('rotation', String(options.rotation))
+    if (options.fontSize !== undefined) fd.append('font_size', String(options.fontSize))
+    if (options.color) fd.append('color', options.color)
+    if (options.pages) fd.append('pages', options.pages)
+    const response = await apiRequest('/watermark', fd)
+    await downloadBlob(response, 'wasserzeichen.pdf')
   }
 
   async function imagesToPdf(files: File[], pageSize = 'a4', orientation = 'portrait') {
     const fd = new FormData()
-    files.forEach((f) => fd.append('files', f))
+    files.forEach((file) => fd.append('files', file))
     fd.append('page_size', pageSize)
     fd.append('orientation', orientation)
-    const resp = await apiRequest('/images-to-pdf', fd)
-    await downloadBlob(resp, 'bilder_zu_pdf.pdf')
+    const response = await apiRequest('/images-to-pdf', fd)
+    await downloadBlob(response, 'bilder_zu_pdf.pdf')
   }
 
   async function pageOperations(file: File, newOrder: number[]) {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('new_order', JSON.stringify(newOrder))
-    const resp = await apiRequest('/page-operations', fd)
-    await downloadBlob(resp, 'bearbeitet.pdf')
+    const response = await apiRequest('/page-operations', fd)
+    await downloadBlob(response, 'bearbeitet.pdf')
   }
 
   async function readMetadata(file: File) {
     const fd = new FormData()
     fd.append('file', file)
-    const resp = await apiRequest('/metadata/read', fd)
-    return resp.json()
+    const response = await apiRequest('/metadata/read', fd)
+    return response.json()
   }
 
   async function setMetadata(
     file: File,
-    meta: {
+    metadata: {
       title?: string
       author?: string
       subject?: string
@@ -175,51 +181,51 @@ export function usePdfTools() {
   ) {
     const fd = new FormData()
     fd.append('file', file)
-    if (meta.title !== undefined) fd.append('title', meta.title)
-    if (meta.author !== undefined) fd.append('author', meta.author)
-    if (meta.subject !== undefined) fd.append('subject', meta.subject)
-    if (meta.keywords !== undefined) fd.append('keywords', meta.keywords)
-    if (meta.creation_date !== undefined) fd.append('creation_date', meta.creation_date)
-    if (meta.modification_date !== undefined) fd.append('modification_date', meta.modification_date)
-    if (meta.creator !== undefined) fd.append('creator', meta.creator)
-    if (meta.producer !== undefined) fd.append('producer', meta.producer)
-    const resp = await apiRequest('/metadata', fd)
-    await downloadBlob(resp, 'metadaten.pdf')
+    if (metadata.title !== undefined) fd.append('title', metadata.title)
+    if (metadata.author !== undefined) fd.append('author', metadata.author)
+    if (metadata.subject !== undefined) fd.append('subject', metadata.subject)
+    if (metadata.keywords !== undefined) fd.append('keywords', metadata.keywords)
+    if (metadata.creation_date !== undefined) fd.append('creation_date', metadata.creation_date)
+    if (metadata.modification_date !== undefined) fd.append('modification_date', metadata.modification_date)
+    if (metadata.creator !== undefined) fd.append('creator', metadata.creator)
+    if (metadata.producer !== undefined) fd.append('producer', metadata.producer)
+    const response = await apiRequest('/metadata', fd)
+    await downloadBlob(response, 'metadaten.pdf')
   }
 
   async function wordToPdf(file: File) {
     const fd = new FormData()
     fd.append('file', file)
-    const resp = await apiRequest('/word-to-pdf', fd)
-    await downloadBlob(resp, file.name.replace(/\.docx?$/i, '.pdf'))
+    const response = await apiRequest('/word-to-pdf', fd)
+    await downloadBlob(response, file.name.replace(/\.docx?$/i, '.pdf'))
   }
 
   async function wordMerge(files: File[], addPageBreak = true) {
     const fd = new FormData()
-    files.forEach((f) => fd.append('files', f))
+    files.forEach((file) => fd.append('files', file))
     fd.append('add_page_break', String(addPageBreak))
-    const resp = await apiRequest('/word-merge', fd)
-    await downloadBlob(resp, 'zusammengefuehrt.docx')
+    const response = await apiRequest('/word-merge', fd)
+    await downloadBlob(response, 'zusammengefuehrt.docx')
   }
 
   async function wordDiff(fileA: File, fileB: File) {
     const fd = new FormData()
     fd.append('file_a', fileA)
     fd.append('file_b', fileB)
-    const resp = await apiRequest('/word-diff', fd)
-    return resp.json()
+    const response = await apiRequest('/word-diff', fd)
+    return response.json()
   }
 
   async function readWordMetadata(file: File) {
     const fd = new FormData()
     fd.append('file', file)
-    const resp = await apiRequest('/word-metadata/read', fd)
-    return resp.json()
+    const response = await apiRequest('/word-metadata/read', fd)
+    return response.json()
   }
 
   async function setWordMetadata(
     file: File,
-    meta: {
+    metadata: {
       title?: string
       author?: string
       subject?: string
@@ -233,23 +239,23 @@ export function usePdfTools() {
   ) {
     const fd = new FormData()
     fd.append('file', file)
-    Object.entries(meta).forEach(([key, val]) => {
-      if (val !== undefined && val !== '') fd.append(key, val)
+    Object.entries(metadata).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') fd.append(key, value)
     })
-    const resp = await apiRequest('/word-metadata', fd)
-    await downloadBlob(resp, file.name.replace(/\.docx?$/i, '_meta.docx'))
+    const response = await apiRequest('/word-metadata', fd)
+    await downloadBlob(response, file.name.replace(/\.docx?$/i, '_meta.docx'))
   }
 
   async function readExcelMetadata(file: File) {
     const fd = new FormData()
     fd.append('file', file)
-    const resp = await apiRequest('/excel-metadata/read', fd)
-    return resp.json()
+    const response = await apiRequest('/excel-metadata/read', fd)
+    return response.json()
   }
 
   async function setExcelMetadata(
     file: File,
-    meta: {
+    metadata: {
       title?: string
       creator?: string
       subject?: string
@@ -263,11 +269,11 @@ export function usePdfTools() {
   ) {
     const fd = new FormData()
     fd.append('file', file)
-    Object.entries(meta).forEach(([key, val]) => {
-      if (val !== undefined && val !== '') fd.append(key, val)
+    Object.entries(metadata).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') fd.append(key, value)
     })
-    const resp = await apiRequest('/excel-metadata', fd)
-    await downloadBlob(resp, file.name.replace(/\.xlsx?$/i, '_meta.xlsx'))
+    const response = await apiRequest('/excel-metadata', fd)
+    await downloadBlob(response, file.name.replace(/\.xlsx?$/i, '_meta.xlsx'))
   }
 
   async function pdfToWord(
@@ -280,9 +286,9 @@ export function usePdfTools() {
     if (options?.pages) params.set('pages', options.pages)
     if (options?.useOcr) params.set('use_ocr', 'true')
     if (options?.ocrLanguage) params.set('ocr_language', options.ocrLanguage)
-    const qs = params.toString()
-    const resp = await apiPost(`/api/pdf-convert/to-word${qs ? `?${qs}` : ''}`, fd)
-    await downloadBlob(resp, file.name.replace(/\.pdf$/i, '.docx'))
+    const query = params.toString()
+    const response = await apiPost(`/api/pdf-convert/to-word${query ? `?${query}` : ''}`, fd)
+    await downloadBlob(response, file.name.replace(/\.pdf$/i, '.docx'))
     return true
   }
 
@@ -292,9 +298,9 @@ export function usePdfTools() {
     const params = new URLSearchParams()
     if (options?.pages) params.set('pages', options.pages)
     if (options?.consolidate === false) params.set('consolidate', 'false')
-    const qs = params.toString()
-    const resp = await apiPost(`/api/pdf-convert/to-excel${qs ? `?${qs}` : ''}`, fd)
-    await downloadBlob(resp, file.name.replace(/\.pdf$/i, '.xlsx'))
+    const query = params.toString()
+    const response = await apiPost(`/api/pdf-convert/to-excel${query ? `?${query}` : ''}`, fd)
+    await downloadBlob(response, file.name.replace(/\.pdf$/i, '.xlsx'))
     return true
   }
 
@@ -303,8 +309,8 @@ export function usePdfTools() {
     fd.append('file', file)
     fd.append('password', password)
     if (ownerPassword) fd.append('owner_password', ownerPassword)
-    const resp = await apiRequest('/protect', fd)
-    await downloadBlob(resp, file.name.replace(/\.pdf$/i, '_geschuetzt.pdf'))
+    const response = await apiRequest('/protect', fd)
+    await downloadBlob(response, file.name.replace(/\.pdf$/i, '_geschuetzt.pdf'))
     return true
   }
 
@@ -312,8 +318,8 @@ export function usePdfTools() {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('password', password)
-    const resp = await apiRequest('/unlock', fd)
-    await downloadBlob(resp, file.name.replace(/\.pdf$/i, '_entsperrt.pdf'))
+    const response = await apiRequest('/unlock', fd)
+    await downloadBlob(response, file.name.replace(/\.pdf$/i, '_entsperrt.pdf'))
     return true
   }
 
