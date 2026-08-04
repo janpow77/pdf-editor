@@ -1,21 +1,16 @@
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Seitenzahlen einfügen</h2>
-    </div>
+  <div class="space-y-5">
+    <ToolHeader title="Seitenzahlen einfügen" description="Flexible Nummerierungen mit Position, Startseite und Platzhaltern ergänzen." @back="$emit('back')" />
 
     <FileDrop v-model="file" />
 
-    <div v-if="file" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Format ({page}, {total}, {date})</label>
-        <input v-model="format" type="text" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-      </div>
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Position</label>
-          <select v-model="position" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white">
+    <UiPanel v-if="file" class="space-y-4">
+      <UiField label="Format" for-id="page-number-format" hint="Verfügbare Platzhalter: {page}, {total}, {date}.">
+        <input id="page-number-format" v-model="format" type="text" class="ui-control w-full" />
+      </UiField>
+      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <UiField label="Position" for-id="page-number-position">
+          <select id="page-number-position" v-model="position" class="ui-control w-full">
             <option value="bottom-center">unten Mitte</option>
             <option value="bottom-right">unten rechts</option>
             <option value="bottom-left">unten links</option>
@@ -23,44 +18,39 @@
             <option value="top-right">oben rechts</option>
             <option value="top-left">oben links</option>
           </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ab Seite</label>
-          <input v-model.number="startPage" type="number" min="1" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Startnummer</label>
-          <input v-model.number="startNumber" type="number" min="1" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Schriftgröße</label>
-          <input v-model.number="fontSize" type="number" min="6" max="24" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-        </div>
+        </UiField>
+        <UiField label="Ab Seite" for-id="page-number-start-page">
+          <input id="page-number-start-page" v-model.number="startPage" type="number" min="1" class="ui-control w-full" />
+        </UiField>
+        <UiField label="Startnummer" for-id="page-number-start-number">
+          <input id="page-number-start-number" v-model.number="startNumber" type="number" min="1" class="ui-control w-full" />
+        </UiField>
+        <UiField label="Schriftgröße" for-id="page-number-font-size">
+          <input id="page-number-font-size" v-model.number="fontSize" type="number" min="6" max="24" class="ui-control w-full" />
+        </UiField>
       </div>
-    </div>
+    </UiPanel>
 
-    <div v-if="done" class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-700 dark:text-green-300">
-      Seitenzahlen wurden eingefügt, Datei heruntergeladen.
-    </div>
+    <UiAlert v-if="done" tone="success" live>Seitenzahlen eingefügt und Datei heruntergeladen.</UiAlert>
 
-    <button
-      v-if="file"
-      :disabled="loading"
-      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-      @click="apply"
-    >
+    <UiButton v-if="file" variant="primary" size="lg" :loading="loading" @click="apply">
       {{ loading ? 'Verarbeite…' : 'Seitenzahlen einfügen' }}
-    </button>
-    <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    </UiButton>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
+import ToolHeader from '@/components/ui/ToolHeader.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import { useToolRun } from '@/composables/useToolRun'
 
-defineEmits<{ (e: 'back'): void }>()
+defineEmits<{ (event: 'back'): void }>()
 
 const { loading, error, done, run } = useToolRun()
 const file = ref<File | null>(null)
@@ -70,7 +60,7 @@ const startPage = ref(1)
 const startNumber = ref(1)
 const fontSize = ref(10)
 
-async function apply() {
+async function apply(): Promise<void> {
   if (!file.value) return
   const fd = new FormData()
   fd.append('file', file.value)
