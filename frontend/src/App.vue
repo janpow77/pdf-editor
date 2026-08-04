@@ -9,8 +9,9 @@
 
     <!--
       Der transparente Header nutzt backdrop-filter für den Apple-typischen
-      Materialeffekt. Im Fokusmodus zeigt er nur Logo und Werkzeugname, damit
-      möglichst viel vertikaler Raum für die PDF-Arbeitsfläche verbleibt.
+      Materialeffekt. Im Fokusmodus zeigt er nur Logo, Werkzeugname und den
+      geforderten Theme-Schalter; Kontoaktionen treten zugunsten der maximalen
+      Arbeitsfläche zurück.
     -->
     <header
       class="sticky top-0 z-40 border-b border-black/5 bg-white/[0.72] backdrop-blur-2xl
@@ -51,14 +52,14 @@
           </button>
 
           <RouterLink
-            v-if="!isAuthenticated"
+            v-if="!isWorkspaceActive && !isAuthenticated"
             to="/login"
             class="rounded-full bg-gray-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition
                    hover:-translate-y-0.5 hover:shadow-apple active:scale-[0.98]
                    dark:bg-white dark:text-gray-950"
           >Anmelden</RouterLink>
 
-          <div v-else class="relative">
+          <div v-else-if="!isWorkspaceActive" class="relative">
             <button
               type="button"
               class="flex max-w-56 items-center gap-1.5 rounded-full bg-white/80 px-3.5 py-2 text-sm font-medium text-gray-700
