@@ -59,7 +59,8 @@
     </header>
 
     <ResultsPanel v-if="!isWorkspaceActive" class="mb-8" />
-    <ToolGrid :search-query="searchQuery" />
+    <!-- Der Schlüssel verwirft beim globalen Schließen auch lokalen Tool-State. -->
+    <ToolGrid :key="workspaceRevision" :search-query="searchQuery" />
   </div>
 </template>
 
@@ -70,5 +71,5 @@ import ToolGrid from '@/components/ToolGrid.vue'
 import { useWorkspace } from '@/composables/useWorkspace'
 
 const searchQuery = ref('')
-const { isWorkspaceActive } = useWorkspace()
+const { isWorkspaceActive, workspaceRevision } = useWorkspace()
 </script>
