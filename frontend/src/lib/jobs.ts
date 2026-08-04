@@ -15,13 +15,16 @@ export async function runJob(
   timeoutMs = 10 * 60 * 1000,
 ): Promise<Response> {
   const notifications = useNotifications()
+  const deadline = Date.now() + timeoutMs
 
   try {
-    const startResp = await apiPost(startUrl, fd, { notifyOnError: false })
-    const { job_id: jobId } = await startResp.json() as { job_id?: string }
+    const startResponse = await apiPost(startUrl, fd, {
+      notifyOnError: false,
+      timeout: Math.max(1, deadline - Date.now()),
+    })
+    const { job_id: jobId } = await startResponse.json() as { job_id?: string }
     if (!jobId) throw new Error('Der Server hat keine gültige Job-ID zurückgegeben.')
 
-    const deadline = Date.now() + timeoutMs
     for (;;) {
       if (Date.now() > deadline) {
         throw new Error('Die Verarbeitung hat das Zeitlimit überschritten.')
@@ -40,14 +43,23 @@ export async function runJob(
       await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 1500))
     }
 
-    const result = await fetch(
-      `/api/pdf-extras/jobs/${encodeURIComponent(jobId)}/result`,
-      { headers: authHeader() },
-    )
-    if (!result.ok) {
-      throw new Error(`Das Ergebnis konnte nicht abgeholt werden (${result.status}).`)
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) throw new Error('Die Verarbeitung hat das Zeitlimit überschritten.')
+
+    const controller = new AbortController()
+    const timer = globalThis.setTimeout(() => controller.abort(), remaining)
+    try {
+      const result = await fetch(
+        `/api/pdf-extras/jobs/${encodeURIComponent(jobId)}/result`,
+        { headers: authHeader(), signal: controller.signal },
+      )
+      if (!result.ok) {
+        throw new Error(`Das Ergebnis konnte nicht abgeholt werden (${result.status}).`)
+      }
+      return result
+    } finally {
+      globalThis.clearTimeout(timer)
     }
-    return result
   } catch (error: unknown) {
     notifications.error(
       'Verarbeitung fehlgeschlagen',
