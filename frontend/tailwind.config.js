@@ -1,11 +1,25 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{vue,ts}'],
-  darkMode: 'media',
+  // Klassensteuerung ist erforderlich, damit der manuelle Schalter die
+  // Systempräferenz überstimmen kann. `useTheme` setzt die Klasse zentral.
+  darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        // Apple-nahe Systemschrift ohne externen Font-Download: auf macOS wird
+        // San Francisco verwendet, auf anderen Plattformen die native UI-Schrift.
+        sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Text', 'Segoe UI', 'Inter', 'system-ui', 'sans-serif'],
+      },
+      borderRadius: {
+        apple: '1rem',
+        'apple-lg': '1.35rem',
+      },
+      boxShadow: {
+        apple: '0 18px 45px rgba(15,23,42,.08), 0 2px 8px rgba(15,23,42,.05)',
+        'apple-hover': '0 24px 60px rgba(15,23,42,.13), 0 4px 12px rgba(15,23,42,.08)',
+      },
       colors: {
-        // Eine systemweite Akzentfarbe (Apple-nahes Blau)
         primary: {
           50: '#f0f7ff',
           100: '#dcecfd',
