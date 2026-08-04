@@ -1,84 +1,72 @@
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Bild ersetzen</h2>
-    </div>
+  <div class="space-y-5">
+    <ToolHeader title="Bild ersetzen" description="Ein vorhandenes PDF-Bild austauschen, ohne Position oder Größe zu verändern." @back="$emit('back')" />
 
-    <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-800 dark:text-blue-300">
-      Tauscht ein vorhandenes Bild im PDF gegen ein neues aus — Position und Größe im
-      Layout bleiben erhalten (z.B. Logo aktualisieren). Zum Einfügen zusätzlicher Bilder
-      gibt es „Unterschrift" und „Wasserzeichen".
-    </div>
+    <UiAlert tone="info">Geeignet zum Aktualisieren von Logos und Grafiken. Für zusätzliche Bilder stehen Unterschrift und Wasserzeichen bereit.</UiAlert>
 
     <FileDrop v-model="file" />
 
-    <div v-if="loadingList" class="text-sm text-gray-500 py-4">Suche Bilder…</div>
+    <div v-if="loadingList" class="flex items-center gap-2 py-4 text-sm text-gray-600 dark:text-gray-300" role="status">
+      <span class="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-primary-600" aria-hidden="true"></span>
+      Bilder werden gesucht…
+    </div>
 
-    <div v-if="images.length" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-      <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-        {{ images.length }} Bild(er) gefunden — auswählen:
-      </h3>
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <button
-          v-for="img in images"
-          :key="img.xref"
-          class="p-2 rounded-lg border-2 text-left transition-colors"
-          :class="selected === img.xref
-            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-            : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'"
-          @click="selected = img.xref"
+    <UiPanel v-if="images.length" class="space-y-3">
+      <h3 class="font-semibold text-gray-950 dark:text-white">{{ images.length }} Bilder gefunden</h3>
+      <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
+        <UiPanel
+          v-for="imageEntry in images"
+          :key="imageEntry.xref"
+          as="button"
+          type="button"
+          padding="sm"
+          class="text-left transition hover:-translate-y-0.5 hover:shadow-apple"
+          :class="selected === imageEntry.xref ? 'ring-2 ring-primary-500' : ''"
+          :aria-pressed="selected === imageEntry.xref"
+          @click="selected = imageEntry.xref"
         >
           <img
-            v-if="img.preview"
-            :src="`data:image/png;base64,${img.preview}`"
-            class="w-full h-20 object-contain bg-gray-50 dark:bg-gray-800 rounded"
-            alt="Bildvorschau"
+            v-if="imageEntry.preview"
+            :src="`data:image/png;base64,${imageEntry.preview}`"
+            class="h-36 w-full rounded-xl bg-gray-100 object-contain dark:bg-black/30"
+            :alt="`Bild auf Seite ${imageEntry.page}`"
           />
-          <div v-else class="w-full h-20 flex items-center justify-center bg-gray-50 dark:bg-gray-800 rounded text-xs text-gray-600 dark:text-gray-400">
-            keine Vorschau
-          </div>
-          <p class="mt-1 text-xs text-gray-600 dark:text-gray-300">Seite {{ img.page }}</p>
-          <p class="text-xs text-gray-600 dark:text-gray-400">{{ img.width }} × {{ img.height }} px</p>
-        </button>
+          <div v-else class="flex h-36 w-full items-center justify-center rounded-xl bg-gray-100 text-xs text-gray-600 dark:bg-black/30 dark:text-gray-300">Keine Vorschau</div>
+          <p class="mt-2 text-xs font-semibold">Seite {{ imageEntry.page }}</p>
+          <p class="text-xs opacity-70">{{ imageEntry.width }} × {{ imageEntry.height }} px</p>
+        </UiPanel>
       </div>
-    </div>
+    </UiPanel>
 
-    <div v-if="file && !loadingList && !images.length && listLoaded" class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg text-sm text-amber-800 dark:text-amber-300">
-      Dieses PDF enthält keine austauschbaren Bilder.
-    </div>
+    <UiAlert v-if="file && !loadingList && !images.length && listLoaded" tone="warning">Dieses PDF enthält keine austauschbaren Bilder.</UiAlert>
 
-    <div v-if="selected" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-2">
-      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Neues Bild (PNG/JPG)</label>
-      <input type="file" accept=".png,.jpg,.jpeg" class="text-sm text-gray-600 dark:text-gray-300" @change="onImage" />
-      <p class="text-xs text-gray-600 dark:text-gray-400">
-        Für ein sauberes Ergebnis sollte das neue Bild dasselbe Seitenverhältnis haben.
-      </p>
-    </div>
+    <UiPanel v-if="selected">
+      <UiField label="Neues Bild (PNG/JPG)" for-id="replacement-image" hint="Für ein sauberes Ergebnis sollte das Seitenverhältnis dem Original entsprechen.">
+        <input id="replacement-image" type="file" accept=".png,.jpg,.jpeg" class="block w-full text-sm text-gray-600 dark:text-gray-300" @change="onImage" />
+      </UiField>
+    </UiPanel>
 
-    <div v-if="done" class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-700 dark:text-green-300">
-      Bild ersetzt, PDF heruntergeladen.
-    </div>
+    <UiAlert v-if="done" tone="success" live>Bild ersetzt und PDF heruntergeladen.</UiAlert>
 
-    <button
-      v-if="selected && newImage"
-      :disabled="loading"
-      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-      @click="apply"
-    >
+    <UiButton v-if="selected && newImage" variant="primary" size="lg" :loading="loading" @click="apply">
       {{ loading ? 'Ersetze…' : 'Bild ersetzen' }}
-    </button>
-    <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    </UiButton>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
+import ToolHeader from '@/components/ui/ToolHeader.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import { useToolRun } from '@/composables/useToolRun'
 import { apiPost } from '@/lib/api'
 
-defineEmits<{ (e: 'back'): void }>()
+defineEmits<{ (event: 'back'): void }>()
 
 interface PdfImage {
   xref: number
@@ -96,32 +84,32 @@ const newImage = ref<File | null>(null)
 const loadingList = ref(false)
 const listLoaded = ref(false)
 
-watch(file, async (f) => {
+watch(file, async (currentFile) => {
   images.value = []
   selected.value = null
   newImage.value = null
   listLoaded.value = false
   error.value = null
-  if (!f) return
+  if (!currentFile) return
   loadingList.value = true
   try {
     const fd = new FormData()
-    fd.append('file', f)
-    const resp = await apiPost('/api/pdf-more/images/list', fd)
-    images.value = ((await resp.json()) as { images: PdfImage[] }).images
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Bilder lesen fehlgeschlagen'
+    fd.append('file', currentFile)
+    const response = await apiPost('/api/pdf-more/images/list', fd)
+    images.value = ((await response.json()) as { images: PdfImage[] }).images
+  } catch (caught: unknown) {
+    error.value = caught instanceof Error ? caught.message : 'Bilder lesen fehlgeschlagen'
   } finally {
     loadingList.value = false
     listLoaded.value = true
   }
 })
 
-function onImage(e: Event) {
-  newImage.value = (e.target as HTMLInputElement).files?.[0] ?? null
+function onImage(event: Event): void {
+  newImage.value = (event.target as HTMLInputElement).files?.[0] ?? null
 }
 
-async function apply() {
+async function apply(): Promise<void> {
   if (!file.value || !selected.value || !newImage.value) return
   const fd = new FormData()
   fd.append('file', file.value)
