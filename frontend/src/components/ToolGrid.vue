@@ -152,7 +152,7 @@
                    hover:border-primary-400 hover:text-primary-600 transition-colors disabled:opacity-30"
             :disabled="rolodexIndex === 0"
             aria-label="Vorheriges Werkzeug"
-            @click="step(-1)"
+            @click="stepAndFocus(-1)"
           >
             ←
           </button>
@@ -164,7 +164,7 @@
                    hover:border-primary-400 hover:text-primary-600 transition-colors disabled:opacity-30"
             :disabled="rolodexIndex === groupTools.length - 1"
             aria-label="Nächstes Werkzeug"
-            @click="step(1)"
+            @click="stepAndFocus(1)"
           >
             →
           </button>
@@ -410,6 +410,13 @@ function setGroup(key: string) {
 function step(dir: number) {
   const next = rolodexIndex.value + dir
   if (next >= 0 && next < groupTools.value.length) rolodexIndex.value = next
+}
+
+// Nach Klick auf die Pfeil-Knöpfe zurück zur Kartenliste fokussieren,
+// damit die Pfeiltasten sofort weiterblättern (Befund aus dem UI-Test).
+function stepAndFocus(dir: number) {
+  step(dir)
+  rolodexEl.value?.focus()
 }
 
 let wheelLock = 0
