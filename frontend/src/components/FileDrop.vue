@@ -37,11 +37,11 @@
       </div>
 
       <!--
-        Nur im Formular-Designer erscheint eine gleichwertige zweite Einstieg-
-        skarte. Das PDF wird vollständig im Browser erzeugt und anschließend wie
-        eine hochgeladene Datei an den bestehenden Editor übergeben. So bleibt
-        die komplexe Designer-Logik unverändert und erhält dennoch einen echten
-        Blank-Canvas-Workflow.
+        Nur im Formular-Designer erscheint eine gleichwertige zweite
+        Einstiegskarte. Das PDF wird vollständig im Browser erzeugt und
+        anschließend wie eine hochgeladene Datei an den bestehenden Editor
+        übergeben. So bleibt die komplexe Designer-Logik unverändert und erhält
+        dennoch einen echten Blank-Canvas-Workflow.
       -->
       <button
         v-if="isFormDesigner && !modelValue"
@@ -123,6 +123,13 @@ function removeFile(): void {
 }
 
 function createBlankForm(): void {
+  // „Von Grund auf“ bedeutet bewusst ohne automatisch restauriertes Alt-Layout.
+  try {
+    window.localStorage.removeItem('pdfapp_form_layout')
+  } catch {
+    // Ein blockierter Browser-Speicher verhindert die lokale PDF-Erzeugung nicht.
+  }
+
   const blob = createBlankA4Pdf()
   const file = new File([blob], 'leeres-formular-din-a4.pdf', {
     type: 'application/pdf',
