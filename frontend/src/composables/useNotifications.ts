@@ -21,13 +21,23 @@ export interface AppNotification {
 
 const MAX_VISIBLE_NOTIFICATIONS = 4
 const notifications = ref<AppNotification[]>([])
-const timers = new Map<number, number>()
+const timers = new Map<number, ReturnType<typeof globalThis.setTimeout>>()
 let nextId = 1
 
-function remove(id: number): void {
+function clearTimer(id: number): void {
   const timer = timers.get(id)
-  if (timer !== undefined && typeof window !== 'undefined') window.clearTimeout(timer)
+  if (timer !== undefined) globalThis.clearTimeout(timer)
   timers.delete(id)
+}
+
+function scheduleRemoval(id: number, timeout: number): void {
+  clearTimer(id)
+  if (timeout <= 0) return
+  timers.set(id, globalThis.setTimeout(() => remove(id), timeout))
+}
+
+function remove(id: number): void {
+  clearTimer(id)
   notifications.value = notifications.value.filter((item) => item.id !== id)
 }
 
@@ -37,12 +47,16 @@ function notify(
   message?: string,
   timeout = type === 'error' ? 6500 : 4200,
 ): number {
-  // Identische parallele Fehler werden zu einer sichtbaren Meldung zusammengefasst.
+  // Identische parallele Meldungen bleiben dieselbe Live-Region. Nur ihr Timer
+  // wird erneuert; dadurch entsteht weder visuelles Flackern noch eine doppelte
+  // Screenreader-Ankündigung durch Entfernen und erneutes Einfügen.
   const duplicate = notifications.value.find((item) =>
     item.type === type && item.title === title && item.message === message,
   )
   if (duplicate) {
-    remove(duplicate.id)
+    duplicate.timeout = timeout
+    scheduleRemoval(duplicate.id, timeout)
+    return duplicate.id
   }
 
   const id = nextId++
@@ -53,16 +67,17 @@ function notify(
     if (oldest) remove(oldest.id)
   }
 
-  if (timeout > 0 && typeof window !== 'undefined') {
-    const timer = window.setTimeout(() => remove(id), timeout)
-    timers.set(id, timer)
-  }
+  scheduleRemoval(id, timeout)
   return id
 }
 
 /** Übersetzt technische Ausnahmeobjekte in eine verständliche Meldung. */
 function errorFromUnknown(error: unknown, fallback = 'Die Aktion konnte nicht abgeschlossen werden.'): string {
-  if (error instanceof DOMException && error.name === 'AbortError') {
+  if (
+    typeof DOMException !== 'undefined'
+    && error instanceof DOMException
+    && error.name === 'AbortError'
+  ) {
     return 'Die Verarbeitung hat zu lange gedauert und wurde abgebrochen.'
   }
   if (error instanceof Error && error.message.trim()) return error.message
