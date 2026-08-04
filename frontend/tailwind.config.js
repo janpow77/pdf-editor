@@ -16,6 +16,8 @@ export default {
         'apple-lg': '1.35rem',
       },
       boxShadow: {
+        // Mehrere dezente Ebenen wirken weicher als ein harter Standard-Schatten.
+        'apple-sm': '0 8px 24px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.05)',
         apple: '0 18px 45px rgba(15,23,42,.08), 0 2px 8px rgba(15,23,42,.05)',
         'apple-hover': '0 24px 60px rgba(15,23,42,.13), 0 4px 12px rgba(15,23,42,.08)',
       },
