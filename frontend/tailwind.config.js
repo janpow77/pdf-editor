@@ -24,13 +24,14 @@ export default {
       /*
        * Die Oberfläche nutzt bewusst feinere Material-Transparenzen als die
        * Tailwind-Standardskala. Durch die zentrale Definition werden statische
-       * Klassen wie `bg-white/82`, `dark:bg-blue-400/15` und
+       * Klassen wie `bg-white/65`, `bg-white/82`, `dark:bg-blue-400/15` und
        * `disabled:opacity-45` zuverlässig im Produktions-CSS erzeugt.
        */
       opacity: {
         15: '0.15',
         35: '0.35',
         45: '0.45',
+        65: '0.65',
         82: '0.82',
         85: '0.85',
       },
