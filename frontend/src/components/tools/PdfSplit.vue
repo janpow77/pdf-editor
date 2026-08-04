@@ -1,33 +1,25 @@
 <template>
   <div class="space-y-5">
-    <div class="flex items-center gap-3">
-      <button type="button" class="rounded-full px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-black/5 hover:text-primary-700 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-primary-300" @click="$emit('back')">← Zurück</button>
-      <h2 class="text-xl font-semibold tracking-[-0.025em] text-gray-950 dark:text-white">PDF teilen</h2>
-    </div>
+    <ToolHeader title="PDF teilen" description="Ein Dokument nach Bereichen oder in festen Abständen aufteilen." @back="$emit('back')" />
 
-    <div
-      class="apple-upload-zone p-7 text-center"
-      :class="uploadError ? 'border-rose-500 bg-rose-50/70 dark:bg-rose-500/10' : file ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-500/10' : ''"
-      @dragover.prevent
-      @drop.prevent="onDrop"
-    >
+    <UiDropZone :accepted="Boolean(file)" :invalid="Boolean(uploadError)" @drop="onDroppedFiles">
       <input ref="fileInput" type="file" accept=".pdf,application/pdf" class="hidden" @change="onFileSelect" />
       <div v-if="!file">
         <div class="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-violet-100 text-2xl text-violet-700 dark:bg-violet-400/15 dark:text-violet-300" aria-hidden="true">✂</div>
         <p class="mt-3 font-semibold text-gray-950 dark:text-white">PDF zum Teilen auswählen</p>
         <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Datei hierher ziehen oder lokal öffnen.</p>
-        <button type="button" class="mt-4 rounded-full bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 hover:shadow-apple" @click="fileInput?.click()">Datei auswählen</button>
+        <UiButton variant="primary" class="mt-4" @click="fileInput?.click()">Datei auswählen</UiButton>
       </div>
       <div v-else>
         <p class="break-all font-semibold text-gray-950 dark:text-white">{{ file.name }}</p>
         <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">{{ pageCount || '…' }} Seiten</p>
-        <button type="button" class="mt-2 rounded-full px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/10" @click="resetFile">Entfernen</button>
+        <UiButton variant="danger" size="sm" class="mt-3" @click="resetFile">Entfernen</UiButton>
       </div>
-    </div>
+    </UiDropZone>
 
-    <p v-if="uploadError" class="apple-inline-error text-sm" role="alert">{{ uploadError }}</p>
+    <UiAlert v-if="uploadError" tone="danger">{{ uploadError }}</UiAlert>
 
-    <section v-if="file" class="apple-surface space-y-4 p-5">
+    <UiPanel v-if="file" as="section" class="space-y-4">
       <fieldset>
         <legend class="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">Teilungsmethode</legend>
         <div class="flex flex-wrap gap-3">
@@ -40,18 +32,24 @@
         </div>
       </fieldset>
 
-      <div v-if="mode === 'ranges'">
-        <label for="split-ranges" class="mb-1 block text-sm font-semibold text-gray-700 dark:text-gray-200">Bereiche, getrennt durch Semikolon</label>
-        <input id="split-ranges" v-model="ranges" type="text" class="w-full rounded-2xl bg-white px-4 py-3 text-gray-950 shadow-sm ring-1 ring-gray-400 focus:ring-2 focus:ring-primary-500 dark:bg-white/10 dark:text-white dark:ring-gray-600" placeholder="z. B. 1-3; 4-6; 7-10" />
-        <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">Jeder Bereich wird als separate Datei erzeugt.</p>
-      </div>
+      <UiField
+        v-if="mode === 'ranges'"
+        label="Bereiche, getrennt durch Semikolon"
+        for-id="split-ranges"
+        hint="Jeder Bereich wird als separate Datei erzeugt."
+      >
+        <input id="split-ranges" v-model="ranges" type="text" class="ui-control w-full" placeholder="z. B. 1-3; 4-6; 7-10" />
+      </UiField>
 
-      <div v-else>
-        <label for="split-every-n" class="mb-1 block text-sm font-semibold text-gray-700 dark:text-gray-200">Nach wie vielen Seiten teilen?</label>
-        <input id="split-every-n" v-model.number="everyN" type="number" min="1" :max="pageCount" class="w-36 rounded-2xl bg-white px-4 py-3 text-gray-950 shadow-sm ring-1 ring-gray-400 focus:ring-2 focus:ring-primary-500 dark:bg-white/10 dark:text-white dark:ring-gray-600" />
-        <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">Ergibt voraussichtlich {{ Math.ceil(pageCount / Math.max(1, everyN)) }} Dateien.</p>
-      </div>
-    </section>
+      <UiField
+        v-else
+        label="Nach wie vielen Seiten teilen?"
+        for-id="split-every-n"
+        :hint="`Ergibt voraussichtlich ${Math.ceil(pageCount / Math.max(1, everyN))} Dateien.`"
+      >
+        <input id="split-every-n" v-model.number="everyN" type="number" min="1" :max="pageCount" class="ui-control w-36" />
+      </UiField>
+    </UiPanel>
 
     <!--
       Der Schlüssel erzwingt beim Dokumentwechsel eine neue Instanz des Rasters.
@@ -66,26 +64,33 @@
       :loading="loadingThumbs"
     />
 
-    <button
+    <UiButton
       v-if="file"
-      type="button"
-      :disabled="loading || (mode === 'ranges' && !ranges.trim())"
-      class="rounded-full bg-primary-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-primary-700 hover:shadow-apple disabled:cursor-not-allowed disabled:opacity-45"
+      variant="primary"
+      size="lg"
+      :loading="loading"
+      :disabled="mode === 'ranges' && !ranges.trim()"
       @click="doSplit"
-    >{{ loading ? 'PDF wird geteilt…' : 'PDF teilen' }}</button>
+    >{{ loading ? 'PDF wird geteilt…' : 'PDF teilen' }}</UiButton>
 
-    <p v-if="error" class="apple-inline-error text-sm" role="alert">{{ error }}</p>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import ToolHeader from '@/components/ui/ToolHeader.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDropZone from '@/components/ui/UiDropZone.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import { useNotifications } from '@/composables/useNotifications'
 import { usePdfTools } from '@/composables/usePdfTools'
 import { validatePdfFile } from '@/lib/fileValidation'
 import PageThumbnailGrid from './PageThumbnailGrid.vue'
 
-defineEmits<{ (e: 'back'): void }>()
+defineEmits<{ (event: 'back'): void }>()
 
 const { loading, error, withLoading, splitPdf, getThumbnails } = usePdfTools()
 const notifications = useNotifications()
@@ -108,8 +113,8 @@ function onFileSelect(event: Event): void {
   if (selected) void setFile(selected)
 }
 
-function onDrop(event: DragEvent): void {
-  const selected = event.dataTransfer?.files?.[0]
+function onDroppedFiles(files: File[]): void {
+  const selected = files[0]
   if (selected) void setFile(selected)
 }
 
