@@ -21,6 +21,19 @@ export default {
         apple: '0 18px 45px rgba(15,23,42,.08), 0 2px 8px rgba(15,23,42,.05)',
         'apple-hover': '0 24px 60px rgba(15,23,42,.13), 0 4px 12px rgba(15,23,42,.08)',
       },
+      /*
+       * Die Oberfläche nutzt bewusst feinere Material-Transparenzen als die
+       * Tailwind-Standardskala. Durch die zentrale Definition werden statische
+       * Klassen wie `bg-white/82`, `dark:bg-blue-400/15` und
+       * `disabled:opacity-45` zuverlässig im Produktions-CSS erzeugt.
+       */
+      opacity: {
+        15: '0.15',
+        35: '0.35',
+        45: '0.45',
+        82: '0.82',
+        85: '0.85',
+      },
       colors: {
         primary: {
           50: '#f0f7ff',
