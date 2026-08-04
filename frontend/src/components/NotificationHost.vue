@@ -1,14 +1,11 @@
 <template>
   <!--
-    Die Live-Region liegt global über der Anwendung. Die mittige, kompakte Form
-    erinnert an Dynamic Island/macOS-Benachrichtigungen, ohne wichtige Inhalte
-    dauerhaft zu verdecken. `pointer-events-none` lässt Klicks neben den Toasts
-    weiterhin durch; nur die Meldung selbst bleibt bedienbar.
+    Die Meldungen tragen ihre jeweilige ARIA-Rolle selbst. Der umgebende
+    Container ist absichtlich keine zusätzliche Live-Region, damit
+    Screenreader dieselbe Meldung nicht doppelt ankündigen.
   -->
   <div
     class="pointer-events-none fixed inset-x-0 top-3 z-[100] flex flex-col items-center gap-2 px-4 sm:top-5"
-    aria-live="polite"
-    aria-relevant="additions removals"
   >
     <TransitionGroup name="notification">
       <article
@@ -19,6 +16,7 @@
                shadow-[0_18px_50px_rgba(0,0,0,0.28),0_2px_8px_rgba(0,0,0,0.18)]
                backdrop-blur-2xl dark:border-white/10 dark:bg-gray-900/[0.88]"
         :role="item.type === 'error' ? 'alert' : 'status'"
+        aria-atomic="true"
       >
         <span
           class="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm font-bold"
@@ -63,10 +61,7 @@ function iconClass(type: NotificationType): string {
 </script>
 
 <style scoped>
-/*
- * Kurze Translation plus Skalierung wirkt direkt und federnd, ohne lange
- * Animationen. Die globale Reduced-Motion-Regel deaktiviert sie bei Bedarf.
- */
+/* Kurze Bewegung; die globale Reduced-Motion-Regel deaktiviert sie bei Bedarf. */
 .notification-enter-active,
 .notification-leave-active {
   transition: opacity 180ms ease, transform 240ms cubic-bezier(.2, .9, .2, 1.15);
