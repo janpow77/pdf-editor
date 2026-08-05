@@ -41,6 +41,7 @@
         <UiButton size="sm" variant="secondary" :disabled="!selectedItems.length" title="Auswahl duplizieren" @click="duplicateSelection">⧉</UiButton>
         <UiButton size="sm" variant="secondary" title="Leerseite einfügen" @click="insertBlank">➕</UiButton>
         <UiButton size="sm" variant="danger" :disabled="!selectedItems.length" title="Auswahl entfernen" @click="removeSelection(true)">✕</UiButton>
+        <UiButton v-if="history.length" size="sm" variant="secondary" :title="`Rückgängig: ${history[history.length - 1]?.label}`" @click="undo">↩ Rückgängig</UiButton>
         <span class="mx-1 h-6 w-px bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>
         <UiButton size="sm" variant="primary" :loading="busy" :disabled="!activeItems.length" @click="composeAndDownload(activeItems, 'werkbank.pdf')">
           Ergebnis ({{ activeItems.length }} S.)
@@ -73,12 +74,13 @@
                   ? 'cursor-not-allowed text-gray-400 dark:text-gray-500'
                   : 'text-gray-800 hover:bg-primary-50 dark:text-gray-100 dark:hover:bg-primary-500/15'"
                 :disabled="Boolean(tool.reason)"
-                :title="tool.reason ?? `Aktuellen Stand in „${tool.label}“ weiterbearbeiten`"
-                @click="handOffTo(tool.id)"
+                :title="tool.reason ?? (tool.panel ? `${tool.label} direkt hier im Editor anwenden` : `Aktuellen Stand in „${tool.label}“ weiterbearbeiten`)"
+                @click="openTool(tool.id)"
               >
                 <span aria-hidden="true">{{ tool.icon }}</span>
                 <span class="flex-1">{{ tool.label }}</span>
-                <span v-if="tool.reason" class="text-[10px]" aria-hidden="true">—</span>
+                <span v-if="tool.panel" class="rounded bg-primary-100 px-1 text-[10px] font-semibold text-primary-700 dark:bg-primary-500/20 dark:text-primary-300" title="Läuft direkt im Editor">direkt</span>
+                <span v-else-if="tool.reason" class="text-[10px]" aria-hidden="true">—</span>
               </button>
             </div>
           </div>
@@ -202,6 +204,66 @@
 
         <UiAlert v-if="errorText" tone="danger" class="mt-3">{{ errorText }}</UiAlert>
       </main>
+
+      <!-- Seitenpanel: Transformation direkt auf dem aktuellen Stand -->
+      <aside
+        v-if="activePanel"
+        class="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-gray-200 bg-white/80 p-3 sm:w-80 dark:border-gray-700 dark:bg-gray-900/70"
+        :aria-label="`Panel: ${activePanel.title}`"
+      >
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="flex items-center gap-1.5 font-semibold text-gray-950 dark:text-white">
+            <span aria-hidden="true">{{ activePanel.icon }}</span> {{ activePanel.title }}
+          </h3>
+          <button
+            type="button"
+            class="grid h-7 w-7 place-items-center rounded-lg text-gray-500 ring-1 ring-gray-300 transition hover:text-gray-900 dark:text-gray-300 dark:ring-gray-600 dark:hover:text-white"
+            aria-label="Panel schließen"
+            @click="activePanel = null"
+          >×</button>
+        </div>
+
+        <p class="text-xs text-gray-600 dark:text-gray-300">
+          Wird auf den aktuellen Stand ({{ activeItems.length }} Seiten) angewendet{{ activePanel.output === 'pdf' ? ' und ersetzt ihn — Rückgängig über ↩ in der Leiste.' : '.' }}
+        </p>
+
+        <label v-for="field in activePanel.fields" :key="field.name" class="block text-sm">
+          <template v-if="field.type === 'checkbox'">
+            <span class="flex items-center gap-2 font-medium text-gray-800 dark:text-gray-100">
+              <input v-model="panelValues[field.name]" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+              {{ field.label }}
+            </span>
+          </template>
+          <template v-else>
+            <span class="mb-1 block font-medium text-gray-800 dark:text-gray-100">{{ field.label }}<span v-if="field.required" aria-hidden="true"> *</span></span>
+            <select
+              v-if="field.type === 'select'"
+              v-model="panelValues[field.name]"
+              class="w-full rounded-xl bg-white px-3 py-2 text-sm text-gray-950 ring-1 ring-gray-400/70 focus:ring-2 focus:ring-primary-500 dark:bg-gray-900 dark:text-white dark:ring-gray-600"
+            >
+              <option v-for="option in field.options" :key="option.value" :value="option.value">{{ option.label }}</option>
+            </select>
+            <input
+              v-else
+              v-model="panelValues[field.name]"
+              :type="field.type"
+              :placeholder="field.placeholder"
+              :min="field.min" :max="field.max" :step="field.step"
+              :required="field.required"
+              class="w-full rounded-xl bg-white px-3 py-2 text-sm text-gray-950 ring-1 ring-gray-400/70 focus:ring-2 focus:ring-primary-500 dark:bg-gray-900 dark:text-white dark:ring-gray-600"
+            />
+          </template>
+        </label>
+
+        <UiButton variant="primary" :loading="panelBusy" :disabled="!activeItems.length" @click="applyPanel">
+          {{ activePanel.applyLabel }}
+        </UiButton>
+
+        <pre
+          v-if="panelReport"
+          class="max-h-72 overflow-auto rounded-xl bg-gray-100 p-2 text-[11px] leading-relaxed text-gray-800 dark:bg-black/40 dark:text-gray-200"
+        >{{ panelReport }}</pre>
+      </aside>
     </div>
 
     <p class="sr-only" aria-live="polite" aria-atomic="true">{{ liveSummary }}</p>
@@ -217,14 +279,15 @@ import UiDropZone from '@/components/ui/UiDropZone.vue'
 import { useNotifications } from '@/composables/useNotifications'
 import { usePdfTools } from '@/composables/usePdfTools'
 import {
-  docs, focusedUid, items, lastSeenResultId, nextUid, resetWorkbench,
-  viewerPage, type WorkbenchItem,
+  docs, focusedUid, history, items, lastSeenResultId, nextUid, pushHistory,
+  resetWorkbench, undoHistory, viewerPage, type WorkbenchItem,
 } from '@/composables/useWorkbench'
 import { apiPost, downloadBlob } from '@/lib/api'
 import { currentFileLimit, formatFileSize, validatePdfFile } from '@/lib/fileValidation'
 import { setPendingHandoff } from '@/lib/handoff'
 import { results } from '@/lib/results'
 import { TOOL_GROUPS, type ToolId } from '@/lib/toolCatalog'
+import { WORKBENCH_PANELS, type PanelSpec } from '@/lib/workbenchPanels'
 
 const emit = defineEmits<{ (event: 'back'): void; (event: 'switch-tool', id: ToolId): void }>()
 
@@ -313,8 +376,68 @@ const menuGroups = computed(() => TOOL_GROUPS.map((group) => ({
     label: tool.label,
     icon: tool.icon,
     reason: DISABLED_REASON[tool.id] ?? null,
+    panel: Boolean(WORKBENCH_PANELS[tool.id]),
   })),
 })))
+
+// ── Seitenpanels: Transformation direkt im Editor ────────────
+
+const activePanel = ref<PanelSpec | null>(null)
+const panelValues = ref<Record<string, string | number | boolean>>({})
+const panelBusy = ref(false)
+const panelReport = ref<string | null>(null)
+
+function openTool(id: ToolId): void {
+  menuOpen.value = false
+  const spec = WORKBENCH_PANELS[id]
+  if (!spec) { void handOffTo(id); return }
+  const values: Record<string, string | number | boolean> = {}
+  for (const field of spec.fields) values[field.name] = field.default ?? (field.type === 'checkbox' ? false : '')
+  panelValues.value = values
+  panelReport.value = null
+  activePanel.value = spec
+}
+
+async function applyPanel(): Promise<void> {
+  const spec = activePanel.value
+  if (!spec || !guardSubset(activeItems.value)) return
+  for (const field of spec.fields) {
+    if (field.required && !String(panelValues.value[field.name] ?? '').trim()) {
+      notifications.warning('Angabe fehlt', `Bitte „${field.label}" ausfüllen.`)
+      return
+    }
+  }
+  panelBusy.value = true
+  errorText.value = ''
+  try {
+    const composed = await requestCompose(activeItems.value)
+    const fd = new FormData()
+    fd.append('file', new File([await composed.blob()], 'werkbank.pdf', { type: 'application/pdf' }))
+    for (const field of spec.fields) fd.append(field.name, String(panelValues.value[field.name] ?? ''))
+    const response = await apiPost(spec.endpoint, fd, { timeout: COMPOSE_TIMEOUT })
+    if (spec.output === 'report') {
+      const data: unknown = await response.json()
+      panelReport.value = JSON.stringify(data, null, 2)
+      notifications.success(spec.title, 'Prüfung abgeschlossen — Bericht im Panel.')
+    } else {
+      const blob = await response.blob()
+      pushHistory(`vor „${spec.title}" (${items.value.length} Seiten)`)
+      resetWorkbench()
+      markResultsSeen()
+      await addFiles([new File([blob], `werkbank_${spec.id}.pdf`, { type: 'application/pdf' })])
+      notifications.success(spec.title, 'Angewendet — der neue Stand liegt in der Werkbank. Rückgängig über ↩.')
+    }
+  } catch (caught: unknown) {
+    errorText.value = notifications.errorFromUnknown(caught, `${spec.title} ist fehlgeschlagen.`)
+  } finally {
+    panelBusy.value = false
+  }
+}
+
+function undo(): void {
+  const label = undoHistory()
+  if (label) notifications.success('Rückgängig', `Stand ${label} wiederhergestellt.`)
+}
 
 // ── Rückweg: Ergebnisse aus Werkzeugen übernehmen ────────────
 

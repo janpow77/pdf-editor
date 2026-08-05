@@ -47,3 +47,37 @@ export function resetWorkbench(): void {
   focusedUid.value = null
   viewerPage.value = 1
 }
+
+// ── Verlauf (Rückgängig) ─────────────────────────────────────
+//
+// Vor jeder Panel-Transformation wird der Stand gesichert: die Doc-Objekte
+// per Referenz (Dateien sind unveränderlich), die Seitenfolge als Kopie.
+// Begrenzt, weil jede Stufe die Quelldateien im Speicher am Leben hält.
+
+interface WorkbenchSnapshot {
+  label: string
+  docs: WorkbenchDoc[]
+  items: WorkbenchItem[]
+}
+
+const HISTORY_LIMIT = 10
+export const history = ref<WorkbenchSnapshot[]>([])
+
+export function pushHistory(label: string): void {
+  history.value.push({
+    label,
+    docs: [...docs.value],
+    items: items.value.map((item) => ({ ...item })),
+  })
+  if (history.value.length > HISTORY_LIMIT) history.value.shift()
+}
+
+export function undoHistory(): string | null {
+  const snapshot = history.value.pop()
+  if (!snapshot) return null
+  docs.value = snapshot.docs
+  items.value = snapshot.items
+  focusedUid.value = snapshot.items[0]?.uid ?? null
+  viewerPage.value = 1
+  return snapshot.label
+}
