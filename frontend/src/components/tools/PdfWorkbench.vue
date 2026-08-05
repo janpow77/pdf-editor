@@ -48,21 +48,54 @@
         <UiButton v-if="selectedActiveItems.length" size="sm" variant="secondary" :disabled="busy" @click="composeAndDownload(selectedActiveItems, 'werkbank-auswahl.pdf')">
           Auswahl exportieren ({{ selectedActiveItems.length }})
         </UiButton>
-        <label class="flex items-center gap-1.5 text-sm font-medium text-gray-800 dark:text-gray-100">
-          <span class="sr-only">Ergebnis weiterbearbeiten in</span>
-          <select
-            v-model="targetToolId"
-            class="rounded-xl bg-white px-2.5 py-1.5 text-sm font-medium text-gray-950 ring-1 ring-gray-400/70 transition focus:ring-2 focus:ring-primary-500 dark:bg-gray-900 dark:text-white dark:ring-gray-600"
+        <div class="relative">
+          <UiButton size="sm" variant="secondary" :disabled="busy || !activeItems.length" aria-haspopup="menu" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
+            Werkzeuge ▾
+          </UiButton>
+          <!-- Vollständiges Werkzeugmenü: aktiver Stand wird komponiert und ans
+               gewählte Werkzeug übergeben; nicht übergabefähige Werkzeuge sind
+               ausgegraut und nennen den Grund. -->
+          <div
+            v-if="menuOpen"
+            class="absolute right-0 top-11 z-50 max-h-[70vh] w-80 overflow-y-auto rounded-2xl bg-white p-2 shadow-apple ring-1 ring-gray-300 dark:bg-gray-900 dark:ring-gray-600"
+            role="menu"
+            aria-label="Aktuellen Stand in einem Werkzeug weiterbearbeiten"
           >
-            <option value="" disabled>Weiterbearbeiten in …</option>
-            <optgroup v-for="group in handoffGroups" :key="group.title" :label="group.title">
-              <option v-for="tool in group.tools" :key="tool.id" :value="tool.id">{{ tool.label }}</option>
-            </optgroup>
-          </select>
-        </label>
-        <UiButton size="sm" variant="secondary" :disabled="busy || !targetToolId || !activeItems.length" @click="handOff">Übergeben →</UiButton>
+            <div v-for="group in menuGroups" :key="group.title" class="mb-1">
+              <p class="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ group.icon }} {{ group.title }}</p>
+              <button
+                v-for="tool in group.tools"
+                :key="tool.id"
+                type="button"
+                role="menuitem"
+                class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition"
+                :class="tool.reason
+                  ? 'cursor-not-allowed text-gray-400 dark:text-gray-500'
+                  : 'text-gray-800 hover:bg-primary-50 dark:text-gray-100 dark:hover:bg-primary-500/15'"
+                :disabled="Boolean(tool.reason)"
+                :title="tool.reason ?? `Aktuellen Stand in „${tool.label}“ weiterbearbeiten`"
+                @click="handOffTo(tool.id)"
+              >
+                <span aria-hidden="true">{{ tool.icon }}</span>
+                <span class="flex-1">{{ tool.label }}</span>
+                <span v-if="tool.reason" class="text-[10px]" aria-hidden="true">—</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </template>
     </header>
+
+    <!-- Rückweg: neues Ergebnis aus einem Werkzeug übernehmen -->
+    <div
+      v-if="newestResult"
+      class="flex flex-wrap items-center gap-2 border-b border-primary-200 bg-primary-50 px-3 py-2 text-sm dark:border-primary-800 dark:bg-primary-500/10"
+    >
+      <span class="font-medium text-primary-900 dark:text-primary-200">Neues Ergebnis: „{{ newestResult.name }}"</span>
+      <UiButton size="sm" variant="primary" :loading="loadingDocs > 0" @click="adoptResult(true)">Als neuen Stand laden</UiButton>
+      <UiButton size="sm" variant="secondary" :loading="loadingDocs > 0" @click="adoptResult(false)">Als Dokument hinzufügen</UiButton>
+      <UiButton size="sm" variant="ghost" @click="markResultsSeen">Ausblenden</UiButton>
+    </div>
 
     <!-- Rumpf -->
     <div class="flex min-h-0 flex-1">
@@ -183,28 +216,15 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiDropZone from '@/components/ui/UiDropZone.vue'
 import { useNotifications } from '@/composables/useNotifications'
 import { usePdfTools } from '@/composables/usePdfTools'
+import {
+  docs, focusedUid, items, lastSeenResultId, nextUid, resetWorkbench,
+  viewerPage, type WorkbenchItem,
+} from '@/composables/useWorkbench'
 import { apiPost, downloadBlob } from '@/lib/api'
 import { currentFileLimit, formatFileSize, validatePdfFile } from '@/lib/fileValidation'
 import { setPendingHandoff } from '@/lib/handoff'
+import { results } from '@/lib/results'
 import { TOOL_GROUPS, type ToolId } from '@/lib/toolCatalog'
-
-interface WorkbenchDoc {
-  uid: number
-  file: File
-  label: string
-  pages: number
-  thumbs: Record<string, string>
-}
-
-/** Ein Eintrag der Zielreihenfolge; `docUid === null` steht für eine Leerseite. */
-interface WorkbenchItem {
-  uid: number
-  docUid: number | null
-  page: number
-  rotation: number
-  removed: boolean
-  selected: boolean
-}
 
 const emit = defineEmits<{ (event: 'back'): void; (event: 'switch-tool', id: ToolId): void }>()
 
@@ -220,15 +240,8 @@ const isDragging = ref(false)
 const loadingDocs = ref(0)
 const busy = ref(false)
 const errorText = ref('')
-const docs = ref<WorkbenchDoc[]>([])
-const items = ref<WorkbenchItem[]>([])
 const dragIndex = ref(-1)
-const targetToolId = ref<ToolId | ''>('')
-let uidCounter = 0
-
-// ── Fokus + Großansicht ──────────────────────────────────────
-const focusedUid = ref<number | null>(null)
-const viewerPage = ref(1)
+const menuOpen = ref(false)
 
 const focusedItem = computed(() => items.value.find((item) => item.uid === focusedUid.value) ?? null)
 const focusedIndex = computed(() => items.value.findIndex((item) => item.uid === focusedUid.value))
@@ -256,7 +269,7 @@ function duplicateFocused(): void {
   const index = focusedIndex.value
   const item = focusedItem.value
   if (index < 0 || !item) return
-  items.value.splice(index + 1, 0, { ...item, uid: ++uidCounter, selected: false })
+  items.value.splice(index + 1, 0, { ...item, uid: nextUid(), selected: false })
 }
 
 // Hinter dem Vollbild-Arbeitsplatz darf die Seite nicht mitscrollen.
@@ -270,18 +283,59 @@ const liveSummary = computed(() =>
   `${items.value.length} Seiten in der Werkbank, ${selectedItems.value.length} ausgewählt, ${items.value.length - activeItems.value.length} entfernt.`)
 
 /**
- * Übergabefähig sind Werkzeuge, deren Eingabe die gemeinsame FileDrop-Fläche
- * mit einzelner PDF ist — nur dort holt FileDrop die Übergabe automatisch ab.
- * Der PDF-Vergleich nutzt FileDrop für Datei A und ist damit übergabefähig.
+ * Vollständiges Werkzeugmenü: Übergabefähig sind Werkzeuge, deren Eingabe die
+ * gemeinsame FileDrop-Fläche mit einzelner PDF ist — nur dort holt FileDrop
+ * die Übergabe automatisch ab. Alle übrigen erscheinen ausgegraut mit dem
+ * Grund, statt kommentarlos zu fehlen.
  */
-const HANDOFF_EXCLUDE = new Set<string>([
-  'workbench', 'merge', 'split', 'pageEditor', 'batch', 'pruefakte',
-  'aiAssistant', 'imagesToPdf', 'wordToPdf', 'wordMerge', 'wordDiff', 'wordMeta',
-  'excelMeta', 'officeToPdf',
-])
-const handoffGroups = computed(() => TOOL_GROUPS
-  .map((group) => ({ title: group.title, tools: group.tools.filter((tool) => !HANDOFF_EXCLUDE.has(tool.id)) }))
-  .filter((group) => group.tools.length > 0))
+const DISABLED_REASON: Record<string, string> = {
+  workbench: 'Die Werkbank ist bereits geöffnet.',
+  merge: 'Kann die Werkbank selbst — einfach weitere PDFs hinzufügen.',
+  split: 'Kann die Werkbank selbst — Seiten auswählen und „Auswahl exportieren".',
+  pageEditor: 'Kann die Werkbank selbst — Seiten ziehen, drehen, entfernen.',
+  batch: 'Arbeitet mit vielen Dateien — Ergebnis erst herunterladen.',
+  pruefakte: 'Arbeitet mit mehreren Akten-Dateien — Ergebnis erst herunterladen.',
+  aiAssistant: 'Nur mit konfigurierter lokaler KI verfügbar.',
+  imagesToPdf: 'Erwartet Bilder als Eingabe, keine PDF.',
+  wordToPdf: 'Erwartet eine Word-Datei als Eingabe.',
+  wordMerge: 'Erwartet Word-Dateien als Eingabe.',
+  wordDiff: 'Erwartet Word-Dateien als Eingabe.',
+  wordMeta: 'Erwartet eine Word-Datei als Eingabe.',
+  excelMeta: 'Erwartet eine Excel-Datei als Eingabe.',
+  officeToPdf: 'Erwartet eine Office-Datei als Eingabe.',
+}
+
+const menuGroups = computed(() => TOOL_GROUPS.map((group) => ({
+  title: group.title,
+  icon: group.icon,
+  tools: group.tools.map((tool) => ({
+    id: tool.id as ToolId,
+    label: tool.label,
+    icon: tool.icon,
+    reason: DISABLED_REASON[tool.id] ?? null,
+  })),
+})))
+
+// ── Rückweg: Ergebnisse aus Werkzeugen übernehmen ────────────
+
+const newestResult = computed(() => {
+  const fresh = results.value.filter((entry) =>
+    entry.id > lastSeenResultId.value
+    && (entry.blob.type === 'application/pdf' || entry.name.toLowerCase().endsWith('.pdf')))
+  return fresh.length ? fresh[fresh.length - 1] : null
+})
+
+function markResultsSeen(): void {
+  lastSeenResultId.value = results.value.reduce((max, entry) => Math.max(max, entry.id), lastSeenResultId.value)
+}
+
+async function adoptResult(replace: boolean): Promise<void> {
+  const entry = newestResult.value
+  if (!entry) return
+  if (replace) resetWorkbench()
+  markResultsSeen()
+  await addFiles([new File([entry.blob], entry.name, { type: 'application/pdf' })])
+}
 
 const DOC_BADGES = [
   'bg-blue-100 text-blue-800 dark:bg-blue-400/20 dark:text-blue-200',
@@ -369,10 +423,10 @@ async function addFiles(list: File[]): Promise<void> {
         notifications.warning('Seitenlimit erreicht', `Mit ${file.name} läge die Zusammenstellung über ${MAX_PAGES} Seiten.`)
         continue
       }
-      const docUid = ++uidCounter
+      const docUid = nextUid()
       docs.value.push({ uid: docUid, file, label: file.name, pages: pages.length, thumbs: data.thumbnails })
       const newItems = pages.map((page) => ({
-        uid: ++uidCounter, docUid, page, rotation: 0, removed: false, selected: false,
+        uid: nextUid(), docUid, page, rotation: 0, removed: false, selected: false,
       }))
       items.value.push(...newItems)
       if (focusedUid.value === null && newItems[0]) focusItem(newItems[0])
@@ -411,7 +465,7 @@ function duplicateSelection(): void {
   // Rückwärts, damit die Einfüge-Indizes durch frühere Duplikate nicht verrutschen.
   for (let index = items.value.length - 1; index >= 0; index -= 1) {
     const item = items.value[index]
-    if (item?.selected) items.value.splice(index + 1, 0, { ...item, uid: ++uidCounter, selected: false })
+    if (item?.selected) items.value.splice(index + 1, 0, { ...item, uid: nextUid(), selected: false })
   }
 }
 
@@ -419,7 +473,7 @@ function insertBlank(): void {
   if (items.value.length >= MAX_PAGES) return
   const lastSelected = items.value.map((item) => item.selected).lastIndexOf(true)
   const at = lastSelected >= 0 ? lastSelected + 1 : items.value.length
-  const blank: WorkbenchItem = { uid: ++uidCounter, docUid: null, page: 0, rotation: 0, removed: false, selected: false }
+  const blank: WorkbenchItem = { uid: nextUid(), docUid: null, page: 0, rotation: 0, removed: false, selected: false }
   items.value.splice(at, 0, blank)
   focusedUid.value = blank.uid
 }
@@ -484,15 +538,17 @@ async function composeAndDownload(subset: WorkbenchItem[], filename: string): Pr
   }
 }
 
-async function handOff(): Promise<void> {
-  const target = targetToolId.value
-  if (!target || !guardSubset(activeItems.value)) return
+async function handOffTo(target: ToolId): Promise<void> {
+  menuOpen.value = false
+  if (!guardSubset(activeItems.value)) return
   busy.value = true
   errorText.value = ''
   try {
     const response = await requestCompose(activeItems.value)
     const blob = await response.blob()
     setPendingHandoff(new File([blob], 'werkbank.pdf', { type: 'application/pdf' }))
+    // Ab jetzt zählt jedes weitere Ergebnis als „neu" für die Übernahme-Leiste.
+    markResultsSeen()
     emit('switch-tool', target)
   } catch (caught: unknown) {
     errorText.value = notifications.errorFromUnknown(caught, 'Die Übergabe ist fehlgeschlagen.')
