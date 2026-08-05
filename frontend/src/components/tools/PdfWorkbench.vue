@@ -32,22 +32,12 @@
       <span class="flex-1"></span>
 
       <template v-if="items.length">
-        <UiButton size="sm" variant="secondary" @click="selectAll(selectedItems.length < items.length)">
-          {{ selectedItems.length < items.length ? 'Alle auswählen' : 'Auswahl aufheben' }}
-        </UiButton>
-        <span class="text-xs font-medium tabular-nums text-gray-600 dark:text-gray-300">{{ selectedItems.length }} ausgewählt</span>
-        <UiButton size="sm" variant="secondary" :disabled="!selectedItems.length" title="Auswahl links drehen" @click="rotateSelection(-90)">↺</UiButton>
-        <UiButton size="sm" variant="secondary" :disabled="!selectedItems.length" title="Auswahl rechts drehen" @click="rotateSelection(90)">↻</UiButton>
-        <UiButton size="sm" variant="secondary" :disabled="!selectedItems.length" title="Auswahl duplizieren" @click="duplicateSelection">⧉</UiButton>
-        <UiButton size="sm" variant="secondary" title="Leerseite einfügen" @click="insertBlank">➕</UiButton>
-        <UiButton size="sm" variant="danger" :disabled="!selectedItems.length" title="Auswahl entfernen" @click="removeSelection(true)">✕</UiButton>
+        <UiButton v-if="!selectedItems.length" size="sm" variant="secondary" @click="selectAll(true)">Alle auswählen</UiButton>
+        <UiButton size="sm" variant="secondary" @click="insertBlank">➕ Leerseite</UiButton>
         <UiButton v-if="history.length" size="sm" variant="secondary" :title="`Rückgängig: ${history[history.length - 1]?.label}`" @click="undo">↩ Rückgängig</UiButton>
         <span class="mx-1 h-6 w-px bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>
         <UiButton size="sm" variant="primary" :loading="busy" :disabled="!activeItems.length" @click="composeAndDownload(activeItems, 'werkbank.pdf')">
           Ergebnis ({{ activeItems.length }} S.)
-        </UiButton>
-        <UiButton v-if="selectedActiveItems.length" size="sm" variant="secondary" :disabled="busy" @click="composeAndDownload(selectedActiveItems, 'werkbank-auswahl.pdf')">
-          Auswahl exportieren ({{ selectedActiveItems.length }})
         </UiButton>
         <div class="relative">
           <UiButton size="sm" variant="secondary" :disabled="busy || !activeItems.length" aria-haspopup="menu" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
@@ -87,6 +77,26 @@
         </div>
       </template>
     </header>
+
+    <!-- Kontextleiste: erscheint nur bei aktiver Auswahl, mit Klartext statt Symbolen -->
+    <div
+      v-if="selectedItems.length"
+      class="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-1.5 text-sm dark:border-gray-700 dark:bg-white/5"
+      aria-label="Aktionen für die Seitenauswahl"
+    >
+      <span class="font-semibold tabular-nums text-gray-800 dark:text-gray-100">{{ selectedItems.length }} ausgewählt</span>
+      <UiButton size="sm" variant="ghost" @click="selectAll(false)">Auswahl aufheben</UiButton>
+      <span class="mx-1 h-5 w-px bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>
+      <UiButton size="sm" variant="secondary" @click="rotateSelection(-90)">↺ Links drehen</UiButton>
+      <UiButton size="sm" variant="secondary" @click="rotateSelection(90)">↻ Rechts drehen</UiButton>
+      <UiButton size="sm" variant="secondary" @click="duplicateSelection">⧉ Duplizieren</UiButton>
+      <UiButton size="sm" variant="danger" @click="removeSelection(true)">✕ Entfernen</UiButton>
+      <UiButton size="sm" variant="secondary" @click="removeSelection(false)">⤺ Wiederherstellen</UiButton>
+      <span class="mx-1 h-5 w-px bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>
+      <UiButton v-if="selectedActiveItems.length" size="sm" variant="secondary" :disabled="busy" @click="composeAndDownload(selectedActiveItems, 'werkbank-auswahl.pdf')">
+        Auswahl als PDF exportieren ({{ selectedActiveItems.length }})
+      </UiButton>
+    </div>
 
     <!-- Rückweg: neues Ergebnis aus einem Werkzeug übernehmen -->
     <div
@@ -193,9 +203,24 @@
               <span class="font-semibold text-primary-900 dark:text-primary-200">Modus: {{ embeddedLabel }}</span>
               <span class="text-xs text-primary-800/80 dark:text-primary-200/80">arbeitet auf dem übergebenen Stand — Ergebnis erscheint oben zur Übernahme</span>
               <span class="flex-1"></span>
-              <UiButton size="sm" variant="secondary" @click="embeddedToolId = null">✕ Modus verlassen</UiButton>
+              <UiButton size="sm" variant="secondary" @click="closeEmbedded">✕ Modus verlassen</UiButton>
             </div>
-            <component :is="TOOL_COMPONENTS[embeddedToolId]" @back="embeddedToolId = null" />
+            <component :is="TOOL_COMPONENTS[embeddedToolId]" @back="closeEmbedded" />
+          </div>
+
+          <!-- Einheitliche Übernahme: beim Modus-Verlassen mit frischem Ergebnis
+               direkt fragen, statt nur die Leiste oben anzubieten -->
+          <div
+            v-else-if="adoptPromptLabel && newestResult"
+            class="mx-auto mt-8 max-w-lg space-y-3 rounded-2xl bg-white p-5 text-center shadow-apple ring-1 ring-primary-300 dark:bg-gray-900 dark:ring-primary-700"
+          >
+            <p class="font-semibold text-gray-950 dark:text-white">Ergebnis aus „{{ adoptPromptLabel }}“ liegt vor</p>
+            <p class="text-sm text-gray-600 dark:text-gray-300">„{{ newestResult.name }}“ — wie soll es weitergehen?</p>
+            <div class="flex flex-wrap justify-center gap-2">
+              <UiButton variant="primary" :loading="loadingDocs > 0" @click="adoptFromPrompt(true)">Als neuen Stand laden</UiButton>
+              <UiButton variant="secondary" :loading="loadingDocs > 0" @click="adoptFromPrompt(false)">Als Dokument hinzufügen</UiButton>
+              <UiButton variant="ghost" @click="adoptPromptLabel = null">Später (bleibt oben angeboten)</UiButton>
+            </div>
           </div>
 
           <div v-else-if="focusedItem" class="space-y-3">
@@ -497,6 +522,21 @@ function resizeByKey(which: 'sidebar' | 'panel', delta: number): void {
 // ── Eingebettete Editoren: Werkzeug läuft im Hauptbereich ────
 
 const embeddedToolId = ref<ToolId | null>(null)
+const adoptPromptLabel = ref<string | null>(null)
+
+/** Modus verlassen: liegt ein frisches Ergebnis vor, sofort die Übernahme
+ *  anbieten — gleiches Gefühl wie bei den Panels, die direkt ersetzen. */
+function closeEmbedded(): void {
+  const label = embeddedLabel.value
+  embeddedToolId.value = null
+  adoptPromptLabel.value = newestResult.value ? label : null
+}
+
+async function adoptFromPrompt(replace: boolean): Promise<void> {
+  adoptPromptLabel.value = null
+  await adoptResult(replace)
+}
+
 const embeddedLabel = computed(() => {
   if (!embeddedToolId.value) return ''
   for (const group of TOOL_GROUPS) {

@@ -49,6 +49,7 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import { useNotifications } from '@/composables/useNotifications'
 import { prefDefault } from '@/lib/auth'
 import { runJob } from '@/lib/jobs'
+import { addResult } from '@/lib/results'
 
 defineEmits<{ (event: 'back'): void }>()
 
@@ -100,8 +101,12 @@ async function runOcr(): Promise<void> {
     const disposition = response.headers.get('Content-Disposition')
     const headerName = disposition?.match(/filename="?([^";\n]+)"?/i)?.[1]
     const filename = safeFilename(headerName || currentFile.name.replace(/\.pdf$/i, '') + '_ocr.pdf')
-    const blobUrl = URL.createObjectURL(await response.blob())
+    const blob = await response.blob()
+    const blobUrl = URL.createObjectURL(blob)
     if (currentGeneration !== generation) { URL.revokeObjectURL(blobUrl); return }
+    // Auch in die zentrale Ergebnisliste — sonst kennt weder die
+    // Ergebnisleiste noch die Werkbank-Übernahme dieses OCR-Ergebnis.
+    addResult(filename, blob)
     result.value = { pagesProcessed, charsRecognized, blobUrl, filename }
     notifications.success('OCR abgeschlossen', `${pagesProcessed} Seiten wurden verarbeitet.`)
   } catch (caught: unknown) {
