@@ -653,8 +653,8 @@ eigenes Repo ist ein `git mv`.
 | Cookies/Tracking | Keine Analyse-Cookies, kein Tracking |
 
 Rechtliches: Impressum (§ 5 DDG) und Datenschutzerklärung sind als Seiten angelegt;
-die Anbieterdaten sind vor Veröffentlichung einzutragen (TODO-Marker in
-`ImpressumView.vue` / `DatenschutzView.vue`). Der Konto-Abschnitt der
+die Anbieterdaten sind inzwischen eingetragen (`ImpressumView.vue` /
+`DatenschutzView.vue`, Stand 2026-08). Der Konto-Abschnitt der
 Datenschutzerklärung ist umgesetzt (Datenminimierung, Art. 6 Abs. 1 lit. b,
 Selbstlöschung nach Art. 17).
 
@@ -675,7 +675,7 @@ Analyse — betreffen den **visuellen Editor**, nicht die in Phase 1 übernommen
 
 1. `PdfEditor.vue` umgeht an ~9 Stellen das Composable und ruft `fetch('/api/pdf-editor/…')` roh auf (Befund P1-10).
 2. `usePdfEditor.ts` ruft `POST /api/pdf-editor/export` auf — der Endpoint existiert nicht (toter Pfad). Im Scaffold wurde das Composable deshalb gar nicht erst übernommen; OCR/Compare rufen `apiPost` direkt.
-3. Text-Ersetzen-Bug (Replace), fehlende Tests für echte Schwärzung (Redaction), fehlende Passwort-/Signatur-/PDF-A-Erkennung.
+3. Text-Ersetzen-Bug (Replace), fehlende Tests für echte Schwärzung (Redaction), fehlende Passwort-/Signatur-/PDF-A-Erkennung. — *Replace-Bug 2026-08-05 behoben (Ersatztext wird jetzt getrennt von der Redaktion geschrieben statt bei Platzmangel stillschweigend zu entfallen; zugleich `match_case` erstmals wirksam) und mit Tests belegt (`test_pdf_editor_werkzeuge.py`).*
 4. OCR/Compare synchron — für große Dateien asynchron machen (SSE oder Polling).
 
 ## 8. Deployment
@@ -837,7 +837,8 @@ Handgriffe:
 | 1.6d | Modulkatalog-Ausbau: Office→PDF, Exporte (MD/HTML/JSON/CSV), Bereinigen, Rechte, Signaturprüfung, TSA, Prüfakte, Qualitätsprüfung, lokale KI, Rolodex-Dashboard | ✅ |
 | 1.6e | Formular-Designer (Felder aufziehen, Prüflauf, Layout lokal speichern + importieren, Übernahme vorhandener Felder) | ✅ |
 | 1.6f | Endausbau: Formular-Berechnungen/Format/Wertebereich, CSV-Export + Serienbefüllung, Stapelsignatur, Umbenennen, Vertrauensanker, Bild ersetzen, KI-Modi | ✅ |
-| 1.7 | Anbieterdaten eintragen, SMTP-Zugang konfigurieren, Tunnel anlegen, Erst-Deploy | offen |
+| 1.6g | Werkbank (eigene Rubrik „PDF-Editor": Multi-PDF-Seitenkomposition mit Mischen/Schneiden/Drehen/Leerseiten, Übergabe an alle Einzelwerkzeuge); Event-Loop-Auslagerung flächendeckend; Suchen/Ersetzen-Defekte behoben; 34 nachgezogene Endpunkt-Tests | ✅ |
+| 1.7 | Anbieterdaten eintragen ✅, Erst-Deploy ✅ (produktiv auf pdf.flowaudit.de, 2026-08-05); SMTP-Zugang und Tunnel gemäß BETRIEB.md | 🟡 |
 | 1.8 | Repo-Extraktion + CI (ghcr-Images, Smoke-Test-Gate) | offen |
 | 2 | Plattform-Entscheidung: Zusammenarbeit/DMS/Cloud nur als getrenntes Opt-in-Modul mit Dokumentablage — oder dem Ökosystem überlassen und die App als dessen Verarbeitungs-API positionieren (Empfehlung) | offen |
 | 2a | Anmeldung mit der Windows-Kennung (SSO) — Entscheidungsvorlage in Abschnitt 8a, Umsetzung nach Klärung mit der IT | offen (bewusst) |

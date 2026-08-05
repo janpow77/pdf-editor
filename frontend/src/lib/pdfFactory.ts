@@ -8,7 +8,7 @@
  * später Kommentare oder Inhalte mit Umlauten beziehungsweise Unicode ergänzt
  * werden. Das Dokument verbleibt vollständig im Arbeitsspeicher des Browsers.
  */
-export function createBlankA4Pdf(): Blob {
+export function createBlankA4Pdf(orientation: 'hoch' | 'quer' = 'hoch'): Blob {
   const encoder = new TextEncoder()
   const header = '%PDF-1.4\n% Blank A4 form generated locally\n'
 
@@ -18,11 +18,13 @@ export function createBlankA4Pdf(): Blob {
   const emptyStream = ''
   const emptyStreamLength = encoder.encode(emptyStream).byteLength
 
+  // DIN A4 im PDF-Punktmaß: 210 × 297 mm entsprechen rund 595,28 × 841,89 pt.
+  const [width, height] = orientation === 'hoch' ? ['595.28', '841.89'] : ['841.89', '595.28']
+
   const objects = [
     '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
     '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
-    // DIN A4 im PDF-Punktmaß: 210 × 297 mm entsprechen rund 595,28 × 841,89 pt.
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << >> /Contents 4 0 R >>\nendobj\n',
+    `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << >> /Contents 4 0 R >>\nendobj\n`,
     `4 0 obj\n<< /Length ${emptyStreamLength} >>\nstream\n${emptyStream}endstream\nendobj\n`,
   ]
 

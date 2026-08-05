@@ -32,9 +32,8 @@ Die PDF-Werkzeug-Anwendung wurde auf eine modulare, Apple-nahe Oberfläche mit z
 ### Apple-nahes Designsystem
 
 - `frontend/src/style.css`: Systemschrift, Glasmaterialien, weiche Radien, mehrstufige Schatten, Fokusindikatoren, Inline-Fehler und Reduced-Motion-Regeln.
-- `frontend/src/apple-utilities.css`: fein abgestufte Material- und Disabled-Werte außerhalb der Tailwind-Standardskala.
-- `frontend/tailwind.config.js`: klassenbasierter Dark Mode sowie wiederverwendbare Apple-Schattenstufen.
-- `frontend/src/components/FileDrop.vue`: gemeinsame Uploadfläche mit Inline-Validierung und gleichwertigem Blank-Canvas-Einstieg im Formular-Designer.
+- `frontend/tailwind.config.js`: klassenbasierter Dark Mode, wiederverwendbare Apple-Schattenstufen sowie die fein abgestuften Material-Deckkraftwerte (15/35/45/65/82/85) außerhalb der Tailwind-Standardskala. (Eine früher hier genannte `apple-utilities.css` wurde nie angelegt — die Werte liegen vollständig in der Tailwind-Konfiguration.)
+- `frontend/src/components/FileDrop.vue`: gemeinsame Uploadfläche mit Inline-Validierung; übernimmt zusätzlich per Handoff übergebene Ergebnisse anderer Werkzeuge. Der Leerstart des Formular-Designers liegt im Designer selbst (A4 hoch/quer, eine Quelle: `lib/pdfFactory.ts`).
 
 ## PDF-State und Vorschauen
 
@@ -94,7 +93,6 @@ Der Formular-Designer erhält über die gemeinsame Upload-Komponente eine zweite
 
 - `FRONTEND_REFACTORING.md`
 - `frontend/src/App.vue`
-- `frontend/src/apple-utilities.css`
 - `frontend/src/components/AppFooter.vue`
 - `frontend/src/components/FileDrop.vue`
 - `frontend/src/components/NotificationHost.vue`

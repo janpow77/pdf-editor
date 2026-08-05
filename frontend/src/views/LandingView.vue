@@ -62,11 +62,23 @@
     <ResultsPanel v-if="!isWorkspaceActive" class="mb-8" />
     <!-- Der Schlüssel verwirft beim globalen Schließen auch lokalen Tool-State. -->
     <ToolGrid :key="workspaceRevision" :search-query="searchQuery" />
+
+    <!-- Hinweis- und Offenlegungskästen stehen unter den Werkzeugen: oben
+         sollen die Kacheln sofort sichtbar sein, die Erklärungen stören dort.
+         Die AGPL-Offenlegung bleibt bewusst auf der Startseite und nicht nur
+         im Fußbereich — eine Angabe, die man erst suchen muss, erfüllt die
+         Lizenzpflicht nur formal (KONZEPT, Kriterium F30). -->
+    <div v-if="!isWorkspaceActive" class="mx-auto mt-12 max-w-4xl space-y-4">
+      <NoticeBanner />
+      <OpenSourceNotice />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import NoticeBanner from '@/components/NoticeBanner.vue'
+import OpenSourceNotice from '@/components/OpenSourceNotice.vue'
 import ResultsPanel from '@/components/ResultsPanel.vue'
 import ToolGrid from '@/components/ToolGrid.vue'
 import { useWorkspace } from '@/composables/useWorkspace'

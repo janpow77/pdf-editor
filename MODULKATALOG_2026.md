@@ -101,7 +101,7 @@ als eigenes Modul mit eigener Datenschutz-Basis — großer Schritt Richtung
 
 ## 12. Automatisierung — 🟡 API ja, Orchestrierung nein
 
-✅ Vollständige REST-API (alle 80+ Endpoints, OpenAPI unter /docs) — CLI/PowerShell/Python-Anbindung damit trivial
+✅ Vollständige REST-API (über 100 Endpoints, OpenAPI unter /docs) — CLI/PowerShell/Python-Anbindung damit trivial
 ❌ Workflow-Designer, Webhooks, Zeitpläne, Makros (⛔ Zeitpläne/Webhooks brauchen Persistenz; Workflow-Designer existiert im Ökosystem bereits: FlowStat-Pipeline-Builder — Integration statt Neubau).
 
 ## 13. Dokumentenmanagement — ⛔

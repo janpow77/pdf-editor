@@ -162,6 +162,7 @@ import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import WorkSessionBar from '@/components/WorkSessionBar.vue'
 import { apiPost, downloadBlob } from '@/lib/api'
+import { createBlankA4Pdf } from '@/lib/pdfFactory'
 import { readStoredValue, removeStoredValue, writeStoredValue } from '@/lib/safeStorage'
 
 const PdfViewer = defineAsyncComponent(() => import('@/components/PdfViewer.vue'))
@@ -262,31 +263,14 @@ watch(file, (currentFile) => { if (ignoreNextFileReset) { ignoreNextFileReset = 
 watch(canvasBox, (element) => { resizeObserver?.disconnect(); resizeObserver = null; if (!element || typeof ResizeObserver === 'undefined') return; resizeObserver = new ResizeObserver(measure); resizeObserver.observe(element); void nextTick(measure) })
 
 function clearEditorState(): void { fields.value = []; selectedId.value = null; page.value = 1; pageCount.value = 1; error.value = null; summary.value = ''; restoredHint.value = ''; checkResult.value = null; draft.value = null; drawingPointer = null }
-// Ohne Vorlage: minimales Einseiten-A4 als Text zusammensetzen (xref-Offsets
-// werden mitgezählt) — braucht weder Bibliothek noch Server-Aufruf. Der
-// watch(file)-Pfad übernimmt Generationszähler und Editor-Reset; ein fremdes
-// Alt-Layout wird nicht geladen, weil restoreMatchingLayout auf den
-// Dokumentnamen prüft.
-function makeBlankPdf(orientation: 'hoch' | 'quer'): Blob {
-  const [w, h] = orientation === 'hoch' ? [595, 842] : [842, 595]
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Resources << >> >>`,
-  ]
-  let body = '%PDF-1.4\n'
-  const offsets: number[] = []
-  objects.forEach((obj, i) => { offsets.push(body.length); body += `${i + 1} 0 obj\n${obj}\nendobj\n` })
-  const xrefStart = body.length
-  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
-  for (const off of offsets) body += `${String(off).padStart(10, '0')} 00000 n \n`
-  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`
-  return new Blob([body], { type: 'application/pdf' })
-}
-
+// Ohne Vorlage: das leere A4 kommt aus lib/pdfFactory (eine Quelle für alle
+// Leerstarts, bytegenaue xref-Offsets). „Von Grund auf" heißt bewusst ohne
+// automatisch restauriertes Alt-Layout; der watch(file)-Pfad übernimmt
+// Generationszähler und Editor-Reset.
 function startBlank(orientation: 'hoch' | 'quer'): void {
+  removeStoredValue(LAYOUT_KEY)
   const name = orientation === 'hoch' ? 'Leeres-Formular-A4.pdf' : 'Leeres-Formular-A4-quer.pdf'
-  file.value = new File([makeBlankPdf(orientation)], name, { type: 'application/pdf' })
+  file.value = new File([createBlankA4Pdf(orientation)], name, { type: 'application/pdf' })
 }
 
 function restoreMatchingLayout(): void { const stored = readStoredValue(LAYOUT_KEY); if (!stored || new TextEncoder().encode(stored).byteLength > MAX_LAYOUT_BYTES) return; try { const parsed = JSON.parse(stored) as { document?: string; fields?: unknown[] }; if (parsed.document !== workingName.value || !Array.isArray(parsed.fields)) return; const count = loadFieldArray(parsed.fields, false); if (count) restoredHint.value = `Zuletzt gespeichertes Layout mit ${count} Feld(ern) wiederhergestellt.` } catch { removeStoredValue(LAYOUT_KEY) } }
