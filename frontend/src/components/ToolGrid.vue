@@ -88,17 +88,22 @@
 
         <div
           ref="rolodexEl"
-          class="relative h-[22rem] overflow-hidden rounded-[1.75rem] bg-white/45 shadow-inner ring-1 ring-black/5 outline-none backdrop-blur-xl dark:bg-white/[0.035] dark:ring-white/10"
-          style="perspective: 1400px"
+          class="relative h-[22rem] select-none overflow-hidden rounded-[1.75rem] bg-white/45 shadow-inner ring-1 ring-black/5 outline-none backdrop-blur-xl dark:bg-white/[0.035] dark:ring-white/10"
+          style="perspective: 1400px; touch-action: pan-y"
           tabindex="0"
           role="region"
-          :aria-label="`Werkzeug-Rolodex ${activeGroup?.title ?? ''}. Pfeiltasten zum Blättern, Pos1 und Ende zum Springen, Eingabetaste zum Öffnen.`"
+          :aria-label="`Werkzeug-Rolodex ${activeGroup?.title ?? ''}. Pfeiltasten zum Blättern, Pos1 und Ende zum Springen, Eingabetaste zum Öffnen. Karten lassen sich auch mit Maus oder Finger ziehen.`"
           @keydown.left.prevent="step(-1, true)"
           @keydown.right.prevent="step(1, true)"
           @keydown.home.prevent="selectRolodexIndex(0, true)"
           @keydown.end.prevent="selectRolodexIndex(Math.max(0, groupTools.length - 1), true)"
           @keydown.enter.prevent="openActiveRolodexTool"
+          @keydown.space.prevent="openActiveRolodexTool"
           @wheel.prevent="onWheel"
+          @pointerdown="onPointerDown"
+          @pointermove="onPointerMove"
+          @pointerup="onPointerEnd"
+          @pointercancel="onPointerEnd"
         >
           <button
             v-for="(tool, index) in groupTools"
@@ -106,14 +111,14 @@
             type="button"
             :data-tool-id="tool.id"
             :data-rolodex-index="index"
-            class="absolute left-1/2 top-1/2 flex h-64 w-60 flex-col rounded-[1.5rem] bg-white p-5 text-left shadow-apple ring-1 ring-gray-300 transition-all duration-300 ease-out will-change-transform focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-900 dark:ring-gray-600"
+            class="absolute left-1/2 top-1/2 flex h-64 w-60 flex-col rounded-[1.5rem] bg-white p-5 text-left shadow-apple ring-1 ring-gray-300 will-change-transform focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-900 dark:ring-gray-600"
             :class="isLocked(tool.id) ? 'grayscale' : ''"
             :style="cardStyle(index)"
             :tabindex="index === rolodexIndex ? 0 : -1"
             :aria-pressed="index === rolodexIndex"
             :aria-label="`${tool.label}: ${isLocked(tool.id) ? LOCK_HINT : tool.description}`"
             @focus="selectRolodexIndex(index)"
-            @click="index === rolodexIndex ? openTool(tool.id) : selectRolodexIndex(index, true)"
+            @click="onCardClick(tool, index, $event)"
           >
             <span class="grid h-14 w-14 place-items-center rounded-2xl text-3xl shadow-sm" :class="groupIconClass(activeGroupKey)" aria-hidden="true">{{ tool.icon }}</span>
             <span class="mt-5 text-lg font-semibold tracking-[-0.025em] text-gray-950 dark:text-white">{{ tool.label }}</span>
@@ -142,7 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import { useWorkspace } from '@/composables/useWorkspace'
@@ -167,6 +172,63 @@ const viewMode = ref<ViewMode>(readStoredValue(VIEW_KEY) === 'rolodex' ? 'rolode
 const activeGroupKey = ref(readStoredValue(GROUP_KEY) ?? 'bearbeiten')
 const rolodexIndex = ref(0)
 const rolodexEl = ref<HTMLElement | null>(null)
+
+/*
+ * Rolodex-Bewegung: statt CSS-Übergängen zieht requestAnimationFrame eine
+ * kontinuierliche Position exponentiell ans Ziel. Transform und Stapel-
+ * reihenfolge entstehen jede Frame aus derselben Gleitkommazahl — Karten
+ * kreuzen sich dadurch exakt im Überlappungspunkt statt per z-index zu
+ * springen, und Zielwechsel mitten in der Bewegung bleiben weich. Tiefe
+ * entsteht bewusst ohne opacity (BITV-Kontrast, siehe KONZEPT.md), und bei
+ * prefers-reduced-motion wird hart gesprungen statt animiert.
+ */
+const CARD_SPACING = 178
+const renderPos = ref(0)
+let targetPos = 0
+let rafId = 0
+let lastFrameAt = 0
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function stopAnimation(): void {
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = 0
+  }
+}
+
+function animateFrame(now: number): void {
+  rafId = 0
+  const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameAt) / 1000))
+  lastFrameAt = now
+  const diff = targetPos - renderPos.value
+  if (Math.abs(diff) < 0.001) {
+    renderPos.value = targetPos
+    return
+  }
+  renderPos.value += diff * (1 - Math.exp(-14 * dt))
+  rafId = requestAnimationFrame(animateFrame)
+}
+
+function moveTowardsTarget(): void {
+  if (prefersReducedMotion()) {
+    stopAnimation()
+    renderPos.value = targetPos
+    return
+  }
+  if (!rafId) {
+    lastFrameAt = performance.now()
+    rafId = requestAnimationFrame(animateFrame)
+  }
+}
+
+function jumpTo(index: number): void {
+  stopAnimation()
+  targetPos = index
+  renderPos.value = index
+}
 
 const activeEntry = computed(() => findTool(activeTool.value))
 const normalizedSearch = computed(() => props.searchQuery.trim().toLocaleLowerCase('de'))
@@ -222,25 +284,32 @@ async function closeTool(): Promise<void> {
 function setViewMode(mode: ViewMode): void {
   viewMode.value = mode
   writeStoredValue(VIEW_KEY, mode)
-  if (mode === 'rolodex') rolodexIndex.value = Math.min(rolodexIndex.value, Math.max(0, groupTools.value.length - 1))
+  if (mode === 'rolodex') {
+    rolodexIndex.value = Math.min(rolodexIndex.value, Math.max(0, groupTools.value.length - 1))
+    jumpTo(rolodexIndex.value)
+  }
 }
 
 function setGroup(key: string): void {
   activeGroupKey.value = key
   writeStoredValue(GROUP_KEY, key)
   rolodexIndex.value = 0
+  jumpTo(0)
   rolodexEl.value?.focus()
 }
 
 async function selectRolodexIndex(index: number, focus = false): Promise<void> {
-  rolodexIndex.value = Math.max(0, Math.min(index, Math.max(0, groupTools.value.length - 1)))
+  const clamped = Math.max(0, Math.min(index, Math.max(0, groupTools.value.length - 1)))
+  rolodexIndex.value = clamped
+  targetPos = clamped
+  moveTowardsTarget()
   if (!focus) return
   await nextTick()
-  rolodexEl.value?.querySelector<HTMLButtonElement>(`[data-rolodex-index="${rolodexIndex.value}"]`)?.focus()
+  rolodexEl.value?.querySelector<HTMLButtonElement>(`[data-rolodex-index="${clamped}"]`)?.focus({ preventScroll: true })
 }
 
-function step(direction: number, focus = false): void {
-  void selectRolodexIndex(rolodexIndex.value + direction, focus)
+function step(count: number, focus = false): void {
+  void selectRolodexIndex(rolodexIndex.value + count, focus)
 }
 
 function openActiveRolodexTool(): void {
@@ -248,26 +317,128 @@ function openActiveRolodexTool(): void {
   if (tool) openTool(tool.id)
 }
 
-let wheelLock = 0
+/*
+ * Rad und Trackpad: Pixelbeträge werden aufsummiert, alle 110 px kippt eine
+ * Karte. Ausrollende Trackpad-Gesten schieben so proportional weiter, statt
+ * — wie zuvor zeitgetaktet — noch sekundenlang nachzulaufen; nach 90 ms ohne
+ * Ereignis verfällt der Rest, damit die nächste Geste frisch ansetzt.
+ */
+let wheelAccum = 0
+let wheelResetAt = 0
 function onWheel(event: WheelEvent): void {
-  const now = Date.now()
-  if (now - wheelLock < 160) return
-  wheelLock = now
-  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
-  if (delta > 0) step(1)
-  else if (delta < 0) step(-1)
+  const now = performance.now()
+  if (now > wheelResetAt) wheelAccum = 0
+  wheelResetAt = now + 90
+  const raw = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+  wheelAccum += raw * (event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? 400 : 1)
+  const steps = Math.trunc(wheelAccum / 110)
+  if (steps !== 0) {
+    wheelAccum -= steps * 110
+    step(steps)
+  }
+}
+
+/*
+ * Ziehen mit Maus oder Finger: erst ab 7 px überwiegend horizontaler Bewegung
+ * übernimmt das Rolodex (vertikal bleibt Seiten-Scrollen, touch-action pan-y).
+ * Beim Loslassen rastet die per Geschwindigkeit fortgeschriebene Position auf
+ * der nächsten Karte ein.
+ */
+interface RolodexDrag {
+  id: number
+  startX: number
+  startY: number
+  startPos: number
+  engaged: boolean
+  lastX: number
+  lastT: number
+  velocity: number
+}
+let drag: RolodexDrag | null = null
+let pressIndex: number | null = null
+let dragConsumedClick = false
+
+function onPointerDown(event: PointerEvent): void {
+  if (event.pointerType === 'mouse' && event.button !== 0) return
+  dragConsumedClick = false
+  pressIndex = rolodexIndex.value
+  drag = {
+    id: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    startPos: renderPos.value,
+    engaged: false,
+    lastX: event.clientX,
+    lastT: performance.now(),
+    velocity: 0,
+  }
+}
+
+function onPointerMove(event: PointerEvent): void {
+  if (!drag || event.pointerId !== drag.id) return
+  if (event.pointerType === 'mouse' && event.buttons === 0) {
+    drag = null
+    return
+  }
+  const dx = event.clientX - drag.startX
+  const dy = event.clientY - drag.startY
+  if (!drag.engaged) {
+    if (Math.abs(dx) < 7 || Math.abs(dx) < Math.abs(dy)) return
+    drag.engaged = true
+    dragConsumedClick = true
+    drag.startPos = renderPos.value + dx / CARD_SPACING
+    stopAnimation()
+    rolodexEl.value?.setPointerCapture(event.pointerId)
+  }
+  const now = performance.now()
+  const dtMs = now - drag.lastT
+  if (dtMs > 0) {
+    const instant = ((drag.lastX - event.clientX) / CARD_SPACING) / (dtMs / 1000)
+    drag.velocity = drag.velocity * 0.75 + instant * 0.25
+  }
+  drag.lastX = event.clientX
+  drag.lastT = now
+  const max = Math.max(0, groupTools.value.length - 1)
+  let pos = drag.startPos - dx / CARD_SPACING
+  if (pos < 0) pos *= 0.35
+  else if (pos > max) pos = max + (pos - max) * 0.35
+  renderPos.value = pos
+}
+
+function onPointerEnd(event: PointerEvent): void {
+  if (!drag || event.pointerId !== drag.id) return
+  const engaged = drag.engaged
+  const projected = renderPos.value + drag.velocity * 0.14
+  drag = null
+  if (engaged) void selectRolodexIndex(Math.round(projected))
+}
+
+function onCardClick(tool: CatalogTool, index: number, event: MouseEvent): void {
+  if (event.detail === 0) {
+    if (index === rolodexIndex.value) openTool(tool.id)
+    else void selectRolodexIndex(index, true)
+    return
+  }
+  if (dragConsumedClick) {
+    dragConsumedClick = false
+    return
+  }
+  const wasCentered = index === (pressIndex ?? rolodexIndex.value)
+  pressIndex = null
+  if (wasCentered) openTool(tool.id)
+  else void selectRolodexIndex(index, true)
 }
 
 function cardStyle(index: number): Record<string, string> {
-  const offset = index - rolodexIndex.value
+  const offset = index - renderPos.value
   const distance = Math.abs(offset)
   const rotateY = Math.max(-52, Math.min(52, offset * -31))
   const translateZ = -distance * 105
-  const scale = offset === 0 ? 1 : Math.max(0.76, 1 - distance * 0.08)
+  const scale = Math.max(0.76, 1 - distance * 0.08)
   return {
-    transform: `translate(-50%, -50%) translateX(${offset * 178}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`,
-    zIndex: String(100 - distance),
-    cursor: offset === 0 ? 'pointer' : 'ew-resize',
+    transform: `translate(-50%, -50%) translateX(${offset * CARD_SPACING}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`,
+    zIndex: String(1000 - Math.round(distance * 20)),
+    cursor: distance < 0.5 ? 'pointer' : 'ew-resize',
   }
 }
 
@@ -332,6 +503,14 @@ const toolComponents = {
   excelMeta: defineAsyncComponent(() => import('@/components/tools/ExcelMetadata.vue')),
 } satisfies Record<ToolId, Component>
 
+watch(() => groupTools.value.length, () => {
+  const max = Math.max(0, groupTools.value.length - 1)
+  if (rolodexIndex.value > max || renderPos.value > max) {
+    rolodexIndex.value = Math.min(rolodexIndex.value, max)
+    jumpTo(rolodexIndex.value)
+  }
+})
+
 onMounted(async () => {
   try {
     const health = await getHealth()
@@ -344,5 +523,8 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(closeWorkspace)
+onBeforeUnmount(() => {
+  stopAnimation()
+  closeWorkspace()
+})
 </script>

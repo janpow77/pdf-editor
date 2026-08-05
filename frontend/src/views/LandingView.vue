@@ -9,7 +9,8 @@
       Bildschirm dem Dokument und den Bedienelementen gehört.
     -->
     <header v-if="!isWorkspaceActive" class="mx-auto mb-10 max-w-4xl text-center sm:mb-12">
-      <p class="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-primary-600 dark:text-primary-400">
+      <!-- primary-700 statt 600: 14-px-Text auf #f5f5f7 braucht 4,5:1 (BITV), 600 erreicht nur 4,31. -->
+      <p class="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-primary-700 dark:text-primary-400">
         Lokal. Schnell. Vertraulich.
       </p>
       <h1 class="text-balance text-4xl font-semibold tracking-[-0.045em] text-gray-950 sm:text-6xl dark:text-white">
