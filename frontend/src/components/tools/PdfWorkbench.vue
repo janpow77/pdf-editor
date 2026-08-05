@@ -173,7 +173,18 @@
         </div>
 
         <template v-else>
-          <div v-if="focusedItem" class="space-y-3">
+          <!-- Eingebettetes Werkzeug: läuft im Hauptbereich, die Werkbank bleibt -->
+          <div v-if="embeddedToolId" class="space-y-3">
+            <div class="flex flex-wrap items-center gap-2 rounded-xl bg-primary-50 px-3 py-2 text-sm dark:bg-primary-500/10">
+              <span class="font-semibold text-primary-900 dark:text-primary-200">Modus: {{ embeddedLabel }}</span>
+              <span class="text-xs text-primary-800/80 dark:text-primary-200/80">arbeitet auf dem übergebenen Stand — Ergebnis erscheint oben zur Übernahme</span>
+              <span class="flex-1"></span>
+              <UiButton size="sm" variant="secondary" @click="embeddedToolId = null">✕ Modus verlassen</UiButton>
+            </div>
+            <component :is="TOOL_COMPONENTS[embeddedToolId]" @back="embeddedToolId = null" />
+          </div>
+
+          <div v-else-if="focusedItem" class="space-y-3">
             <!-- Schnellaktionen für die fokussierte Seite -->
             <div class="flex flex-wrap items-center gap-2 text-sm">
               <span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="badgeClass(focusedItem)">{{ badgeText(focusedItem) }}</span>
@@ -287,9 +298,10 @@ import { currentFileLimit, formatFileSize, validatePdfFile } from '@/lib/fileVal
 import { setPendingHandoff } from '@/lib/handoff'
 import { results } from '@/lib/results'
 import { TOOL_GROUPS, type ToolId } from '@/lib/toolCatalog'
+import { TOOL_COMPONENTS } from '@/lib/toolComponents'
 import { WORKBENCH_PANELS, type PanelSpec } from '@/lib/workbenchPanels'
 
-const emit = defineEmits<{ (event: 'back'): void; (event: 'switch-tool', id: ToolId): void }>()
+defineEmits<{ (event: 'back'): void }>()
 
 const MAX_DOCS = 50
 const MAX_PAGES = 2000
@@ -390,12 +402,45 @@ const panelReport = ref<string | null>(null)
 function openTool(id: ToolId): void {
   menuOpen.value = false
   const spec = WORKBENCH_PANELS[id]
-  if (!spec) { void handOffTo(id); return }
+  if (!spec) { void embedTool(id); return }
+  embeddedToolId.value = null
   const values: Record<string, string | number | boolean> = {}
   for (const field of spec.fields) values[field.name] = field.default ?? (field.type === 'checkbox' ? false : '')
   panelValues.value = values
   panelReport.value = null
   activePanel.value = spec
+}
+
+// ── Eingebettete Editoren: Werkzeug läuft im Hauptbereich ────
+
+const embeddedToolId = ref<ToolId | null>(null)
+const embeddedLabel = computed(() => {
+  if (!embeddedToolId.value) return ''
+  for (const group of TOOL_GROUPS) {
+    const tool = group.tools.find((entry) => entry.id === embeddedToolId.value)
+    if (tool) return tool.label
+  }
+  return embeddedToolId.value
+})
+
+/** Aktuellen Stand komponieren, in die Übergabe legen und das Werkzeug im
+ *  Hauptbereich einbetten — statt die Werkbank zu verlassen. */
+async function embedTool(target: ToolId): Promise<void> {
+  if (!guardSubset(activeItems.value)) return
+  busy.value = true
+  errorText.value = ''
+  try {
+    const response = await requestCompose(activeItems.value)
+    const blob = await response.blob()
+    setPendingHandoff(new File([blob], 'werkbank.pdf', { type: 'application/pdf' }))
+    markResultsSeen()
+    activePanel.value = null
+    embeddedToolId.value = target
+  } catch (caught: unknown) {
+    errorText.value = notifications.errorFromUnknown(caught, 'Die Übergabe ist fehlgeschlagen.')
+  } finally {
+    busy.value = false
+  }
 }
 
 async function applyPanel(): Promise<void> {
@@ -661,22 +706,4 @@ async function composeAndDownload(subset: WorkbenchItem[], filename: string): Pr
   }
 }
 
-async function handOffTo(target: ToolId): Promise<void> {
-  menuOpen.value = false
-  if (!guardSubset(activeItems.value)) return
-  busy.value = true
-  errorText.value = ''
-  try {
-    const response = await requestCompose(activeItems.value)
-    const blob = await response.blob()
-    setPendingHandoff(new File([blob], 'werkbank.pdf', { type: 'application/pdf' }))
-    // Ab jetzt zählt jedes weitere Ergebnis als „neu" für die Übernahme-Leiste.
-    markResultsSeen()
-    emit('switch-tool', target)
-  } catch (caught: unknown) {
-    errorText.value = notifications.errorFromUnknown(caught, 'Die Übergabe ist fehlgeschlagen.')
-  } finally {
-    busy.value = false
-  }
-}
 </script>

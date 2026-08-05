@@ -18,7 +18,7 @@
       <div class="apple-workspace min-h-[70vh] p-4 sm:p-6">
         <!-- switch-tool: die Werkbank reicht ihr Ergebnis per Handoff an ein
              anderes Werkzeug weiter und wechselt direkt dorthin. -->
-        <component :is="toolComponents[activeEntry.tool.id]" @back="closeTool" @switch-tool="openTool" />
+        <component :is="TOOL_COMPONENTS[activeEntry.tool.id]" @back="closeTool" @switch-tool="openTool" />
       </div>
     </section>
 
@@ -149,13 +149,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import { useWorkspace } from '@/composables/useWorkspace'
 import { isAuthenticated } from '@/lib/auth'
 import { getHealth } from '@/lib/health'
 import { findTool, TOOL_GROUPS, type CatalogTool, type ToolDefinition, type ToolId } from '@/lib/toolCatalog'
+import { TOOL_COMPONENTS } from '@/lib/toolComponents'
 import { readStoredValue, writeStoredValue } from '@/lib/safeStorage'
 
 const props = withDefaults(defineProps<{ searchQuery?: string }>(), { searchQuery: '' })
@@ -457,55 +458,6 @@ function groupIconClass(key: string): string {
   }[key] ?? 'bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300'
 }
 
-const toolComponents = {
-  workbench: defineAsyncComponent(() => import('@/components/tools/PdfWorkbench.vue')),
-  merge: defineAsyncComponent(() => import('@/components/tools/PdfMerge.vue')),
-  split: defineAsyncComponent(() => import('@/components/tools/PdfSplit.vue')),
-  rotate: defineAsyncComponent(() => import('@/components/tools/PdfRotate.vue')),
-  toImages: defineAsyncComponent(() => import('@/components/tools/PdfToImages.vue')),
-  compress: defineAsyncComponent(() => import('@/components/tools/PdfCompress.vue')),
-  watermark: defineAsyncComponent(() => import('@/components/tools/PdfWatermark.vue')),
-  imagesToPdf: defineAsyncComponent(() => import('@/components/tools/ImagesToPdf.vue')),
-  pageEditor: defineAsyncComponent(() => import('@/components/tools/PdfPageEditor.vue')),
-  metadata: defineAsyncComponent(() => import('@/components/tools/PdfMetadata.vue')),
-  pdfCompare: defineAsyncComponent(() => import('@/components/tools/PdfCompare.vue')),
-  protect: defineAsyncComponent(() => import('@/components/tools/PdfProtect.vue')),
-  pdfToWord: defineAsyncComponent(() => import('@/components/tools/PdfToWord.vue')),
-  pdfToExcel: defineAsyncComponent(() => import('@/components/tools/PdfToExcel.vue')),
-  textEditor: defineAsyncComponent(() => import('@/components/tools/PdfTextEditor.vue')),
-  pageNumbers: defineAsyncComponent(() => import('@/components/tools/PdfPageNumbers.vue')),
-  headerFooter: defineAsyncComponent(() => import('@/components/tools/PdfHeaderFooter.vue')),
-  searchReplace: defineAsyncComponent(() => import('@/components/tools/PdfSearchReplace.vue')),
-  redact: defineAsyncComponent(() => import('@/components/tools/PdfRedact.vue')),
-  flatten: defineAsyncComponent(() => import('@/components/tools/PdfFlatten.vue')),
-  toText: defineAsyncComponent(() => import('@/components/tools/PdfToText.vue')),
-  bates: defineAsyncComponent(() => import('@/components/tools/PdfBates.vue')),
-  formFill: defineAsyncComponent(() => import('@/components/tools/PdfFormFill.vue')),
-  formDesigner: defineAsyncComponent(() => import('@/components/tools/PdfFormDesigner.vue')),
-  pdfa: defineAsyncComponent(() => import('@/components/tools/PdfPdfa.vue')),
-  signImage: defineAsyncComponent(() => import('@/components/tools/PdfSignImage.vue')),
-  imageReplace: defineAsyncComponent(() => import('@/components/tools/PdfImageReplace.vue')),
-  annotate: defineAsyncComponent(() => import('@/components/tools/PdfAnnotate.vue')),
-  signDigital: defineAsyncComponent(() => import('@/components/tools/PdfSignDigital.vue')),
-  scanOptimize: defineAsyncComponent(() => import('@/components/tools/PdfScanOptimize.vue')),
-  batch: defineAsyncComponent(() => import('@/components/tools/PdfBatch.vue')),
-  tocEditor: defineAsyncComponent(() => import('@/components/tools/PdfTocEditor.vue')),
-  ocr: defineAsyncComponent(() => import('@/components/tools/PdfOcr.vue')),
-  pdfExport: defineAsyncComponent(() => import('@/components/tools/PdfExport.vue')),
-  clean: defineAsyncComponent(() => import('@/components/tools/PdfClean.vue')),
-  permissions: defineAsyncComponent(() => import('@/components/tools/PdfPermissions.vue')),
-  verifySignatures: defineAsyncComponent(() => import('@/components/tools/PdfVerifySignatures.vue')),
-  insertBlank: defineAsyncComponent(() => import('@/components/tools/PdfInsertBlank.vue')),
-  pruefakte: defineAsyncComponent(() => import('@/components/tools/PdfPruefakte.vue')),
-  qualityCheck: defineAsyncComponent(() => import('@/components/tools/PdfQualityCheck.vue')),
-  aiAssistant: defineAsyncComponent(() => import('@/components/tools/PdfAiAssistant.vue')),
-  officeToPdf: defineAsyncComponent(() => import('@/components/tools/OfficeToPdf.vue')),
-  wordToPdf: defineAsyncComponent(() => import('@/components/tools/WordToPdf.vue')),
-  wordMerge: defineAsyncComponent(() => import('@/components/tools/WordMerge.vue')),
-  wordDiff: defineAsyncComponent(() => import('@/components/tools/WordDiff.vue')),
-  wordMeta: defineAsyncComponent(() => import('@/components/tools/WordMetadata.vue')),
-  excelMeta: defineAsyncComponent(() => import('@/components/tools/ExcelMetadata.vue')),
-} satisfies Record<ToolId, Component>
 
 watch(() => groupTools.value.length, () => {
   const max = Math.max(0, groupTools.value.length - 1)
