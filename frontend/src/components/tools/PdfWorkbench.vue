@@ -104,7 +104,8 @@
       <!-- Seitenübersicht -->
       <aside
         v-if="items.length"
-        class="w-44 shrink-0 space-y-2 overflow-y-auto border-r border-gray-200 bg-white/60 p-2 sm:w-56 dark:border-gray-700 dark:bg-gray-900/50"
+        class="shrink-0 space-y-2 overflow-y-auto border-r border-gray-200 bg-white/60 p-2 dark:border-gray-700 dark:bg-gray-900/50"
+        :style="{ width: sidebarWidth + 'px' }"
         role="list"
         aria-label="Seitenübersicht. Klick zeigt die Seite groß, das Häkchen wählt für Mehrfach-Aktionen aus. Reihenfolge per Ziehen ändern."
       >
@@ -150,6 +151,19 @@
           </button>
         </div>
       </aside>
+
+      <!-- Trennlinie Seitenübersicht ↔ Hauptbereich: ziehbar, per Tastatur mit Pfeiltasten -->
+      <div
+        v-if="items.length"
+        class="w-1.5 shrink-0 cursor-col-resize bg-transparent transition hover:bg-primary-300/60 focus-visible:bg-primary-400 focus-visible:outline-none dark:hover:bg-primary-500/40"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Breite der Seitenübersicht ändern — Ziehen oder Pfeiltasten"
+        tabindex="0"
+        @pointerdown="startResize('sidebar', $event)"
+        @keydown.left.prevent="resizeByKey('sidebar', -24)"
+        @keydown.right.prevent="resizeByKey('sidebar', 24)"
+      ></div>
 
       <!-- Große Seitenansicht -->
       <main class="min-w-0 flex-1 overflow-auto p-3 sm:p-4">
@@ -216,10 +230,24 @@
         <UiAlert v-if="errorText" tone="danger" class="mt-3">{{ errorText }}</UiAlert>
       </main>
 
+      <!-- Trennlinie Hauptbereich ↔ Panel: ziehbar, per Tastatur mit Pfeiltasten -->
+      <div
+        v-if="activePanel"
+        class="w-1.5 shrink-0 cursor-col-resize bg-transparent transition hover:bg-primary-300/60 focus-visible:bg-primary-400 focus-visible:outline-none dark:hover:bg-primary-500/40"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Breite des Panels ändern — Ziehen oder Pfeiltasten"
+        tabindex="0"
+        @pointerdown="startResize('panel', $event)"
+        @keydown.left.prevent="resizeByKey('panel', 24)"
+        @keydown.right.prevent="resizeByKey('panel', -24)"
+      ></div>
+
       <!-- Seitenpanel: Transformation direkt auf dem aktuellen Stand -->
       <aside
         v-if="activePanel"
-        class="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-gray-200 bg-white/80 p-3 sm:w-80 dark:border-gray-700 dark:bg-gray-900/70"
+        class="flex shrink-0 flex-col gap-3 overflow-y-auto border-l border-gray-200 bg-white/80 p-3 dark:border-gray-700 dark:bg-gray-900/70"
+        :style="{ width: panelWidth + 'px' }"
         :aria-label="`Panel: ${activePanel.title}`"
       >
         <div class="flex items-center justify-between gap-2">
@@ -237,6 +265,16 @@
         <p class="text-xs text-gray-600 dark:text-gray-300">
           Wird auf den aktuellen Stand ({{ activeItems.length }} Seiten) angewendet{{ activePanel.output === 'pdf' ? ' und ersetzt ihn — Rückgängig über ↩ in der Leiste.' : '.' }}
         </p>
+
+        <label v-if="activePanel.variants?.length" class="block text-sm">
+          <span class="mb-1 block font-medium text-gray-800 dark:text-gray-100">{{ activePanel.variantLabel ?? 'Aktion' }}</span>
+          <select
+            v-model="panelValues._variant"
+            class="w-full rounded-xl bg-white px-3 py-2 text-sm text-gray-950 ring-1 ring-gray-400/70 focus:ring-2 focus:ring-primary-500 dark:bg-gray-900 dark:text-white dark:ring-gray-600"
+          >
+            <option v-for="variant in activePanel.variants" :key="variant.value" :value="variant.value">{{ variant.label }}</option>
+          </select>
+        </label>
 
         <label v-for="field in activePanel.fields" :key="field.name" class="block text-sm">
           <template v-if="field.type === 'checkbox'">
@@ -406,9 +444,54 @@ function openTool(id: ToolId): void {
   embeddedToolId.value = null
   const values: Record<string, string | number | boolean> = {}
   for (const field of spec.fields) values[field.name] = field.default ?? (field.type === 'checkbox' ? false : '')
+  if (spec.variants?.length) values._variant = spec.variants[0]!.value
   panelValues.value = values
   panelReport.value = null
   activePanel.value = spec
+}
+
+// ── Verschiebbare Trennlinien (Split-Panes) ──────────────────
+
+const SIDEBAR_WIDTH_KEY = 'pdfapp_wb_sidebar_width'
+const PANEL_WIDTH_KEY = 'pdfapp_wb_panel_width'
+
+function storedWidth(key: string, fallback: number): number {
+  const value = Number(localStorage.getItem(key))
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+const sidebarWidth = ref(storedWidth(SIDEBAR_WIDTH_KEY, 224))
+const panelWidth = ref(storedWidth(PANEL_WIDTH_KEY, 320))
+
+function clampWidth(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+/** Ziehen der Trennlinie: sidebar wächst nach rechts, das Panel nach links. */
+function startResize(which: 'sidebar' | 'panel', event: PointerEvent): void {
+  event.preventDefault()
+  const startX = event.clientX
+  const startWidth = which === 'sidebar' ? sidebarWidth.value : panelWidth.value
+  const onMove = (move: PointerEvent) => {
+    const delta = move.clientX - startX
+    if (which === 'sidebar') sidebarWidth.value = clampWidth(startWidth + delta, 140, 480)
+    else panelWidth.value = clampWidth(startWidth - delta, 240, 560)
+  }
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth.value))
+      localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth.value))
+    } catch { /* Ohne Speicher bleibt die Breite nur für die Sitzung. */ }
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+}
+
+function resizeByKey(which: 'sidebar' | 'panel', delta: number): void {
+  if (which === 'sidebar') sidebarWidth.value = clampWidth(sidebarWidth.value + delta, 140, 480)
+  else panelWidth.value = clampWidth(panelWidth.value + delta, 240, 560)
 }
 
 // ── Eingebettete Editoren: Werkzeug läuft im Hauptbereich ────
@@ -459,7 +542,8 @@ async function applyPanel(): Promise<void> {
     const fd = new FormData()
     fd.append('file', new File([await composed.blob()], 'werkbank.pdf', { type: 'application/pdf' }))
     for (const field of spec.fields) fd.append(field.name, String(panelValues.value[field.name] ?? ''))
-    const response = await apiPost(spec.endpoint, fd, { timeout: COMPOSE_TIMEOUT })
+    const endpoint = spec.variants?.find((variant) => variant.value === panelValues.value._variant)?.endpoint ?? spec.endpoint
+    const response = await apiPost(endpoint, fd, { timeout: COMPOSE_TIMEOUT })
     if (spec.output === 'report') {
       const data: unknown = await response.json()
       panelReport.value = JSON.stringify(data, null, 2)

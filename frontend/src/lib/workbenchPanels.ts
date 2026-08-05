@@ -30,6 +30,9 @@ export interface PanelSpec {
   output: 'pdf' | 'report'
   applyLabel: string
   fields: PanelField[]
+  /** Optional: wählbare Varianten mit eigenem Endpunkt (z. B. Schützen/Entsperren). */
+  variants?: { value: string; label: string; endpoint: string }[]
+  variantLabel?: string
 }
 
 const POSITIONS = [
@@ -53,7 +56,7 @@ export const WORKBENCH_PANELS: Record<string, PanelSpec> = {
   },
   pageNumbers: {
     id: 'pageNumbers', title: 'Seitenzahlen', icon: '🔢',
-    endpoint: '/api/pdf-tools/page-numbers', output: 'pdf', applyLabel: 'Seitenzahlen einfügen',
+    endpoint: '/api/pdf-editor/page-numbers', output: 'pdf', applyLabel: 'Seitenzahlen einfügen',
     fields: [
       { name: 'position', label: 'Position', type: 'select', default: 'bottom-center', options: POSITIONS },
       { name: 'font_size', label: 'Schriftgröße', type: 'number', default: 10, min: 6, max: 24 },
@@ -63,7 +66,7 @@ export const WORKBENCH_PANELS: Record<string, PanelSpec> = {
   },
   headerFooter: {
     id: 'headerFooter', title: 'Kopf-/Fußzeile', icon: '📰',
-    endpoint: '/api/pdf-tools/header-footer', output: 'pdf', applyLabel: 'Kopf-/Fußzeile setzen',
+    endpoint: '/api/pdf-editor/header-footer', output: 'pdf', applyLabel: 'Kopf-/Fußzeile setzen',
     fields: [
       { name: 'header_left', label: 'Kopf links', type: 'text', default: '' },
       { name: 'header_center', label: 'Kopf Mitte', type: 'text', default: '' },
@@ -76,7 +79,7 @@ export const WORKBENCH_PANELS: Record<string, PanelSpec> = {
   },
   bates: {
     id: 'bates', title: 'Bates-Nummern', icon: '🏷️',
-    endpoint: '/api/pdf-tools/bates', output: 'pdf', applyLabel: 'Bates-Nummern stempeln',
+    endpoint: '/api/pdf-extras/bates', output: 'pdf', applyLabel: 'Bates-Nummern stempeln',
     fields: [
       { name: 'prefix', label: 'Präfix', type: 'text', default: '', placeholder: 'AKTE-' },
       { name: 'start', label: 'Startnummer', type: 'number', default: 1, min: 0 },
@@ -109,18 +112,19 @@ export const WORKBENCH_PANELS: Record<string, PanelSpec> = {
       ] },
     ],
   },
+  // Eine Kachel, zwei Richtungen: Die Startseite kennt nur „Schützen /
+  // Entsperren" (id protect) — ein eigenes unlock-Panel wäre aus dem Menü
+  // nie erreichbar gewesen.
   protect: {
-    id: 'protect', title: 'Schützen', icon: '🔒',
-    endpoint: '/api/pdf-tools/protect', output: 'pdf', applyLabel: 'Passwortschutz setzen',
-    fields: [
-      { name: 'password', label: 'Öffnen-Passwort', type: 'password', required: true },
+    id: 'protect', title: 'Schützen / Entsperren', icon: '🔒',
+    endpoint: '/api/pdf-tools/protect', output: 'pdf', applyLabel: 'Anwenden',
+    variantLabel: 'Aktion',
+    variants: [
+      { value: 'protect', label: 'Passwortschutz setzen', endpoint: '/api/pdf-tools/protect' },
+      { value: 'unlock', label: 'Schutz entfernen', endpoint: '/api/pdf-tools/unlock' },
     ],
-  },
-  unlock: {
-    id: 'unlock', title: 'Entsperren', icon: '🔓',
-    endpoint: '/api/pdf-tools/unlock', output: 'pdf', applyLabel: 'Schutz entfernen',
     fields: [
-      { name: 'password', label: 'Bekanntes Passwort', type: 'password', required: true },
+      { name: 'password', label: 'Passwort', type: 'password', required: true },
     ],
   },
   permissions: {
