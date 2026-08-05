@@ -32,7 +32,27 @@
       @restore="restoreSession"
     />
 
-    <FileDrop v-if="!workingBlob" v-model="file" />
+    <template v-if="!workingBlob">
+      <FileDrop v-model="file" />
+      <div class="flex items-center gap-3 justify-center text-sm text-gray-500 dark:text-gray-400">
+        <span aria-hidden="true" class="h-px w-16 bg-gray-200 dark:bg-gray-700" /> oder
+        <span aria-hidden="true" class="h-px w-16 bg-gray-200 dark:bg-gray-700" />
+      </div>
+      <div class="flex justify-center gap-2">
+        <button
+          class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 hover:border-primary-400 hover:text-primary-600"
+          @click="startBlank('hoch')"
+        >
+          📄 Ohne Vorlage beginnen (A4 hoch)
+        </button>
+        <button
+          class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 hover:border-primary-400 hover:text-primary-600"
+          @click="startBlank('quer')"
+        >
+          📃 A4 quer
+        </button>
+      </div>
+    </template>
 
     <template v-else>
       <!-- Werkzeugleiste -->
@@ -586,6 +606,36 @@ watch(file, async (f) => {
   checkResult.value = null
   restoreLayout()
 })
+
+// ── Ohne Vorlage: leeres A4-Blatt direkt im Browser erzeugen ─
+//
+// Ein minimales, valides Einseiten-PDF lässt sich als Text zusammensetzen —
+// die xref-Offsets werden beim Bau mitgezählt. Damit braucht der Leerstart
+// weder eine Bibliothek noch einen Server-Aufruf.
+function makeBlankPdf(orientation: 'hoch' | 'quer'): Blob {
+  const [w, h] = orientation === 'hoch' ? [595, 842] : [842, 595]
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Resources << >> >>`,
+  ]
+  let body = '%PDF-1.4\n'
+  const offsets: number[] = []
+  objects.forEach((obj, i) => {
+    offsets.push(body.length)
+    body += `${i + 1} 0 obj\n${obj}\nendobj\n`
+  })
+  const xrefStart = body.length
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  for (const off of offsets) body += `${String(off).padStart(10, '0')} 00000 n \n`
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`
+  return new Blob([body], { type: 'application/pdf' })
+}
+
+function startBlank(orientation: 'hoch' | 'quer') {
+  const name = orientation === 'hoch' ? 'Leeres-Formular-A4.pdf' : 'Leeres-Formular-A4-quer.pdf'
+  file.value = new File([makeBlankPdf(orientation)], name, { type: 'application/pdf' })
+}
 
 function restoreLayout() {
   const stored = localStorage.getItem(LAYOUT_KEY)
