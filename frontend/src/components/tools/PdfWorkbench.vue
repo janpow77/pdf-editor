@@ -1,154 +1,186 @@
 <template>
-  <div class="space-y-5">
-    <ToolHeader
-      title="Werkbank"
-      description="Mehrere PDFs laden und alle Seiten dokumentübergreifend mischen, schneiden, drehen, duplizieren und neu zusammenstellen — das Ergebnis lässt sich direkt an jedes andere Werkzeug übergeben."
-      @back="$emit('back')"
-    />
+  <!--
+    Vollbild-Arbeitsplatz: öffnet sich sofort mit dem Werkzeug (nicht erst nach
+    dem ersten Upload). Kopfleiste oben, Seitenübersicht links, große zoombare
+    Seitenansicht rechts. „Zurück" verlässt den Arbeitsplatz.
+  -->
+  <div class="fixed inset-0 z-40 flex flex-col bg-gray-100 dark:bg-gray-950" role="dialog" aria-modal="true" aria-label="Werkbank — PDF-Arbeitsplatz">
+    <!-- Kopf-/Werkzeugleiste -->
+    <header class="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white/95 px-3 py-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
+      <UiButton size="sm" variant="ghost" @click="$emit('back')">‹ Zurück</UiButton>
+      <span class="flex items-center gap-1.5 font-semibold text-gray-950 dark:text-white"><span aria-hidden="true">🛠️</span> Werkbank</span>
 
-    <UiDropZone
-      :active="isDragging"
-      :accepted="docs.length > 0"
-      :invalid="Boolean(errorText)"
-      @drag-active="isDragging = $event"
-      @drop="onDroppedFiles"
-    >
       <input ref="fileInput" type="file" accept=".pdf" multiple class="hidden" @change="onFileSelect" />
-      <div>
-        <div class="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-primary-50 text-2xl text-primary-700 shadow-sm dark:bg-primary-500/15 dark:text-primary-300" aria-hidden="true">🛠️</div>
-        <p class="mt-3 font-semibold text-gray-950 dark:text-white">{{ docs.length ? 'Weitere PDFs hierher ziehen' : 'PDFs hierher ziehen' }}</p>
-        <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Mehrere Dateien gleichzeitig möglich — jede Seite wird einzeln bearbeitbar.</p>
-        <UiButton variant="primary" class="mt-4" :loading="loadingDocs > 0" @click="fileInput?.click()">Dateien auswählen</UiButton>
-      </div>
-    </UiDropZone>
+      <UiButton size="sm" variant="secondary" :loading="loadingDocs > 0" @click="fileInput?.click()">+ PDF</UiButton>
 
-    <UiPanel v-if="docs.length" padding="sm" class="flex flex-wrap items-center gap-2">
-      <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">Dokumente:</span>
       <span
         v-for="(doc, index) in docs"
         :key="doc.uid"
-        class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ring-1 ring-black/5 dark:ring-white/10"
+        class="hidden items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-black/5 md:inline-flex dark:ring-white/10"
         :class="docBadgeClass(index)"
       >
         <strong>D{{ index + 1 }}</strong>
-        <span class="max-w-44 truncate">{{ doc.label }}</span>
-        <span class="tabular-nums">· {{ doc.pages }} S.</span>
+        <span class="max-w-32 truncate">{{ doc.label }}</span>
         <button
           type="button"
-          class="ml-0.5 grid h-5 w-5 place-items-center rounded-full transition hover:bg-black/10 dark:hover:bg-white/20"
+          class="ml-0.5 grid h-4 w-4 place-items-center rounded-full transition hover:bg-black/10 dark:hover:bg-white/20"
           :aria-label="`Dokument D${index + 1} (${doc.label}) samt Seiten aus der Werkbank entfernen`"
           @click="removeDoc(doc.uid)"
         >×</button>
       </span>
-    </UiPanel>
 
-    <UiPanel v-if="items.length" padding="sm" class="flex flex-wrap items-center gap-2" aria-label="Aktionen für die Seitenauswahl">
-      <UiButton size="sm" variant="secondary" @click="selectAll(selectedItems.length < items.length)">
-        {{ selectedItems.length < items.length ? 'Alle auswählen' : 'Auswahl aufheben' }}
-      </UiButton>
-      <span class="text-sm font-medium tabular-nums text-gray-600 dark:text-gray-300">{{ selectedItems.length }} ausgewählt</span>
-      <span class="mx-1 h-7 w-px bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>
-      <UiButton size="sm" variant="secondary" :disabled="!selectedItems.length" @click="rotateSelection(-90)">↺ Links drehen</UiButton>
-      <UiButton size="sm" variant="secondary" :disabled="!selectedItems.length" @click="rotateSelection(90)">↻ Rechts drehen</UiButton>
-      <UiButton size="sm" variant="secondary" :disabled="!selectedItems.length" @click="duplicateSelection">⧉ Duplizieren</UiButton>
-      <UiButton size="sm" variant="secondary" @click="insertBlank">➕ Leerseite</UiButton>
-      <span class="mx-1 h-7 w-px bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>
-      <UiButton size="sm" variant="danger" :disabled="!selectedItems.length" @click="removeSelection(true)">Entfernen</UiButton>
-      <UiButton size="sm" variant="secondary" :disabled="!selectedItems.length" @click="removeSelection(false)">Wiederherstellen</UiButton>
-    </UiPanel>
+      <span class="flex-1"></span>
 
-    <div
-      v-if="items.length"
-      role="list"
-      aria-label="Seitenfolge der Zusammenstellung. Reihenfolge per Ziehen oder mit den Verschieben-Knöpfen ändern."
-      class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
-    >
-      <div
-        v-for="(item, index) in items"
-        :key="item.uid"
-        role="listitem"
-        class="flex flex-col rounded-2xl bg-white p-2 shadow-apple-sm ring-1 transition dark:bg-gray-900"
-        :class="[
-          item.selected ? 'ring-2 ring-primary-500' : 'ring-gray-300 dark:ring-gray-600',
-          item.removed ? 'grayscale' : '',
-          dragIndex === index ? 'opacity-60' : '',
-        ]"
-        draggable="true"
-        @dragstart="dragIndex = index"
-        @dragend="dragIndex = -1"
-        @dragover.prevent
-        @drop.prevent="reorderTo(index)"
+      <template v-if="items.length">
+        <UiButton size="sm" variant="secondary" @click="selectAll(selectedItems.length < items.length)">
+          {{ selectedItems.length < items.length ? 'Alle auswählen' : 'Auswahl aufheben' }}
+        </UiButton>
+        <span class="text-xs font-medium tabular-nums text-gray-600 dark:text-gray-300">{{ selectedItems.length }} ausgewählt</span>
+        <UiButton size="sm" variant="secondary" :disabled="!selectedItems.length" title="Auswahl links drehen" @click="rotateSelection(-90)">↺</UiButton>
+        <UiButton size="sm" variant="secondary" :disabled="!selectedItems.length" title="Auswahl rechts drehen" @click="rotateSelection(90)">↻</UiButton>
+        <UiButton size="sm" variant="secondary" :disabled="!selectedItems.length" title="Auswahl duplizieren" @click="duplicateSelection">⧉</UiButton>
+        <UiButton size="sm" variant="secondary" title="Leerseite einfügen" @click="insertBlank">➕</UiButton>
+        <UiButton size="sm" variant="danger" :disabled="!selectedItems.length" title="Auswahl entfernen" @click="removeSelection(true)">✕</UiButton>
+        <span class="mx-1 h-6 w-px bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>
+        <UiButton size="sm" variant="primary" :loading="busy" :disabled="!activeItems.length" @click="composeAndDownload(activeItems, 'werkbank.pdf')">
+          Ergebnis ({{ activeItems.length }} S.)
+        </UiButton>
+        <UiButton v-if="selectedActiveItems.length" size="sm" variant="secondary" :disabled="busy" @click="composeAndDownload(selectedActiveItems, 'werkbank-auswahl.pdf')">
+          Auswahl exportieren ({{ selectedActiveItems.length }})
+        </UiButton>
+        <label class="flex items-center gap-1.5 text-sm font-medium text-gray-800 dark:text-gray-100">
+          <span class="sr-only">Ergebnis weiterbearbeiten in</span>
+          <select
+            v-model="targetToolId"
+            class="rounded-xl bg-white px-2.5 py-1.5 text-sm font-medium text-gray-950 ring-1 ring-gray-400/70 transition focus:ring-2 focus:ring-primary-500 dark:bg-gray-900 dark:text-white dark:ring-gray-600"
+          >
+            <option value="" disabled>Weiterbearbeiten in …</option>
+            <optgroup v-for="group in handoffGroups" :key="group.title" :label="group.title">
+              <option v-for="tool in group.tools" :key="tool.id" :value="tool.id">{{ tool.label }}</option>
+            </optgroup>
+          </select>
+        </label>
+        <UiButton size="sm" variant="secondary" :disabled="busy || !targetToolId || !activeItems.length" @click="handOff">Übergeben →</UiButton>
+      </template>
+    </header>
+
+    <!-- Rumpf -->
+    <div class="flex min-h-0 flex-1">
+      <!-- Seitenübersicht -->
+      <aside
+        v-if="items.length"
+        class="w-44 shrink-0 space-y-2 overflow-y-auto border-r border-gray-200 bg-white/60 p-2 sm:w-56 dark:border-gray-700 dark:bg-gray-900/50"
+        role="list"
+        aria-label="Seitenübersicht. Klick zeigt die Seite groß, das Häkchen wählt für Mehrfach-Aktionen aus. Reihenfolge per Ziehen ändern."
       >
-        <div class="flex items-center justify-between gap-1 px-1 pb-1.5">
-          <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="badgeClass(item)">{{ badgeText(item) }}</span>
-          <span v-if="item.rotation" class="text-xs font-semibold text-gray-600 dark:text-gray-300">{{ item.rotation }}°</span>
-          <span class="text-xs font-medium tabular-nums text-gray-600 dark:text-gray-300">{{ index + 1 }}</span>
-        </div>
-
-        <button
-          type="button"
-          class="relative block h-40 overflow-hidden rounded-xl bg-gray-100 outline-none transition focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-white/10"
-          :aria-pressed="item.selected"
-          :aria-label="cardLabel(item, index)"
-          @click="item.selected = !item.selected"
+        <div
+          v-for="(item, index) in items"
+          :key="item.uid"
+          role="listitem"
+          class="rounded-xl bg-white p-1.5 shadow-apple-sm ring-1 transition dark:bg-gray-900"
+          :class="[
+            item.uid === focusedUid ? 'ring-2 ring-primary-500' : item.selected ? 'ring-2 ring-primary-300 dark:ring-primary-700' : 'ring-gray-300 dark:ring-gray-600',
+            item.removed ? 'opacity-55 grayscale' : '',
+            dragIndex === index ? 'opacity-60' : '',
+          ]"
+          draggable="true"
+          @dragstart="dragIndex = index"
+          @dragend="dragIndex = -1"
+          @dragover.prevent
+          @drop.prevent="reorderTo(index)"
         >
-          <img
-            v-if="thumbSrc(item)"
-            :src="thumbSrc(item) ?? undefined"
-            alt=""
-            class="mx-auto h-full object-contain"
-            :style="thumbStyle(item)"
-          />
-          <span v-else class="grid h-full place-items-center text-4xl" aria-hidden="true">📄</span>
-          <span v-if="item.selected" class="absolute left-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-primary-600 text-xs font-bold text-white" aria-hidden="true">✓</span>
-          <span v-if="item.removed" class="absolute inset-0 grid place-items-center bg-white/75 text-sm font-bold text-rose-700 dark:bg-gray-950/75 dark:text-rose-300">Entfernt</span>
-        </button>
-
-        <div class="mt-1.5 flex items-center justify-center gap-1">
-          <button type="button" class="grid h-8 w-8 place-items-center rounded-lg text-sm text-gray-700 ring-1 ring-gray-300 transition hover:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:ring-gray-600 dark:hover:bg-white/10" :disabled="index === 0" :aria-label="`Position ${index + 1} nach vorn verschieben`" @click="moveItem(index, -1)">←</button>
-          <button type="button" class="grid h-8 w-8 place-items-center rounded-lg text-sm text-gray-700 ring-1 ring-gray-300 transition hover:bg-gray-100 dark:text-gray-200 dark:ring-gray-600 dark:hover:bg-white/10" :aria-label="`Position ${index + 1} um 90 Grad drehen`" @click="rotateItem(item)">⟳</button>
-          <button type="button" class="grid h-8 w-8 place-items-center rounded-lg text-sm text-gray-700 ring-1 ring-gray-300 transition hover:bg-gray-100 dark:text-gray-200 dark:ring-gray-600 dark:hover:bg-white/10" :aria-label="item.removed ? `Position ${index + 1} wiederherstellen` : `Position ${index + 1} entfernen`" @click="item.removed = !item.removed">{{ item.removed ? '⤺' : '✕' }}</button>
-          <button type="button" class="grid h-8 w-8 place-items-center rounded-lg text-sm text-gray-700 ring-1 ring-gray-300 transition hover:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:ring-gray-600 dark:hover:bg-white/10" :disabled="index === items.length - 1" :aria-label="`Position ${index + 1} nach hinten verschieben`" @click="moveItem(index, 1)">→</button>
+          <div class="flex items-center justify-between gap-1 px-0.5 pb-1">
+            <span class="rounded-full px-1.5 py-0.5 text-[10px] font-semibold" :class="badgeClass(item)">{{ badgeText(item) }}</span>
+            <span v-if="item.rotation" class="text-[10px] font-semibold text-gray-600 dark:text-gray-300">{{ item.rotation }}°</span>
+            <span class="text-[10px] font-medium tabular-nums text-gray-600 dark:text-gray-300">{{ index + 1 }}</span>
+            <button
+              type="button"
+              class="grid h-5 w-5 place-items-center rounded-md text-[11px] ring-1 transition"
+              :class="item.selected ? 'bg-primary-600 text-white ring-primary-600' : 'text-gray-500 ring-gray-300 hover:ring-primary-400 dark:text-gray-300 dark:ring-gray-600'"
+              :aria-pressed="item.selected"
+              :aria-label="`Position ${index + 1} ${item.selected ? 'abwählen' : 'für Mehrfach-Aktionen auswählen'}`"
+              @click.stop="item.selected = !item.selected"
+            >✓</button>
+          </div>
+          <button
+            type="button"
+            class="relative block h-32 w-full overflow-hidden rounded-lg bg-gray-100 outline-none transition focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-white/10"
+            :aria-label="cardLabel(item, index)"
+            :aria-current="item.uid === focusedUid ? 'true' : undefined"
+            @click="focusItem(item)"
+          >
+            <img v-if="thumbSrc(item)" :src="thumbSrc(item) ?? undefined" alt="" class="mx-auto h-full object-contain" :style="thumbStyle(item)" />
+            <span v-else class="grid h-full place-items-center text-3xl" aria-hidden="true">📄</span>
+            <span v-if="item.removed" class="absolute inset-0 grid place-items-center bg-white/75 text-xs font-bold text-rose-700 dark:bg-gray-950/75 dark:text-rose-300">Entfernt</span>
+          </button>
         </div>
-      </div>
+      </aside>
+
+      <!-- Große Seitenansicht -->
+      <main class="min-w-0 flex-1 overflow-auto p-3 sm:p-4">
+        <!-- Leerzustand: Ablagefläche mitten im Arbeitsplatz -->
+        <div v-if="!docs.length" class="mx-auto flex h-full max-w-2xl items-center">
+          <UiDropZone
+            class="w-full"
+            :active="isDragging"
+            :accepted="false"
+            :invalid="Boolean(errorText)"
+            @drag-active="isDragging = $event"
+            @drop="onDroppedFiles"
+          >
+            <div>
+              <div class="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-primary-50 text-3xl text-primary-700 shadow-sm dark:bg-primary-500/15 dark:text-primary-300" aria-hidden="true">🛠️</div>
+              <p class="mt-3 text-lg font-semibold text-gray-950 dark:text-white">PDFs hierher ziehen</p>
+              <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Mehrere Dateien gleichzeitig möglich — jede Seite wird einzeln bearbeitbar, das Ergebnis lässt sich an jedes Werkzeug übergeben.</p>
+              <UiButton variant="primary" class="mt-4" :loading="loadingDocs > 0" @click="fileInput?.click()">Dateien auswählen</UiButton>
+            </div>
+          </UiDropZone>
+        </div>
+
+        <template v-else>
+          <div v-if="focusedItem" class="space-y-3">
+            <!-- Schnellaktionen für die fokussierte Seite -->
+            <div class="flex flex-wrap items-center gap-2 text-sm">
+              <span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="badgeClass(focusedItem)">{{ badgeText(focusedItem) }}</span>
+              <span class="text-xs font-medium tabular-nums text-gray-600 dark:text-gray-300">Position {{ focusedIndex + 1 }} / {{ items.length }}</span>
+              <span class="mx-1 h-5 w-px bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>
+              <UiButton size="sm" variant="secondary" title="Seite um 90 Grad drehen" @click="rotateItem(focusedItem)">⟳ Drehen{{ focusedItem.rotation ? ` (${focusedItem.rotation}°)` : '' }}</UiButton>
+              <UiButton size="sm" variant="secondary" @click="duplicateFocused">⧉ Duplizieren</UiButton>
+              <UiButton size="sm" :variant="focusedItem.removed ? 'secondary' : 'danger'" @click="focusedItem.removed = !focusedItem.removed">
+                {{ focusedItem.removed ? '⤺ Wiederherstellen' : '✕ Entfernen' }}
+              </UiButton>
+              <UiButton size="sm" variant="secondary" :disabled="focusedIndex <= 0" title="Nach vorn verschieben" @click="moveItem(focusedIndex, -1)">←</UiButton>
+              <UiButton size="sm" variant="secondary" :disabled="focusedIndex >= items.length - 1" title="Nach hinten verschieben" @click="moveItem(focusedIndex, 1)">→</UiButton>
+            </div>
+
+            <PdfViewer
+              v-if="focusedItem.docUid !== null && focusedDocFile"
+              v-model="viewerPage"
+              :source="focusedDocFile"
+              :rotation="focusedItem.rotation"
+              @update:model-value="onViewerPageChange"
+            />
+            <div v-else class="grid h-[70vh] place-items-center rounded-[1.35rem] bg-white shadow-apple ring-1 ring-gray-300 dark:bg-gray-100 dark:ring-gray-600">
+              <p class="text-sm font-medium text-gray-500">Leerseite ({{ focusedItem.rotation % 180 !== 0 ? 'A4 quer' : 'A4 hoch' }})</p>
+            </div>
+          </div>
+          <p v-else class="mt-10 text-center text-sm text-gray-600 dark:text-gray-300">Links eine Seite anklicken, um sie groß anzuzeigen.</p>
+        </template>
+
+        <UiAlert v-if="errorText" tone="danger" class="mt-3">{{ errorText }}</UiAlert>
+      </main>
     </div>
 
     <p class="sr-only" aria-live="polite" aria-atomic="true">{{ liveSummary }}</p>
-
-    <UiPanel v-if="items.length" padding="sm" class="flex flex-wrap items-center gap-3">
-      <UiButton variant="primary" :loading="busy" :disabled="!activeItems.length" @click="composeAndDownload(activeItems, 'werkbank.pdf')">
-        Ergebnis erstellen ({{ activeItems.length }} Seiten)
-      </UiButton>
-      <UiButton variant="secondary" :disabled="busy || !selectedActiveItems.length" @click="composeAndDownload(selectedActiveItems, 'werkbank-auswahl.pdf')">
-        Auswahl als PDF exportieren ({{ selectedActiveItems.length }})
-      </UiButton>
-      <span class="flex-1"></span>
-      <label class="flex flex-wrap items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-100">
-        Weiterbearbeiten in
-        <select
-          v-model="targetToolId"
-          class="rounded-xl bg-white px-3 py-2 text-sm font-medium text-gray-950 ring-1 ring-gray-400/70 transition focus:ring-2 focus:ring-primary-500 dark:bg-gray-900 dark:text-white dark:ring-gray-600"
-        >
-          <option value="" disabled>Werkzeug wählen …</option>
-          <optgroup v-for="group in handoffGroups" :key="group.title" :label="group.title">
-            <option v-for="tool in group.tools" :key="tool.id" :value="tool.id">{{ tool.label }}</option>
-          </optgroup>
-        </select>
-      </label>
-      <UiButton variant="secondary" :disabled="busy || !targetToolId || !activeItems.length" @click="handOff">Übergeben →</UiButton>
-    </UiPanel>
-
-    <UiAlert v-if="errorText" tone="danger">{{ errorText }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import ToolHeader from '@/components/ui/ToolHeader.vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import PdfViewer from '@/components/PdfViewer.vue'
 import UiAlert from '@/components/ui/UiAlert.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiDropZone from '@/components/ui/UiDropZone.vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
 import { useNotifications } from '@/composables/useNotifications'
 import { usePdfTools } from '@/composables/usePdfTools'
 import { apiPost, downloadBlob } from '@/lib/api'
@@ -194,6 +226,43 @@ const dragIndex = ref(-1)
 const targetToolId = ref<ToolId | ''>('')
 let uidCounter = 0
 
+// ── Fokus + Großansicht ──────────────────────────────────────
+const focusedUid = ref<number | null>(null)
+const viewerPage = ref(1)
+
+const focusedItem = computed(() => items.value.find((item) => item.uid === focusedUid.value) ?? null)
+const focusedIndex = computed(() => items.value.findIndex((item) => item.uid === focusedUid.value))
+const focusedDocFile = computed(() => {
+  const item = focusedItem.value
+  if (!item || item.docUid === null) return null
+  return docs.value.find((doc) => doc.uid === item.docUid)?.file ?? null
+})
+
+function focusItem(item: WorkbenchItem): void {
+  focusedUid.value = item.uid
+  if (item.docUid !== null) viewerPage.value = item.page
+}
+
+/** Blättern im Viewer folgt der Zusammenstellung: existiert die Seite als
+ *  Eintrag desselben Dokuments, wird sie fokussiert (erste Fundstelle). */
+function onViewerPageChange(page: number): void {
+  const current = focusedItem.value
+  if (!current || current.docUid === null) return
+  const match = items.value.find((item) => item.docUid === current.docUid && item.page === page)
+  if (match) focusedUid.value = match.uid
+}
+
+function duplicateFocused(): void {
+  const index = focusedIndex.value
+  const item = focusedItem.value
+  if (index < 0 || !item) return
+  items.value.splice(index + 1, 0, { ...item, uid: ++uidCounter, selected: false })
+}
+
+// Hinter dem Vollbild-Arbeitsplatz darf die Seite nicht mitscrollen.
+onMounted(() => { document.body.style.overflow = 'hidden' })
+onBeforeUnmount(() => { document.body.style.overflow = '' })
+
 const selectedItems = computed(() => items.value.filter((item) => item.selected))
 const activeItems = computed(() => items.value.filter((item) => !item.removed))
 const selectedActiveItems = computed(() => items.value.filter((item) => item.selected && !item.removed))
@@ -201,12 +270,12 @@ const liveSummary = computed(() =>
   `${items.value.length} Seiten in der Werkbank, ${selectedItems.value.length} ausgewählt, ${items.value.length - activeItems.value.length} entfernt.`)
 
 /**
- * Übergabefähig sind nur Werkzeuge mit einzelner PDF-Eingabe über die
- * gemeinsame FileDrop-Fläche — Mehrdatei- und Office-Werkzeuge könnten das
- * abgelegte Ergebnis nicht automatisch übernehmen.
+ * Übergabefähig sind Werkzeuge, deren Eingabe die gemeinsame FileDrop-Fläche
+ * mit einzelner PDF ist — nur dort holt FileDrop die Übergabe automatisch ab.
+ * Der PDF-Vergleich nutzt FileDrop für Datei A und ist damit übergabefähig.
  */
 const HANDOFF_EXCLUDE = new Set<string>([
-  'workbench', 'merge', 'split', 'pageEditor', 'pdfCompare', 'batch', 'pruefakte',
+  'workbench', 'merge', 'split', 'pageEditor', 'batch', 'pruefakte',
   'aiAssistant', 'imagesToPdf', 'wordToPdf', 'wordMerge', 'wordDiff', 'wordMeta',
   'excelMeta', 'officeToPdf',
 ])
@@ -257,7 +326,7 @@ function thumbStyle(item: WorkbenchItem): Record<string, string> {
 function cardLabel(item: WorkbenchItem, index: number): string {
   const source = item.docUid === null ? 'Leerseite' : `Dokument D${docIndexOf(item) + 1}, Seite ${item.page}`
   const state = `${item.rotation ? `, gedreht ${item.rotation} Grad` : ''}${item.removed ? ', entfernt' : ''}${item.selected ? ', ausgewählt' : ''}`
-  return `Position ${index + 1} von ${items.value.length}: ${source}${state}. Eingabetaste wählt aus oder ab.`
+  return `Position ${index + 1} von ${items.value.length}: ${source}${state}. Eingabetaste zeigt die Seite groß an.`
 }
 
 function onFileSelect(event: Event): void {
@@ -302,9 +371,11 @@ async function addFiles(list: File[]): Promise<void> {
       }
       const docUid = ++uidCounter
       docs.value.push({ uid: docUid, file, label: file.name, pages: pages.length, thumbs: data.thumbnails })
-      items.value.push(...pages.map((page) => ({
+      const newItems = pages.map((page) => ({
         uid: ++uidCounter, docUid, page, rotation: 0, removed: false, selected: false,
-      })))
+      }))
+      items.value.push(...newItems)
+      if (focusedUid.value === null && newItems[0]) focusItem(newItems[0])
       notifications.success('Dokument geladen', `${file.name}: ${pages.length} Seite(n) in der Werkbank.`)
     } catch (caught: unknown) {
       errorText.value = notifications.errorFromUnknown(caught, `Die Seitenvorschau für ${file.name} konnte nicht erzeugt werden.`)
@@ -317,6 +388,7 @@ async function addFiles(list: File[]): Promise<void> {
 function removeDoc(uid: number): void {
   docs.value = docs.value.filter((doc) => doc.uid !== uid)
   items.value = items.value.filter((item) => item.docUid !== uid)
+  if (focusedItem.value === null) focusedUid.value = items.value[0]?.uid ?? null
 }
 
 function selectAll(selected: boolean): void {
@@ -347,7 +419,9 @@ function insertBlank(): void {
   if (items.value.length >= MAX_PAGES) return
   const lastSelected = items.value.map((item) => item.selected).lastIndexOf(true)
   const at = lastSelected >= 0 ? lastSelected + 1 : items.value.length
-  items.value.splice(at, 0, { uid: ++uidCounter, docUid: null, page: 0, rotation: 0, removed: false, selected: false })
+  const blank: WorkbenchItem = { uid: ++uidCounter, docUid: null, page: 0, rotation: 0, removed: false, selected: false }
+  items.value.splice(at, 0, blank)
+  focusedUid.value = blank.uid
 }
 
 function moveItem(index: number, direction: number): void {

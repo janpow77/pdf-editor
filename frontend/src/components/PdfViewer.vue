@@ -45,7 +45,9 @@ import UiIconButton from '@/components/ui/UiIconButton.vue'
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href
 
-const props = defineProps<{ source: Blob | null; modelValue: number }>()
+/** `rotation`: zusätzliche Ansichtsdrehung in Grad (0/90/180/270) — pdf.js
+ *  dreht das Viewport nativ, z. B. für die Drehvorschau der Werkbank. */
+const props = defineProps<{ source: Blob | null; modelValue: number; rotation?: number }>()
 const emit = defineEmits<{
   (event: 'update:modelValue', page: number): void
   (event: 'loaded', pageCount: number): void
@@ -162,8 +164,10 @@ async function render(expectedDocument = documentGeneration): Promise<void> {
     page = await currentDoc.getPage(pageNo)
     if (renderId !== renderGeneration || expectedDocument !== documentGeneration || currentDoc !== doc) return
 
+    const totalRotation = ((page.rotate ?? 0) + (props.rotation ?? 0)) % 360
+
     if (fitMode) {
-      const base = page.getViewport({ scale: 1 })
+      const base = page.getViewport({ scale: 1, rotation: totalRotation })
       const available = Math.max(280, (scroller.value?.clientWidth ?? 900) - 28)
       const fittedZoom = available / base.width
       zoom.value = available >= 900
@@ -171,7 +175,7 @@ async function render(expectedDocument = documentGeneration): Promise<void> {
         : Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, fittedZoom))
     }
 
-    const viewport = page.getViewport({ scale: zoom.value })
+    const viewport = page.getViewport({ scale: zoom.value, rotation: totalRotation })
     const ratio = Math.min(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1, 2)
     const canvas = canvasEl.value
     canvas.width = Math.max(1, Math.floor(viewport.width * ratio))
@@ -241,6 +245,10 @@ watch(() => props.source, (blob) => {
 }, { immediate: true })
 
 watch(() => props.modelValue, () => {
+  if (doc) void render()
+})
+
+watch(() => props.rotation, () => {
   if (doc) void render()
 })
 
