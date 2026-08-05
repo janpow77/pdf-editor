@@ -71,11 +71,15 @@ def test_catalog_paths_exist_in_app():
 
 
 def test_catalog_matches_frontend_tiles():
-    """Backend-Katalog und Kacheln der Oberfläche dürfen nicht auseinanderlaufen."""
-    grid = Path(__file__).resolve().parents[2] / "frontend/src/components/ToolGrid.vue"
+    """Backend-Katalog und Kacheln der Oberfläche dürfen nicht auseinanderlaufen.
+
+    Die Werkzeug-Definitionen liegen seit dem Apple-UI-Refactoring zentral in
+    lib/toolCatalog.ts (vorher in ToolGrid.vue).
+    """
+    grid = Path(__file__).resolve().parents[2] / "frontend/src/lib/toolCatalog.ts"
     source = grid.read_text(encoding="utf-8")
     tile_ids = set(re.findall(r"\{ id: '([A-Za-z]+)'", source))
-    assert tile_ids, "keine Kacheln in ToolGrid.vue gefunden"
+    assert tile_ids, "keine Werkzeuge in toolCatalog.ts gefunden"
     assert tile_ids == set(TOOL_IDS), (
         f"nur im Frontend: {sorted(tile_ids - set(TOOL_IDS))} | "
         f"nur im Katalog: {sorted(set(TOOL_IDS) - tile_ids)}"

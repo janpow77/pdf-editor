@@ -1,239 +1,139 @@
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center gap-3 flex-wrap">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Text bearbeiten</h2>
-    </div>
+  <div class="space-y-5">
+    <ToolHeader title="Text bearbeiten" description="Textblöcke direkt auf der PDF-Seite oder vollständig per Tastatur bearbeiten." @back="$emit('back')" />
+    <UiAlert v-if="!workingBlob" tone="info">
+      Textblöcke bleiben auf ihrer Seite und innerhalb ihrer Box. Ein automatischer Umbruch über Absätze oder Seiten hinweg ist nicht möglich.
+    </UiAlert>
 
-    <div v-if="!workingBlob" class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-800 dark:text-blue-300">
-      Textblock auf der Seite anklicken und <strong>direkt an Ort und Stelle tippen</strong> —
-      Schriftgröße, Fettung und Farbe über die kleine Leiste am Block, Position und Größe
-      über die Griffe. Grenze gegenüber Adobe Acrobat: Der Text bleibt in seinem Block,
-      es gibt keinen Umbruch über Absätze und Seiten hinweg.
-    </div>
-
-    <WorkSessionBar
-      tool="textEditor"
-      :blob="workingBlob"
-      :name="workingName"
-      :state="sessionState"
-      :change-count="editCount"
-      @restore="restoreSession"
-    />
-
+    <WorkSessionBar tool="textEditor" :blob="workingBlob" :name="workingName" :state="sessionState" :change-count="editCount" @restore="restoreSession" />
     <FileDrop v-if="!workingBlob" v-model="file" />
 
     <template v-if="workingBlob">
-      <!-- Werkzeugleiste -->
-      <div class="flex items-center gap-2 flex-wrap bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3">
-        <span class="text-sm text-gray-500 dark:text-gray-400">{{ editCount }} Änderung(en) ausstehend</span>
-
+      <UiPanel padding="sm" class="flex flex-wrap items-center gap-2">
+        <span class="text-sm text-gray-600 dark:text-gray-300">{{ editCount }} Änderung(en) ausstehend</span>
+        <span v-if="loadingPage" class="text-sm text-gray-600 dark:text-gray-300" role="status">Textblöcke werden geladen…</span>
         <span class="flex-1"></span>
-        <button
-          class="px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
-          :disabled="applying || editCount === 0"
-          @click="applyEdits"
-        >
-          {{ applying ? 'Wende an…' : 'Änderungen anwenden' }}
-        </button>
-        <button
-          class="px-3 py-1.5 text-sm rounded-lg border border-primary-600 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 disabled:opacity-50"
-          :disabled="editCount > 0"
-          :title="editCount > 0 ? 'Erst Änderungen anwenden' : ''"
-          @click="download"
-        >
-          Herunterladen
-        </button>
-        <button class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300" @click="reset">
-          Neues Dokument
-        </button>
-      </div>
+        <UiButton variant="primary" size="sm" :loading="applying" :disabled="!editCount" @click="applyEdits">Änderungen anwenden</UiButton>
+        <UiButton size="sm" :disabled="Boolean(editCount)" @click="download">Herunterladen</UiButton>
+        <UiButton variant="danger" size="sm" @click="reset">Neues Dokument</UiButton>
+      </UiPanel>
 
-      <div v-if="warnings" class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg text-sm text-amber-800 dark:text-amber-300">
-        Hinweis: {{ warnings }} Textbox(en) waren zu klein — die Schrift wurde verkleinert.
-      </div>
+      <UiAlert v-if="warnings" tone="warning">{{ warnings }} Textbox(en) waren zu klein; die Schrift wurde beim Anwenden verkleinert.</UiAlert>
 
-      <div class="grid lg:grid-cols-3 gap-4">
-        <!-- Seitenansicht mit Direktbearbeitung -->
-        <div class="lg:col-span-2">
-          <PdfViewer
-            v-model="page"
-            :source="workingBlob"
-            @loaded="pageCount = $event"
-            @rendered="loadBlocks"
-          >
+      <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr),24rem]">
+        <div>
+          <PdfViewer v-model="page" :source="workingBlob" @loaded="onDocumentLoaded" @rendered="loadBlocks">
             <template #overlay="{ width, height, scale }">
-              <!-- Nicht bearbeitete Blöcke: anklickbar -->
               <button
-                v-for="(b, i) in blocks"
-                v-show="editKey(i) !== activeKey"
-                :key="`block-${i}`"
+                v-for="(block, index) in blocks"
+                v-show="editKey(page, index) !== activeKey"
+                :key="editKey(page, index)"
+                type="button"
                 class="absolute border transition-colors"
-                :class="blockClass(i)"
-                :style="boxStyle(boxOf(i), width, height)"
-                :title="`Bearbeiten: ${b.text.slice(0, 80)}`"
-                :aria-label="`Textblock ${i + 1} bearbeiten: ${b.text.slice(0, 60)}`"
-                @click="startEdit(i, scale)"
+                :class="blockClass(index)"
+                :style="boxStyle(boxOf(index), width, height)"
+                :aria-label="`Textblock ${index + 1} bearbeiten: ${block.text.slice(0, 60)}`"
+                @click="startEdit(index)"
               >
-                <!-- Vorgemerkter Text deckt das Original ab (Live-Vorschau) -->
                 <span
-                  v-if="edits.has(editKey(i))"
-                  class="absolute inset-0 bg-white dark:bg-white text-left overflow-hidden whitespace-pre-wrap break-words px-[1px] leading-tight"
-                  :style="textStyle(edits.get(editKey(i))!, scale)"
-                >{{ edits.get(editKey(i))!.text }}</span>
+                  v-if="edits.has(editKey(page, index))"
+                  class="absolute inset-0 overflow-hidden whitespace-pre-wrap break-words bg-white px-px text-left leading-tight"
+                  :style="textStyle(edits.get(editKey(page, index))!, scale)"
+                >{{ edits.get(editKey(page, index))!.text }}</span>
               </button>
 
-              <!-- Aktiver Block: direkt auf der Seite tippen -->
               <template v-if="active">
-                <div
-                  class="absolute ring-2 ring-primary-500 bg-white shadow-lg"
-                  :style="boxStyle(active.box, width, height)"
-                >
+                <div class="absolute bg-white shadow-apple ring-2 ring-primary-500" :style="boxStyle(active.box, width, height)">
                   <div
                     ref="editorEl"
-                    class="w-full h-full outline-none overflow-hidden whitespace-pre-wrap break-words px-[1px] leading-tight cursor-text"
+                    class="h-full w-full cursor-text overflow-hidden whitespace-pre-wrap break-words px-px leading-tight outline-none"
                     :style="textStyle(active, scale)"
                     contenteditable="plaintext-only"
                     role="textbox"
                     aria-multiline="true"
-                    aria-label="Text an dieser Stelle bearbeiten"
-                    @input="onInput"
+                    aria-label="Text des aktiven PDF-Blocks bearbeiten"
+                    @input="onInlineInput"
                     @keydown.esc.prevent="finishEdit"
                     @keydown.stop
                   ></div>
-
-                  <!-- Griff: verschieben -->
-                  <span
-                    class="absolute -top-2.5 -left-2.5 w-5 h-5 rounded-full bg-primary-600 cursor-move flex items-center justify-center text-[10px] text-white"
-                    title="Block verschieben"
-                    @mousedown.prevent="startDrag('move', $event, width, height)"
-                  >✥</span>
-                  <!-- Griff: Größe ändern -->
-                  <span
-                    class="absolute -bottom-2.5 -right-2.5 w-5 h-5 rounded-full bg-primary-600 cursor-nwse-resize flex items-center justify-center text-[10px] text-white"
-                    title="Blockgröße ändern"
-                    @mousedown.prevent="startDrag('resize', $event, width, height)"
-                  >⇲</span>
+                  <button type="button" class="absolute -left-3 -top-3 grid h-7 w-7 touch-none place-items-center rounded-full bg-primary-600 text-xs text-white shadow-sm" aria-label="Textblock verschieben" @pointerdown.prevent="startPointerDrag('move', $event, width, height)">✥</button>
+                  <button type="button" class="absolute -bottom-3 -right-3 grid h-7 w-7 touch-none place-items-center rounded-full bg-primary-600 text-xs text-white shadow-sm" aria-label="Textblockgröße ändern" @pointerdown.prevent="startPointerDrag('resize', $event, width, height)">⇲</button>
                 </div>
 
-                <!-- Schwebende Leiste über dem Block -->
-                <div
-                  class="absolute z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 shadow-lg text-xs"
-                  :style="toolbarStyle(active.box, width, height)"
-                  @mousedown.prevent
-                >
-                  <button class="px-1.5 py-0.5 rounded hover:bg-gray-100" title="Schrift kleiner" @click="changeSize(-0.5)">A−</button>
-                  <span class="tabular-nums w-8 text-center text-gray-600 dark:text-gray-400">{{ active.font_size.toFixed(1) }}</span>
-                  <button class="px-1.5 py-0.5 rounded hover:bg-gray-100" title="Schrift größer" @click="changeSize(0.5)">A+</button>
-                  <span class="mx-1 h-4 w-px bg-gray-200"></span>
-                  <button
-                    class="px-1.5 py-0.5 rounded font-bold"
-                    :class="isBold ? 'bg-primary-100 text-primary-700' : 'hover:bg-gray-100'"
-                    title="Fett"
-                    @click="toggleBold"
-                  >F</button>
-                  <input
-                    v-model="active.color"
-                    type="color"
-                    class="w-6 h-6 rounded border border-gray-200 bg-white p-0"
-                    title="Schriftfarbe"
-                    aria-label="Schriftfarbe"
-                  />
-                  <span class="mx-1 h-4 w-px bg-gray-200"></span>
-                  <button class="px-1.5 py-0.5 rounded text-red-600 hover:bg-red-50" title="Text löschen" @click="clearText">Leeren</button>
-                  <button class="px-1.5 py-0.5 rounded hover:bg-gray-100" title="Bearbeitung beenden (Esc)" @click="finishEdit">Fertig</button>
-                </div>
+                <UiPanel padding="sm" class="absolute z-10 flex items-center gap-1 bg-white/95 text-xs dark:bg-gray-900/95" :style="toolbarStyle(active.box, width, height)" @pointerdown.prevent>
+                  <UiIconButton size="sm" aria-label="Schrift verkleinern" @click="changeSize(-0.5)">A−</UiIconButton>
+                  <span class="w-10 text-center tabular-nums">{{ active.font_size.toFixed(1) }}</span>
+                  <UiIconButton size="sm" aria-label="Schrift vergrößern" @click="changeSize(0.5)">A+</UiIconButton>
+                  <UiButton size="sm" :variant="isBold ? 'primary' : 'secondary'" :aria-pressed="isBold" @click="toggleBold">Fett</UiButton>
+                  <input v-model="active.color" type="color" class="h-9 w-10 rounded-xl" aria-label="Schriftfarbe" />
+                  <UiButton variant="danger" size="sm" @click="clearText">Leeren</UiButton>
+                  <UiButton size="sm" @click="finishEdit">Fertig</UiButton>
+                </UiPanel>
               </template>
             </template>
           </PdfViewer>
         </div>
 
-        <!-- Übersicht der Änderungen -->
-        <div class="space-y-3">
-          <div class="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl text-sm text-gray-600 dark:text-gray-300">
-            <p class="font-medium text-gray-900 dark:text-white mb-1">Direkt auf der Seite bearbeiten</p>
-            <p>
-              Blauer Rahmen = Textblock, grün = geändert. Anklicken und tippen; Esc oder
-              „Fertig" beendet. Die Seite zeigt Ihre Änderungen sofort — geschrieben wird
-              die Datei erst mit „Änderungen anwenden".
-            </p>
-          </div>
+        <div class="space-y-4">
+          <UiPanel v-if="active" class="space-y-4">
+            <h3 class="font-semibold">Aktiver Textblock</h3>
+            <UiField label="Text" for-id="text-editor-content"><textarea id="text-editor-content" :value="active.text" rows="5" maxlength="100000" class="ui-control w-full" @input="onPanelInput"></textarea></UiField>
+            <div class="grid grid-cols-2 gap-3">
+              <UiField label="X (%)" for-id="text-editor-x"><input id="text-editor-x" :value="geometryValue('x')" type="number" min="0" max="99" step="0.5" class="ui-control w-full" @input="setGeometry('x', $event)" /></UiField>
+              <UiField label="Y (%)" for-id="text-editor-y"><input id="text-editor-y" :value="geometryValue('y')" type="number" min="0" max="99" step="0.5" class="ui-control w-full" @input="setGeometry('y', $event)" /></UiField>
+              <UiField label="Breite (%)" for-id="text-editor-width"><input id="text-editor-width" :value="geometryValue('width')" type="number" min="1" max="100" step="0.5" class="ui-control w-full" @input="setGeometry('width', $event)" /></UiField>
+              <UiField label="Höhe (%)" for-id="text-editor-height"><input id="text-editor-height" :value="geometryValue('height')" type="number" min="1" max="100" step="0.5" class="ui-control w-full" @input="setGeometry('height', $event)" /></UiField>
+            </div>
+            <UiField label="Schriftgröße" for-id="text-editor-font"><input id="text-editor-font" v-model.number="active.font_size" type="number" min="5" max="72" step="0.5" class="ui-control w-full" @change="commitActive" /></UiField>
+            <div class="flex gap-2"><UiButton :variant="isBold ? 'primary' : 'secondary'" :aria-pressed="isBold" @click="toggleBold">Fett</UiButton><UiButton @click="finishEdit">Bearbeitung beenden</UiButton></div>
+          </UiPanel>
 
-          <div v-if="editCount" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-            <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-2">Offene Änderungen</h3>
-            <ul class="text-sm divide-y divide-gray-100 dark:divide-gray-700 max-h-64 overflow-y-auto">
-              <li v-for="[key, edit] in [...edits.entries()]" :key="key" class="py-1.5 flex items-start justify-between gap-2">
-                <span class="truncate text-gray-700 dark:text-gray-300">
-                  {{ edit.text.trim() ? edit.text.slice(0, 40) : '(Block wird geleert)' }}
-                </span>
-                <span class="shrink-0 flex items-center gap-2">
-                  <span class="text-xs text-gray-600 dark:text-gray-400">S. {{ edit.page }}</span>
-                  <button class="text-xs text-red-500 hover:text-red-700" title="Änderung verwerfen" @click="discardEdit(key)">✕</button>
-                </span>
+          <UiAlert v-else tone="info">Textblock auf der Seite oder in der Änderungsliste auswählen.</UiAlert>
+
+          <UiPanel v-if="editCount" class="space-y-2">
+            <h3 class="font-semibold">Offene Änderungen</h3>
+            <ul class="max-h-72 space-y-1 overflow-y-auto">
+              <li v-for="[key, edit] in editEntries" :key="key" class="flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-black/5 dark:hover:bg-white/10">
+                <UiButton variant="ghost" size="sm" class="min-w-0 flex-1 justify-start" @click="openEdit(key)"><span class="truncate">{{ edit.text.trim() ? edit.text.slice(0, 50) : '(Block wird geleert)' }}</span><span class="shrink-0 text-xs opacity-70">S. {{ edit.page }}</span></UiButton>
+                <UiIconButton size="sm" variant="danger" aria-label="Änderung verwerfen" @click="discardEdit(key)">×</UiIconButton>
               </li>
             </ul>
-          </div>
+          </UiPanel>
         </div>
       </div>
     </template>
 
-    <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
 /**
- * Live-Textbearbeitung: Der Text wird direkt auf der gerenderten Seite
- * getippt (contenteditable in Seitenkoordinaten), nicht in einem Seitenpanel.
- *
- * Bewusste Grenze: Geschrieben wird die Datei weiterhin serverseitig
- * (PyMuPDF). Der Browser zeigt die Änderung sofort an derselben Stelle in
- * derselben Größe — der eigentliche Schreibvorgang bleibt an einer Stelle,
- * statt eine zweite PDF-Schreibimplementierung im Browser zu pflegen.
+ * Textbearbeitung mit direkter Seitenvorschau und gleichwertiger
+ * Tastaturalternative. Dokument-, Seiten- und Renderwechsel entwerten ältere
+ * Textblockantworten; globale Pointerlistener werden vollständig entfernt.
  */
-import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
-// pdf.js wiegt rund 370 kB. Als asynchrone Komponente erscheint die
-// Werkzeug-Oberfläche sofort; der Viewer wird parallel nachgeladen und
-// erst gebraucht, wenn tatsächlich ein Dokument geöffnet ist.
-const PdfViewer = defineAsyncComponent(() => import('@/components/PdfViewer.vue'))
+import ToolHeader from '@/components/ui/ToolHeader.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import WorkSessionBar from '@/components/WorkSessionBar.vue'
+import { useNotifications } from '@/composables/useNotifications'
 import { apiPost, downloadBlob } from '@/lib/api'
 
-defineEmits<{ (e: 'back'): void }>()
+const PdfViewer = defineAsyncComponent(() => import('@/components/PdfViewer.vue'))
+defineEmits<{ (event: 'back'): void }>()
 
-interface Box {
-  x0: number
-  y0: number
-  x1: number
-  y1: number
-}
+interface Box { x0: number; y0: number; x1: number; y1: number }
+interface Block { text: string; bbox: Box; font_size: number; font_name: string; color: string }
+interface Edit { page: number; bbox: Box; text: string; font_size: number; color: string; font: string }
+interface ActiveEdit { key: string; page: number; box: Box; text: string; font_size: number; color: string; font: string }
 
-interface Block {
-  text: string
-  bbox: Box
-  font_size: number
-  font_name: string
-  color: string
-}
-
-interface Edit {
-  page: number
-  bbox: Box
-  text: string
-  font_size: number
-  color: string
-  // Schriftname des Originalblocks — das Backend bettet eine dazu passende
-  // Schrift ein, damit Umlaute und Sonderzeichen erhalten bleiben
-  font: string
-}
-
-/** Aktiver Block während der Direktbearbeitung */
-interface ActiveEdit extends Edit {
-  key: string
-  box: Box
-}
-
+const notifications = useNotifications()
 const file = ref<File | null>(null)
 const workingBlob = ref<Blob | null>(null)
 const workingName = ref('dokument.pdf')
@@ -244,280 +144,177 @@ const loadingPage = ref(false)
 const applying = ref(false)
 const error = ref<string | null>(null)
 const warnings = ref(0)
-const edits = ref(new Map<string, Edit>())
+const edits = ref<Map<string, Edit>>(new Map())
 const active = ref<ActiveEdit | null>(null)
 const editorEl = ref<HTMLElement | null>(null)
+const pendingOpenKey = ref<string | null>(null)
+let documentGeneration = 0
+let blockRequest = 0
+let blockController: AbortController | null = null
+let dragCleanup: (() => void) | null = null
+let ignoreNextFileReset = false
 
 const editCount = computed(() => edits.value.size)
+const editEntries = computed(() => [...edits.value.entries()].sort((a, b) => a[1].page - b[1].page || a[0].localeCompare(b[0])))
 const activeKey = computed(() => active.value?.key ?? '')
 const isBold = computed(() => /bold/i.test(active.value?.font ?? ''))
+const sessionState = computed(() => ({ edits: [...edits.value.entries()], page: page.value }))
 
-// Für „Bearbeitung unterbrechen": offene Änderungen + Seite sichern
-const sessionState = computed(() => ({
-  edits: [...edits.value.entries()],
-  page: page.value,
-}))
-
-function restoreSession(payload: { name: string; blob: Blob; state: unknown }) {
-  workingBlob.value = payload.blob
-  workingName.value = payload.name
-  const state = payload.state as { edits?: [string, Edit][]; page?: number } | null
-  edits.value = new Map(state?.edits ?? [])
-  page.value = state?.page && state.page > 0 ? state.page : 1
-  active.value = null
-  error.value = null
+function clamp(value: number, min = 0, max = 1): number { return Math.max(min, Math.min(max, value)) }
+function validBox(value: unknown): Box | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  const values = [Number(raw.x0), Number(raw.y0), Number(raw.x1), Number(raw.y1)]
+  if (!values.every(Number.isFinite)) return null
+  const [rawX0, rawY0, rawX1, rawY1] = values
+  const x0 = clamp(rawX0); const y0 = clamp(rawY0); const x1 = clamp(rawX1); const y1 = clamp(rawY1)
+  return x1 > x0 && y1 > y0 ? { x0, y0, x1, y1 } : null
 }
-
-watch(file, async (f) => {
-  if (!f) return
-  workingBlob.value = f
-  workingName.value = f.name
-  edits.value = new Map()
-  page.value = 1
-  error.value = null
-})
-
-function editKey(blockIdx: number): string {
-  return `${page.value}:${blockIdx}`
-}
-
-async function loadBlocks() {
-  if (!workingBlob.value) return
-  loadingPage.value = true
-  active.value = null
-  error.value = null
-  try {
-    const fd = new FormData()
-    fd.append('file', workingBlob.value, workingName.value)
-    fd.append('page', String(page.value))
-    const resp = await apiPost('/api/pdf-editor/text-blocks', fd)
-    blocks.value = (await resp.json()).blocks
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Textblöcke laden fehlgeschlagen'
-  } finally {
-    loadingPage.value = false
-  }
-}
-
-// ── Darstellung in Seitenkoordinaten ────────────────────────
-
-function boxOf(i: number): Box {
-  return edits.value.get(editKey(i))?.bbox ?? blocks.value[i].bbox
-}
-
-function boxStyle(box: Box, width: number, height: number) {
-  return {
-    left: `${box.x0 * width}px`,
-    top: `${box.y0 * height}px`,
-    width: `${Math.max(4, (box.x1 - box.x0) * width)}px`,
-    height: `${Math.max(4, (box.y1 - box.y0) * height)}px`,
-  }
-}
-
-function toolbarStyle(box: Box, width: number, height: number) {
-  // Über dem Block, an der Seitenkante gehalten
-  const top = Math.max(0, box.y0 * height - 34)
-  const left = Math.min(Math.max(0, box.x0 * width), Math.max(0, width - 300))
-  return { left: `${left}px`, top: `${top}px` }
-}
-
-function textStyle(edit: Edit, scale: number) {
-  return {
-    fontSize: `${edit.font_size * scale}px`,
-    color: edit.color || '#000000',
-    fontWeight: /bold/i.test(edit.font) ? '700' : '400',
-    fontFamily: /courier|mono/i.test(edit.font)
-      ? 'monospace'
-      : /times|serif|roman/i.test(edit.font)
-        ? 'serif'
-        : 'sans-serif',
-  }
-}
-
-function blockClass(i: number) {
-  if (edits.value.has(editKey(i)))
-    return 'border-green-500 bg-green-400/10 hover:bg-green-400/20'
-  return 'border-blue-400/70 bg-transparent hover:bg-blue-300/20'
-}
-
-// ── Direktbearbeitung ───────────────────────────────────────
-
-async function startEdit(i: number, _scale: number) {
-  finishEdit()
-  const key = editKey(i)
-  const pending = edits.value.get(key)
-  const block = blocks.value[i]
-  active.value = {
-    key,
-    page: page.value,
-    bbox: pending?.bbox ?? { ...block.bbox },
-    box: pending?.bbox ?? { ...block.bbox },
-    text: pending?.text ?? block.text,
-    font_size: pending?.font_size ?? block.font_size ?? 11,
-    color: pending?.color ?? block.color ?? '#000000',
-    font: pending?.font ?? block.font_name ?? '',
-  }
-  await nextTick()
-  if (editorEl.value) {
-    editorEl.value.textContent = active.value.text
-    editorEl.value.focus()
-    // Cursor ans Ende setzen
-    const range = document.createRange()
-    range.selectNodeContents(editorEl.value)
-    range.collapse(false)
-    const selection = window.getSelection()
-    selection?.removeAllRanges()
-    selection?.addRange(range)
-  }
-}
-
-function onInput() {
-  if (!active.value || !editorEl.value) return
-  active.value.text = editorEl.value.textContent ?? ''
-  commitActive()
-}
-
-function commitActive() {
-  const a = active.value
-  if (!a) return
-  const original = blocks.value[Number(a.key.split(':')[1])]
-  const unchanged =
-    original &&
-    a.text === original.text &&
-    a.font_size === (original.font_size || 11) &&
-    a.color === (original.color || '#000000') &&
-    a.font === (original.font_name || '') &&
-    a.box.x0 === original.bbox.x0 &&
-    a.box.y0 === original.bbox.y0 &&
-    a.box.x1 === original.bbox.x1 &&
-    a.box.y1 === original.bbox.y1
-  if (unchanged) {
-    edits.value.delete(a.key)
-  } else {
-    edits.value.set(a.key, {
-      page: a.page,
-      bbox: { ...a.box },
-      text: a.text,
-      font_size: a.font_size,
-      color: a.color,
-      font: a.font,
-    })
-  }
-  edits.value = new Map(edits.value)
-}
-
-function finishEdit() {
-  if (!active.value) return
-  commitActive()
-  active.value = null
-}
-
-function changeSize(delta: number) {
-  if (!active.value) return
-  active.value.font_size = Math.max(5, Math.min(72, active.value.font_size + delta))
-  commitActive()
-}
-
-function toggleBold() {
-  if (!active.value) return
-  const font = active.value.font || 'Helvetica'
-  active.value.font = isBold.value ? font.replace(/[-,]?bold/gi, '') : `${font}-Bold`
-  commitActive()
-}
-
-watch(
-  () => active.value?.color,
-  () => commitActive(),
-)
-
-function clearText() {
-  if (!active.value) return
-  active.value.text = ''
-  if (editorEl.value) editorEl.value.textContent = ''
-  commitActive()
-}
-
-function discardEdit(key: string) {
-  edits.value.delete(key)
-  edits.value = new Map(edits.value)
-  if (active.value?.key === key) active.value = null
-}
-
-// ── Verschieben und Größe ändern ────────────────────────────
-
-function startDrag(mode: 'move' | 'resize', event: MouseEvent, width: number, height: number) {
-  const a = active.value
-  if (!a) return
-  const startX = event.clientX
-  const startY = event.clientY
-  const start = { ...a.box }
-  const clamp = (v: number) => Math.max(0, Math.min(1, v))
-
-  const onMove = (e: MouseEvent) => {
-    const dx = (e.clientX - startX) / width
-    const dy = (e.clientY - startY) / height
-    if (!active.value) return
-    if (mode === 'move') {
-      const w = start.x1 - start.x0
-      const h = start.y1 - start.y0
-      const x0 = clamp(start.x0 + dx)
-      const y0 = clamp(start.y0 + dy)
-      active.value.box = { x0, y0, x1: clamp(x0 + w), y1: clamp(y0 + h) }
-    } else {
-      active.value.box = {
-        ...start,
-        x1: clamp(Math.max(start.x0 + 0.02, start.x1 + dx)),
-        y1: clamp(Math.max(start.y0 + 0.01, start.y1 + dy)),
-      }
-    }
-  }
-  const onUp = () => {
-    window.removeEventListener('mousemove', onMove)
-    window.removeEventListener('mouseup', onUp)
-    commitActive()
-  }
-  window.addEventListener('mousemove', onMove)
-  window.addEventListener('mouseup', onUp)
-}
-
-// ── Anwenden, Herunterladen, Zurücksetzen ───────────────────
-
-async function applyEdits() {
-  if (!workingBlob.value || edits.value.size === 0) return
-  finishEdit()
-  applying.value = true
-  error.value = null
-  try {
-    const fd = new FormData()
-    fd.append('file', workingBlob.value, workingName.value)
-    fd.append('edits', JSON.stringify([...edits.value.values()]))
-    const resp = await apiPost('/api/pdf-extras/edit-text-blocks', fd)
-    warnings.value = Number(resp.headers.get('X-Warnings') || 0)
-    workingBlob.value = await resp.blob()
-    edits.value = new Map()
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Anwenden fehlgeschlagen'
-  } finally {
-    applying.value = false
-  }
-}
-
-async function download() {
-  if (!workingBlob.value) return
-  const name = workingName.value.replace(/\.pdf$/i, '_bearbeitet.pdf')
-  const resp = new Response(workingBlob.value, {
-    headers: { 'Content-Disposition': `attachment; filename="${name}"` },
+function editKey(pageNumber: number, blockIndex: number): string { return `${pageNumber}:${blockIndex}` }
+function normalizeBlocks(value: unknown): Block[] {
+  const source = value && typeof value === 'object' && 'blocks' in value ? (value as { blocks?: unknown }).blocks : []
+  if (!Array.isArray(source)) return []
+  return source.slice(0, 5000).flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const raw = item as Record<string, unknown>; const bbox = validBox(raw.bbox); if (!bbox) return []
+    return [{ text: String(raw.text ?? '').slice(0, 100000), bbox, font_size: clamp(Number(raw.font_size) || 11, 5, 72), font_name: String(raw.font_name ?? ''), color: String(raw.color ?? '#000000') }]
   })
-  await downloadBlob(resp, name)
+}
+function normalizeSessionEdits(value: unknown): Map<string, Edit> {
+  const result = new Map<string, Edit>()
+  if (!Array.isArray(value)) return result
+  for (const item of value.slice(0, 5000)) {
+    if (!Array.isArray(item) || item.length !== 2 || typeof item[0] !== 'string' || !item[1] || typeof item[1] !== 'object') continue
+    const raw = item[1] as Record<string, unknown>; const bbox = validBox(raw.bbox); if (!bbox) continue
+    result.set(item[0], { page: Math.max(1, Math.trunc(Number(raw.page) || 1)), bbox, text: String(raw.text ?? '').slice(0, 100000), font_size: clamp(Number(raw.font_size) || 11, 5, 72), color: String(raw.color ?? '#000000'), font: String(raw.font ?? '') })
+  }
+  return result
 }
 
-function reset() {
-  file.value = null
-  workingBlob.value = null
-  blocks.value = []
-  edits.value = new Map()
-  active.value = null
-  warnings.value = 0
-  error.value = null
+function restoreSession(payload: { name: string; blob: Blob; state: unknown }): void {
+  documentGeneration += 1; blockRequest += 1; blockController?.abort(); finishEdit(); cleanupDrag()
+  if (file.value) { ignoreNextFileReset = true; file.value = null }
+  workingBlob.value = payload.blob; workingName.value = payload.name
+  const state = payload.state && typeof payload.state === 'object' ? payload.state as { edits?: unknown; page?: number } : null
+  edits.value = normalizeSessionEdits(state?.edits); page.value = Math.max(1, Math.trunc(Number(state?.page) || 1)); blocks.value = []; warnings.value = 0; error.value = null
 }
+
+watch(file, (currentFile) => {
+  if (ignoreNextFileReset) { ignoreNextFileReset = false; return }
+  documentGeneration += 1; blockRequest += 1; blockController?.abort(); finishEdit(); cleanupDrag(); blocks.value = []; edits.value = new Map(); page.value = 1; warnings.value = 0; error.value = null; pendingOpenKey.value = null
+  if (!currentFile) { workingBlob.value = null; return }
+  workingBlob.value = currentFile; workingName.value = currentFile.name
+})
+watch(page, () => { blockRequest += 1; blockController?.abort(); finishEdit(); blocks.value = []; error.value = null })
+watch(() => active.value?.color, () => commitActive())
+
+function onDocumentLoaded(count: number): void { pageCount.value = Math.max(1, count); page.value = Math.min(page.value, pageCount.value) }
+
+async function loadBlocks(renderedPage: number): Promise<void> {
+  const blob = workingBlob.value
+  if (!blob || renderedPage !== page.value) return
+  const requestId = ++blockRequest; const generation = documentGeneration; const currentPage = page.value
+  blockController?.abort(); const controller = new AbortController(); blockController = controller
+  loadingPage.value = true; active.value = null; error.value = null
+  try {
+    const formData = new FormData(); formData.append('file', blob, workingName.value); formData.append('page', String(currentPage))
+    const response = await apiPost('/api/pdf-editor/text-blocks', formData, { signal: controller.signal, notifyOnError: false })
+    const normalized = normalizeBlocks(await response.json())
+    if (requestId !== blockRequest || generation !== documentGeneration || workingBlob.value !== blob || page.value !== currentPage) return
+    blocks.value = normalized
+    const key = pendingOpenKey.value
+    if (key?.startsWith(`${currentPage}:`)) {
+      pendingOpenKey.value = null
+      const index = Number(key.split(':')[1])
+      if (Number.isInteger(index)) await startEdit(index)
+    }
+  } catch (caught: unknown) {
+    if (!controller.signal.aborted && requestId === blockRequest && generation === documentGeneration) {
+      error.value = caught instanceof Error ? caught.message : 'Textblöcke konnten nicht geladen werden.'
+      notifications.error('Textblöcke nicht geladen', error.value)
+    }
+  } finally {
+    if (requestId === blockRequest) loadingPage.value = false
+    if (blockController === controller) blockController = null
+  }
+}
+
+function boxOf(index: number): Box { return edits.value.get(editKey(page.value, index))?.bbox ?? blocks.value[index]?.bbox ?? { x0: 0, y0: 0, x1: .1, y1: .05 } }
+function boxStyle(box: Box, width: number, height: number): Record<string, string> { return { left: `${box.x0 * width}px`, top: `${box.y0 * height}px`, width: `${Math.max(4, (box.x1 - box.x0) * width)}px`, height: `${Math.max(4, (box.y1 - box.y0) * height)}px` } }
+function toolbarStyle(box: Box, width: number, height: number): Record<string, string> { return { left: `${Math.min(Math.max(0, box.x0 * width), Math.max(0, width - 360))}px`, top: `${Math.max(0, box.y0 * height - 48)}px` } }
+function textStyle(edit: Pick<Edit, 'font_size' | 'color' | 'font'>, scale: number): Record<string, string> { return { fontSize: `${edit.font_size * scale}px`, color: edit.color || '#000000', fontWeight: /bold/i.test(edit.font) ? '700' : '400', fontFamily: /courier|mono/i.test(edit.font) ? 'monospace' : /times|serif|roman/i.test(edit.font) ? 'serif' : 'sans-serif' } }
+function blockClass(index: number): string { return edits.value.has(editKey(page.value, index)) ? 'border-emerald-500 bg-emerald-400/10 hover:bg-emerald-400/20' : 'border-primary-400/70 bg-transparent hover:bg-primary-300/20' }
+
+async function startEdit(index: number): Promise<void> {
+  finishEdit(); const block = blocks.value[index]; if (!block) return
+  const key = editKey(page.value, index); const pending = edits.value.get(key)
+  active.value = { key, page: page.value, box: { ...(pending?.bbox ?? block.bbox) }, text: pending?.text ?? block.text, font_size: pending?.font_size ?? block.font_size, color: pending?.color ?? block.color, font: pending?.font ?? block.font_name }
+  await nextTick(); if (!editorEl.value || !active.value) return
+  editorEl.value.textContent = active.value.text; editorEl.value.focus()
+  const range = document.createRange(); range.selectNodeContents(editorEl.value); range.collapse(false)
+  const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+}
+function openEdit(key: string): void {
+  const [pagePart, indexPart] = key.split(':'); const targetPage = Number(pagePart); const index = Number(indexPart)
+  if (!Number.isInteger(targetPage) || !Number.isInteger(index)) return
+  if (targetPage === page.value && blocks.value[index]) void startEdit(index)
+  else { pendingOpenKey.value = key; page.value = targetPage }
+}
+function onInlineInput(): void { if (!active.value || !editorEl.value) return; active.value.text = editorEl.value.textContent ?? ''; commitActive() }
+function onPanelInput(event: Event): void { if (!active.value) return; active.value.text = (event.target as HTMLTextAreaElement).value; if (editorEl.value) editorEl.value.textContent = active.value.text; commitActive() }
+function originalForActive(): Block | null { const index = Number(active.value?.key.split(':')[1]); return Number.isFinite(index) ? blocks.value[index] ?? null : null }
+function commitActive(): void {
+  const current = active.value; if (!current) return; const original = originalForActive()
+  const unchanged = original && current.text === original.text && current.font_size === original.font_size && current.color === original.color && current.font === original.font_name && JSON.stringify(current.box) === JSON.stringify(original.bbox)
+  if (unchanged) edits.value.delete(current.key)
+  else edits.value.set(current.key, { page: current.page, bbox: { ...current.box }, text: current.text, font_size: current.font_size, color: current.color, font: current.font })
+  edits.value = new Map(edits.value)
+}
+function finishEdit(): void { if (!active.value) return; commitActive(); active.value = null }
+function changeSize(delta: number): void { if (!active.value) return; active.value.font_size = clamp(active.value.font_size + delta, 5, 72); commitActive() }
+function toggleBold(): void { if (!active.value) return; const font = active.value.font || 'Helvetica'; active.value.font = isBold.value ? font.replace(/[-,]?bold/gi, '') || 'Helvetica' : `${font}-Bold`; commitActive() }
+function clearText(): void { if (!active.value) return; active.value.text = ''; if (editorEl.value) editorEl.value.textContent = ''; commitActive() }
+function discardEdit(key: string): void { edits.value.delete(key); edits.value = new Map(edits.value); if (active.value?.key === key) active.value = null }
+
+function geometryValue(key: 'x' | 'y' | 'width' | 'height'): number { if (!active.value) return 0; const box = active.value.box; const value = key === 'x' ? box.x0 : key === 'y' ? box.y0 : key === 'width' ? box.x1 - box.x0 : box.y1 - box.y0; return Math.round(value * 1000) / 10 }
+function setGeometry(key: 'x' | 'y' | 'width' | 'height', event: Event): void {
+  if (!active.value) return; const value = Number((event.target as HTMLInputElement).value) / 100; if (!Number.isFinite(value)) return
+  const box = active.value.box; const width = box.x1 - box.x0; const height = box.y1 - box.y0
+  if (key === 'x') { box.x0 = clamp(value, 0, 1 - width); box.x1 = box.x0 + width }
+  else if (key === 'y') { box.y0 = clamp(value, 0, 1 - height); box.y1 = box.y0 + height }
+  else if (key === 'width') box.x1 = clamp(box.x0 + Math.max(.01, value), box.x0 + .01, 1)
+  else box.y1 = clamp(box.y0 + Math.max(.01, value), box.y0 + .01, 1)
+  commitActive()
+}
+
+function cleanupDrag(): void { dragCleanup?.(); dragCleanup = null }
+function startPointerDrag(mode: 'move' | 'resize', event: PointerEvent, width: number, height: number): void {
+  const current = active.value; if (!current) return; cleanupDrag()
+  const startX = event.clientX; const startY = event.clientY; const start = { ...current.box }
+  const move = (pointerEvent: PointerEvent) => {
+    if (!active.value) return
+    const dx = (pointerEvent.clientX - startX) / Math.max(1, width); const dy = (pointerEvent.clientY - startY) / Math.max(1, height)
+    if (mode === 'move') { const boxWidth = start.x1 - start.x0; const boxHeight = start.y1 - start.y0; const x0 = clamp(start.x0 + dx, 0, 1 - boxWidth); const y0 = clamp(start.y0 + dy, 0, 1 - boxHeight); active.value.box = { x0, y0, x1: x0 + boxWidth, y1: y0 + boxHeight } }
+    else active.value.box = { ...start, x1: clamp(start.x1 + dx, start.x0 + .02, 1), y1: clamp(start.y1 + dy, start.y0 + .01, 1) }
+  }
+  const end = () => { cleanupDrag(); commitActive() }
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', end, { once: true }); window.addEventListener('pointercancel', end, { once: true })
+  dragCleanup = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end) }
+}
+
+async function applyEdits(): Promise<void> {
+  const blob = workingBlob.value; if (!blob || !edits.value.size || applying.value) return
+  finishEdit(); const generation = documentGeneration; applying.value = true; error.value = null
+  try {
+    const formData = new FormData(); formData.append('file', blob, workingName.value); formData.append('edits', JSON.stringify([...edits.value.values()]))
+    const response = await apiPost('/api/pdf-extras/edit-text-blocks', formData); const newBlob = await response.blob()
+    if (generation !== documentGeneration || workingBlob.value !== blob) return
+    warnings.value = Number(response.headers.get('X-Warnings') || 0); workingBlob.value = newBlob; blocks.value = []; edits.value = new Map(); active.value = null
+  } catch (caught: unknown) { if (generation === documentGeneration) error.value = caught instanceof Error ? caught.message : 'Anwenden fehlgeschlagen.' }
+  finally { if (generation === documentGeneration) applying.value = false }
+}
+async function download(): Promise<void> { if (!workingBlob.value) return; await downloadBlob(new Response(workingBlob.value), workingName.value.replace(/\.pdf$/i, '_bearbeitet.pdf')) }
+function reset(): void { documentGeneration += 1; blockRequest += 1; blockController?.abort(); cleanupDrag(); file.value = null; workingBlob.value = null; blocks.value = []; edits.value = new Map(); active.value = null; pendingOpenKey.value = null; warnings.value = 0; page.value = 1; pageCount.value = 1; error.value = null }
+
+onBeforeUnmount(() => { documentGeneration += 1; blockController?.abort(); cleanupDrag() })
 </script>

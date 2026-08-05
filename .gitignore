@@ -43,3 +43,4 @@ npm-debug.log*
 *.log
 *.db
 *.sqlite3
+graphify-out/

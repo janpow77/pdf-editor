@@ -1,21 +1,14 @@
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Scan optimieren</h2>
-    </div>
+  <div class="space-y-5">
+    <ToolHeader title="Scan optimieren" description="Gescannte Dokumente geraderücken, drehen, entrauschen und durchsuchbar machen." @back="$emit('back')" />
 
-    <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-800 dark:text-blue-300">
-      Bereitet gescannte PDFs auf: Seiten geraderücken und automatisch drehen,
-      durchsuchbare OCR-Textebene einfügen (OCRmyPDF).
-    </div>
+    <UiAlert tone="info">Die OCR-Verarbeitung kann je nach Seitenzahl mehrere Minuten dauern.</UiAlert>
 
     <FileDrop v-model="file" />
 
-    <div v-if="file" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sprache</label>
-        <select v-model="language" class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white">
+    <UiPanel v-if="file" class="space-y-4">
+      <UiField label="Sprache" for-id="scan-language">
+        <select id="scan-language" v-model="language" class="ui-control w-full sm:w-auto">
           <option value="deu">Deutsch</option>
           <option value="eng">Englisch</option>
           <option value="deu+eng">Deutsch + Englisch</option>
@@ -25,46 +18,38 @@
           <option value="nld">Niederländisch</option>
           <option value="pol">Polnisch</option>
         </select>
+      </UiField>
+      <div class="grid gap-2 sm:grid-cols-2">
+        <label class="ui-choice"><input v-model="deskew" type="checkbox" class="rounded" /> Seiten geraderücken</label>
+        <label class="ui-choice"><input v-model="rotate" type="checkbox" class="rounded" /> Seiten automatisch drehen</label>
+        <label class="ui-choice"><input v-model="forceOcr" type="checkbox" class="rounded" /> OCR erzwingen</label>
+        <label class="ui-choice"><input v-model="clean" type="checkbox" class="rounded" /> Seiten entrauschen</label>
       </div>
-      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input v-model="deskew" type="checkbox" class="rounded" /> Seiten geraderücken
-      </label>
-      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input v-model="rotate" type="checkbox" class="rounded" /> Seiten automatisch drehen
-      </label>
-      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input v-model="forceOcr" type="checkbox" class="rounded" /> OCR erzwingen (auch bei vorhandenem Text)
-      </label>
-      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input v-model="clean" type="checkbox" class="rounded" /> Seiten entrauschen (Flecken/Ränder entfernen)
-      </label>
-    </div>
+    </UiPanel>
 
-    <div v-if="done" class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-700 dark:text-green-300">
-      Scan optimiert, Datei heruntergeladen.
-    </div>
+    <UiAlert v-if="done" tone="success" live>Scan optimiert und Datei heruntergeladen.</UiAlert>
 
-    <button
-      v-if="file"
-      :disabled="loading"
-      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-      @click="apply"
-    >
-      {{ loading ? 'Optimiere… (kann dauern)' : 'Optimieren' }}
-    </button>
-    <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    <UiButton v-if="file" variant="primary" size="lg" :loading="loading" @click="apply">
+      {{ loading ? 'Optimiere…' : 'Optimieren' }}
+    </UiButton>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
+import ToolHeader from '@/components/ui/ToolHeader.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import { useToolRun } from '@/composables/useToolRun'
 import { downloadBlob } from '@/lib/api'
 import { runJob } from '@/lib/jobs'
 import { prefDefault } from '@/lib/auth'
 
-defineEmits<{ (e: 'back'): void }>()
+defineEmits<{ (event: 'back'): void }>()
 
 const { loading, error, done } = useToolRun()
 const file = ref<File | null>(null)
@@ -74,7 +59,7 @@ const rotate = ref(true)
 const forceOcr = ref(false)
 const clean = ref(false)
 
-async function apply() {
+async function apply(): Promise<void> {
   if (!file.value) return
   loading.value = true
   error.value = null
@@ -87,12 +72,12 @@ async function apply() {
     fd.append('rotate_pages', String(rotate.value))
     fd.append('force_ocr', String(forceOcr.value))
     fd.append('clean', String(clean.value))
-    // Async-Job statt Direktaufruf — Scan-Optimierung kann Minuten dauern
-    const resp = await runJob('/api/pdf-extras/jobs/scan-optimize', fd)
-    await downloadBlob(resp, file.value.name.replace(/\.pdf$/i, '_optimiert.pdf'))
+    // Async-Job statt Direktaufruf – Scan-Optimierung kann Minuten dauern.
+    const response = await runJob('/api/pdf-extras/jobs/scan-optimize', fd)
+    await downloadBlob(response, file.value.name.replace(/\.pdf$/i, '_optimiert.pdf'))
     done.value = true
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Unbekannter Fehler'
+  } catch (caught: unknown) {
+    error.value = caught instanceof Error ? caught.message : 'Unbekannter Fehler'
   } finally {
     loading.value = false
   }

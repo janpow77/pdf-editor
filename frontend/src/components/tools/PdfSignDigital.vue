@@ -1,63 +1,51 @@
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Digital signieren (Zertifikat)</h2>
-    </div>
+  <div class="space-y-5">
+    <ToolHeader title="Digital signieren" description="Eine zertifikatsbasierte PAdES-Signatur mit eigenem PKCS#12-Zertifikat erstellen." @back="$emit('back')" />
 
-    <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-800 dark:text-blue-300">
-      Zertifikatsbasierte Signatur (PAdES) mit Ihrem eigenen PKCS#12-Zertifikat
-      (.p12/.pfx). Zertifikat und Passwort werden ausschließlich für diesen einen
-      Vorgang verwendet und weder gespeichert noch protokolliert.
-    </div>
+    <UiAlert tone="info">
+      Zertifikat und Passwort werden ausschließlich für diesen Vorgang verwendet und weder gespeichert noch protokolliert.
+    </UiAlert>
 
     <FileDrop v-model="file" label="PDF" />
     <FileDrop v-model="cert" accept=".p12,.pfx" label="Zertifikat (.p12/.pfx)" />
 
-    <div v-if="file && cert" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Zertifikats-Passwort</label>
-        <input v-model="passphrase" type="password" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+    <UiPanel v-if="file && cert" class="space-y-4">
+      <UiField label="Zertifikats-Passwort" for-id="digital-sign-passphrase">
+        <input id="digital-sign-passphrase" v-model="passphrase" type="password" class="ui-control w-full" autocomplete="new-password" />
+      </UiField>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <UiField label="Grund (optional)" for-id="digital-sign-reason">
+          <input id="digital-sign-reason" v-model="reason" type="text" placeholder="z. B. Freigabe" class="ui-control w-full" />
+        </UiField>
+        <UiField label="Ort (optional)" for-id="digital-sign-location">
+          <input id="digital-sign-location" v-model="location" type="text" class="ui-control w-full" />
+        </UiField>
       </div>
-      <div class="grid sm:grid-cols-2 gap-3">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Grund (optional)</label>
-          <input v-model="reason" type="text" placeholder="z.B. Freigabe" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ort (optional)</label>
-          <input v-model="location" type="text" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-        </div>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Zeitstempel-Dienst (optional, RFC 3161)</label>
-        <input v-model="tsaUrl" type="url" placeholder="https://freetsa.org/tsr" class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white" />
-        <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">Fügt der Signatur einen qualifizierten Zeitstempel eines TSA-Servers hinzu.</p>
-      </div>
-    </div>
+      <UiField label="Zeitstempel-Dienst (optional)" for-id="digital-sign-tsa" hint="RFC-3161-Dienst für einen extern bestätigten Signaturzeitpunkt.">
+        <input id="digital-sign-tsa" v-model="tsaUrl" type="url" placeholder="https://freetsa.org/tsr" class="ui-control w-full" />
+      </UiField>
+    </UiPanel>
 
-    <div v-if="done" class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-700 dark:text-green-300">
-      PDF wurde digital signiert und heruntergeladen.
-    </div>
+    <UiAlert v-if="done" tone="success" live>PDF digital signiert und heruntergeladen.</UiAlert>
 
-    <button
-      v-if="file && cert"
-      :disabled="loading"
-      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-      @click="apply"
-    >
+    <UiButton v-if="file && cert" variant="primary" size="lg" :loading="loading" @click="apply">
       {{ loading ? 'Signiere…' : 'Digital signieren' }}
-    </button>
-    <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    </UiButton>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
+import ToolHeader from '@/components/ui/ToolHeader.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import { useToolRun } from '@/composables/useToolRun'
 
-defineEmits<{ (e: 'back'): void }>()
+defineEmits<{ (event: 'back'): void }>()
 
 const { loading, error, done, run } = useToolRun()
 const file = ref<File | null>(null)
@@ -67,7 +55,7 @@ const reason = ref('')
 const location = ref('')
 const tsaUrl = ref('')
 
-async function apply() {
+async function apply(): Promise<void> {
   if (!file.value || !cert.value) return
   const fd = new FormData()
   fd.append('file', file.value)

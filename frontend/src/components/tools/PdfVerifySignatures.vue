@@ -1,83 +1,61 @@
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600" @click="$emit('back')">← Zurück</button>
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Signatur prüfen</h2>
-    </div>
+  <div class="space-y-5">
+    <ToolHeader title="Signatur prüfen" description="Integrität, Signierzeitpunkt und Unterzeichner digitaler PDF-Signaturen auswerten." @back="$emit('back')" />
 
-    <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-800 dark:text-blue-300">
-      Prüft digitale Signaturen im PDF: Integrität (wurde das Dokument nach der Signatur
-      verändert?), Signierzeitpunkt und Unterzeichner. Die Vertrauenskette kann ohne
-      hinterlegte Vertrauensanker nicht abschließend bewertet werden.
-    </div>
+    <UiAlert tone="info">
+      Ohne hinterlegte Vertrauensanker kann die Zertifikatskette nicht abschließend bewertet werden; die Integritätsprüfung bleibt dennoch möglich.
+    </UiAlert>
 
     <FileDrop v-model="file" />
 
-    <div v-if="file" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-2">
-      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-        Vertrauensanker (optional, PEM/CRT)
-      </label>
-      <input type="file" accept=".pem,.crt,.cer,.der" class="text-sm text-gray-600 dark:text-gray-300" @change="onAnchors" />
-      <p class="text-xs text-gray-600 dark:text-gray-400">
-        Mit hinterlegten Wurzelzertifikaten wird zusätzlich geprüft, ob die Signatur auf
-        eine vertrauenswürdige Stelle zurückführt. Ohne Anker bleibt nur die Integritätsprüfung.
-      </p>
-    </div>
+    <UiPanel v-if="file">
+      <UiField label="Vertrauensanker (optional)" for-id="signature-anchors" hint="PEM, CRT, CER oder DER. Ohne Anker wird nur die Integrität bewertet.">
+        <input id="signature-anchors" type="file" accept=".pem,.crt,.cer,.der" class="block w-full text-sm text-gray-600 dark:text-gray-300" @change="onAnchors" />
+      </UiField>
+    </UiPanel>
 
     <div v-if="report" class="space-y-3">
-      <div v-if="report.count === 0" class="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg text-sm text-yellow-800 dark:text-yellow-300">
-        Dieses PDF enthält keine digitalen Signaturen.
-      </div>
-      <div
-        v-for="(sig, i) in report.signatures"
-        :key="i"
-        class="bg-white dark:bg-gray-900 rounded-xl border p-4 space-y-2"
-        :class="sig.intact ? 'border-green-300 dark:border-green-700' : 'border-red-300 dark:border-red-700'"
-      >
-        <div class="flex items-center justify-between">
-          <span class="font-medium text-gray-900 dark:text-white">{{ sig.field }}</span>
-          <span
-            class="text-xs px-2 py-0.5 rounded-full"
-            :class="sig.intact
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'"
-          >
-            {{ sig.error ? 'Prüfung fehlgeschlagen' : sig.intact ? 'Unverändert' : 'Verändert!' }}
+      <UiAlert v-if="report.count === 0" tone="warning">Dieses PDF enthält keine digitalen Signaturen.</UiAlert>
+      <UiPanel v-for="(signature, index) in report.signatures" :key="index" :tone="signature.intact ? 'success' : 'danger'" class="space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span class="font-semibold">{{ signature.field }}</span>
+          <span class="rounded-full bg-white/70 px-2.5 py-1 text-xs font-semibold dark:bg-black/20">
+            {{ signature.error ? 'Prüfung fehlgeschlagen' : signature.intact ? 'Unverändert' : 'Verändert' }}
           </span>
         </div>
-        <template v-if="!sig.error">
-          <dl class="text-sm text-gray-600 dark:text-gray-300 grid grid-cols-[auto,1fr] gap-x-4 gap-y-1">
-            <dt class="text-gray-600 dark:text-gray-400">Unterzeichner</dt><dd>{{ sig.signer }}</dd>
-            <dt class="text-gray-600 dark:text-gray-400">Signiert am</dt><dd>{{ sig.signing_time || 'unbekannt' }}</dd>
-            <dt class="text-gray-600 dark:text-gray-400">CMS gültig</dt><dd>{{ sig.valid_cms ? 'ja' : 'nein' }}</dd>
-            <dt class="text-gray-600 dark:text-gray-400">Abdeckung</dt><dd>{{ sig.coverage }}</dd>
-            <dt class="text-gray-600 dark:text-gray-400">Vertrauenskette</dt>
-            <dd>{{ anchors ? (sig.trusted ? 'vertrauenswürdig' : 'nicht bestätigt') : 'nicht bewertet' }}</dd>
+        <template v-if="!signature.error">
+          <dl class="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm">
+            <dt class="opacity-70">Unterzeichner</dt><dd>{{ signature.signer }}</dd>
+            <dt class="opacity-70">Signiert am</dt><dd>{{ signature.signing_time || 'unbekannt' }}</dd>
+            <dt class="opacity-70">CMS gültig</dt><dd>{{ signature.valid_cms ? 'ja' : 'nein' }}</dd>
+            <dt class="opacity-70">Abdeckung</dt><dd>{{ signature.coverage }}</dd>
+            <dt class="opacity-70">Vertrauenskette</dt>
+            <dd>{{ anchors ? (signature.trusted ? 'vertrauenswürdig' : 'nicht bestätigt') : 'nicht bewertet' }}</dd>
           </dl>
-          <p class="text-xs text-gray-600 dark:text-gray-400">{{ sig.hinweis }}</p>
+          <p class="text-xs opacity-75">{{ signature.hinweis }}</p>
         </template>
-        <p v-else class="text-sm text-red-600">{{ sig.error }}</p>
-      </div>
+        <UiAlert v-else tone="danger">{{ signature.error }}</UiAlert>
+      </UiPanel>
     </div>
 
-    <button
-      v-if="file"
-      :disabled="loading"
-      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-      @click="apply"
-    >
+    <UiButton v-if="file" variant="primary" size="lg" :loading="loading" @click="apply">
       {{ loading ? 'Prüfe…' : 'Signaturen prüfen' }}
-    </button>
-    <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    </UiButton>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
+import ToolHeader from '@/components/ui/ToolHeader.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import { apiPost } from '@/lib/api'
 
-defineEmits<{ (e: 'back'): void }>()
+defineEmits<{ (event: 'back'): void }>()
 
 interface SignatureEntry {
   field: string
@@ -101,12 +79,12 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const report = ref<Report | null>(null)
 
-function onAnchors(e: Event) {
-  anchors.value = (e.target as HTMLInputElement).files?.[0] ?? null
+function onAnchors(event: Event): void {
+  anchors.value = (event.target as HTMLInputElement).files?.[0] ?? null
   report.value = null
 }
 
-async function apply() {
+async function apply(): Promise<void> {
   if (!file.value) return
   loading.value = true
   error.value = null
@@ -115,10 +93,10 @@ async function apply() {
     const fd = new FormData()
     fd.append('file', file.value)
     if (anchors.value) fd.append('trust_anchors', anchors.value)
-    const resp = await apiPost('/api/pdf-more/verify-signatures', fd)
-    report.value = (await resp.json()) as Report
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Unbekannter Fehler'
+    const response = await apiPost('/api/pdf-more/verify-signatures', fd)
+    report.value = (await response.json()) as Report
+  } catch (caught: unknown) {
+    error.value = caught instanceof Error ? caught.message : 'Unbekannter Fehler'
   } finally {
     loading.value = false
   }

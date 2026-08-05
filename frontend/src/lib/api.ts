@@ -1,88 +1,183 @@
 /**
- * Fetch-Helfer der öffentlichen PDF-Editor-App — bewusst OHNE Authentifizierung.
+ * Zentrale Netzwerk- und Download-Helfer der PDF-Anwendung.
  *
- * Portierung von useAuthFetch.ts aus audit_designer: identische
- * FormData-Upload-, Timeout- und Blob-Download-Logik, aber ohne Bearer-Token
- * (die App ist anonym nutzbar). Zusätzlich landet jede heruntergeladene Datei
- * in der Sitzungs-Ergebnisliste (lib/results.ts) für ZIP-Download/Mailversand —
- * ausschließlich im Browser-Speicher, nie auf dem Server.
+ * Uploads, JSON-Aktionen und Downloads verwenden dieselben Zeitlimits,
+ * verständlichen Fehlertexte und optionalen Abbruchsignale. Fachkomponenten
+ * behalten zusätzlich ihre Inline-Zustände, ohne Netzwerklogik zu duplizieren.
  */
-
+import { useNotifications } from '@/composables/useNotifications'
 import { authHeader, isAuthenticated, logout } from '@/lib/auth'
 import { addResult } from '@/lib/results'
 
-const DEFAULT_TIMEOUT = 5 * 60 * 1000 // 5 Minuten
+const DEFAULT_TIMEOUT = 5 * 60 * 1000
 
-async function throwFromResponse(response: Response): Promise<never> {
-  // Abgelaufene/ungültige Anmeldung: Token verwerfen, Fehler durchreichen
-  if (response.status === 401 && isAuthenticated.value) logout()
-  const err = await response.json().catch(() => ({ detail: response.statusText }))
-  throw new Error(err.detail || `Fehler ${response.status}`)
+export interface ApiRequestOptions {
+  timeout?: number
+  notifyOnError?: boolean
+  signal?: AbortSignal
 }
 
-/** POST einer FormData mit Per-Request-Timeout. Wirft bei !ok. */
-export async function apiPost(
+function detailMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((entry) => {
+        if (typeof entry === 'string') return entry
+        if (entry && typeof entry === 'object' && 'msg' in entry) return String(entry.msg)
+        return ''
+      })
+      .filter(Boolean)
+    if (messages.length) return messages.join(' ')
+  }
+  return fallback
+}
+
+async function throwFromResponse(response: Response): Promise<never> {
+  if (response.status === 401 && isAuthenticated.value) logout()
+  const payload = await response.json().catch(() => ({ detail: response.statusText })) as { detail?: unknown }
+  throw new Error(detailMessage(payload.detail, `Serverfehler ${response.status}`))
+}
+
+function timeoutReason(): Error {
+  const error = new Error('Die Verarbeitung hat das Zeitlimit überschritten.')
+  error.name = 'AbortError'
+  return error
+}
+
+/** Eigenes Zeitlimit mit optionalem externen Abbruchsignal. */
+async function fetchWithTimeout(
   url: string,
-  formData: FormData,
-  options?: { timeout?: number },
+  init: RequestInit,
+  options: ApiRequestOptions = {},
 ): Promise<Response> {
   const controller = new AbortController()
-  const timeout = options?.timeout ?? DEFAULT_TIMEOUT
-  const timer = setTimeout(() => controller.abort(), timeout)
+  const externalSignal = options.signal
+  const abortFromExternal = () => controller.abort(externalSignal?.reason)
+
+  if (externalSignal?.aborted) abortFromExternal()
+  else externalSignal?.addEventListener('abort', abortFromExternal, { once: true })
+
+  const timer = globalThis.setTimeout(
+    () => controller.abort(timeoutReason()),
+    options.timeout ?? DEFAULT_TIMEOUT,
+  )
+
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      body: formData,
-      headers: authHeader(),
-      signal: controller.signal,
-    })
-    if (!response.ok) await throwFromResponse(response)
-    return response
+    return await fetch(url, { ...init, signal: controller.signal })
   } finally {
-    clearTimeout(timer)
+    globalThis.clearTimeout(timer)
+    externalSignal?.removeEventListener('abort', abortFromExternal)
   }
 }
 
-/** GET, gibt JSON zurück. Wirft bei !ok. */
-export async function apiGetJson<T = unknown>(url: string): Promise<T> {
-  const response = await fetch(url, { headers: authHeader() })
-  if (!response.ok) await throwFromResponse(response)
-  return response.json() as Promise<T>
+function notifyFailure(title: string, error: unknown, options?: ApiRequestOptions): void {
+  if (options?.notifyOnError === false) return
+  const notifications = useNotifications()
+  notifications.error(title, notifications.errorFromUnknown(error))
 }
 
-/** JSON-Request (PATCH/PUT/DELETE) mit optionaler Anmeldung. Wirft bei !ok. */
+export async function apiPost(
+  url: string,
+  formData: FormData,
+  options?: ApiRequestOptions,
+): Promise<Response> {
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      body: formData,
+      headers: authHeader(),
+    }, options)
+    if (!response.ok) await throwFromResponse(response)
+    return response
+  } catch (error: unknown) {
+    notifyFailure('Verarbeitung fehlgeschlagen', error, options)
+    throw error
+  }
+}
+
+export async function apiGetJson<T = unknown>(
+  url: string,
+  options: ApiRequestOptions = { notifyOnError: false },
+): Promise<T> {
+  try {
+    const response = await fetchWithTimeout(url, { headers: authHeader() }, options)
+    if (!response.ok) await throwFromResponse(response)
+    return response.json() as Promise<T>
+  } catch (error: unknown) {
+    notifyFailure('Abfrage fehlgeschlagen', error, options)
+    throw error
+  }
+}
+
 export async function apiJson<T = unknown>(
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   url: string,
   body?: unknown,
+  options?: ApiRequestOptions,
 ): Promise<T | null> {
-  const response = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...authHeader() },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-  if (!response.ok) await throwFromResponse(response)
-  if (response.status === 204) return null
-  return response.json() as Promise<T>
+  try {
+    const response = await fetchWithTimeout(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }, options)
+    if (!response.ok) await throwFromResponse(response)
+    if (response.status === 204) return null
+    return response.json() as Promise<T>
+  } catch (error: unknown) {
+    notifyFailure('Aktion fehlgeschlagen', error, options)
+    throw error
+  }
 }
 
-/** Löst einen Browser-Download aus und merkt das Ergebnis für ZIP/Mail vor. */
-export function downloadBlob(response: Response, fallbackName: string): Promise<void> {
-  return response.blob().then((blob) => {
-    const disposition = response.headers.get('Content-Disposition')
-    let filename = fallbackName
-    if (disposition) {
-      const match = disposition.match(/filename="?([^";\n]+)"?/)
-      if (match) filename = match[1]
+function safeFilename(value: string, fallback: string): string {
+  const cleaned = value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim()
+  return cleaned || fallback
+}
+
+function filenameFromDisposition(disposition: string | null): string | null {
+  if (!disposition) return null
+  const encoded = disposition.match(/filename\*=UTF-8''([^;\n]+)/i)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded)
+    } catch {
+      // Fällt auf die klassische filename-Angabe zurück.
     }
-    addResult(filename, blob)
-    const objectUrl = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = objectUrl
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+  }
+  return disposition.match(/filename="?([^";\n]+)"?/i)?.[1] ?? null
+}
+
+/**
+ * Löst den Download aus und übernimmt das Ergebnis – soweit das RAM-Limit dies
+ * zulässt – in die lokale Ergebnisliste. Der unmittelbare Download findet auch
+ * dann statt, wenn die Sitzungsliste keinen weiteren großen Blob halten kann.
+ */
+export async function downloadBlob(response: Response, fallbackName: string): Promise<void> {
+  const blob = await response.blob()
+  const filename = safeFilename(
+    filenameFromDisposition(response.headers.get('Content-Disposition')) ?? fallbackName,
+    fallbackName,
+  )
+
+  const outcome = addResult(filename, blob)
+  const objectUrl = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  try {
+    anchor.href = objectUrl
+    anchor.download = filename
+    document.body.appendChild(anchor)
+    anchor.click()
+  } finally {
+    anchor.remove()
     URL.revokeObjectURL(objectUrl)
-  })
+  }
+
+  const notifications = useNotifications()
+  notifications.success('Datei erstellt', `${filename} wurde zum Download bereitgestellt.`)
+  if (!outcome.stored) {
+    notifications.warning('Nicht in Ergebnisliste gespeichert', 'Die Datei ist für den verfügbaren Sitzungsspeicher zu groß, wurde aber normal heruntergeladen.')
+  } else if (outcome.removed.length) {
+    notifications.warning('Ältere Ergebnisse entfernt', `${outcome.removed.length} ältere Datei(en) wurden aus der RAM-Liste entfernt, um das Speicherlimit einzuhalten.`)
+  }
 }

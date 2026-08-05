@@ -1,8 +1,8 @@
 """PDF-Editor-App — öffentliches, zustandsloses Backend.
 
 Alle Verarbeitungen laufen vollständig im Arbeitsspeicher; es gibt keine
-Datenbank und keine persistente Ablage von Nutzerdateien. Schutz vor
-Missbrauch über Rate-Limiting pro IP und Dateigrößen-Limits (app/config.py).
+persistente Ablage von Nutzerdateien. Schutz vor Missbrauch erfolgt über
+Rate-Limiting pro IP und zentral konfigurierte Dateigrößen-Limits.
 """
 
 import logging
@@ -148,8 +148,7 @@ app.add_middleware(
 app.add_middleware(SecurityHeadersMiddleware, hsts_seconds=settings.hsts_seconds)
 # Textantworten komprimieren — Textextraktion, Formularfeld-Listen und
 # Qualitätsberichte werden dadurch um ein Vielfaches kleiner. PDFs, Bilder
-# und Office-Dateien bleiben unangetastet: deren Inhalt ist bereits
-# komprimiert, ein zweiter Durchlauf kostet nur CPU (siehe JsonGZipMiddleware).
+# und Office-Dateien bleiben unangetastet.
 app.add_middleware(JsonGZipMiddleware, minimum_size=1024)
 
 if settings.cors_origins:
@@ -180,11 +179,25 @@ async def health(request: Request):
     from app.services.pdf_more_service import get_pdf_more
     from app.services.pdf_tools_service import get_pdf_tools
 
+    mebibyte = 1024 * 1024
     return {
         "status": "ok",
         "accounts": bool(getattr(request.app.state, "db_available", False)),
         "turnstile_site_key": settings.turnstile_site_key or None,
         "account_flows": bool(settings.smtp_host and settings.public_base_url),
+        # Die Oberfläche validiert bereits vor dem Upload. Deshalb müssen die
+        # tatsächlich konfigurierten Serverlimits mit ausgeliefert werden und
+        # dürfen nicht als feste Frontendwerte dupliziert bleiben.
+        "upload_limits": {
+            "anonymous": {
+                "max_file": settings.max_file_size_mb * mebibyte,
+                "max_total": settings.max_total_size_mb * mebibyte,
+            },
+            "authenticated": {
+                "max_file": settings.max_file_size_mb_authed * mebibyte,
+                "max_total": settings.max_total_size_mb_authed * mebibyte,
+            },
+        },
         # Werkzeuge, die der Betreiber auf angemeldete Nutzer beschränkt hat
         "login_required_tools": sorted(get_login_required_tools()),
         "features": {
@@ -197,13 +210,7 @@ async def health(request: Request):
 
 @app.get("/api/licenses")
 async def licenses():
-    """Komponenten, Lizenzen und Quelltextangabe — Grundlage der Lizenzseite.
-
-    Die Liste kommt aus `app/pdf_backend.py` und damit aus demselben Register,
-    über das die Anwendung ihre Fremdbibliotheken lädt. Eine Komponente, die
-    hier fehlt, wäre auch nicht eingebunden — die Angabe kann nicht veralten,
-    ohne dass die Funktion mit veraltet.
-    """
+    """Komponenten, Lizenzen und Quelltextangabe — Grundlage der Lizenzseite."""
     from app.pdf_backend import dependency_report, requires_source_disclosure
 
     return {

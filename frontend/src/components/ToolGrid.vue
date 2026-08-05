@@ -1,226 +1,289 @@
 <template>
   <div>
-    <!-- Aktives Werkzeug -->
-    <div v-if="activeTool">
-      <component :is="toolComponents[activeTool]" @back="activeTool = null" />
-    </div>
+    <section v-if="activeEntry" class="space-y-3">
+      <nav aria-label="Brotkrümelnavigation" class="px-1">
+        <ol class="flex flex-wrap items-center gap-1.5 text-sm font-medium text-gray-600 dark:text-gray-300">
+          <li>
+            <button type="button" class="rounded-lg px-2 py-1 transition hover:bg-black/5 hover:text-gray-950 dark:hover:bg-white/10 dark:hover:text-white" @click="closeTool">
+              Startseite
+            </button>
+          </li>
+          <li aria-hidden="true" class="text-gray-400 dark:text-gray-500">›</li>
+          <li class="px-1 text-gray-600 dark:text-gray-300">{{ activeEntry.group.title }}</li>
+          <li aria-hidden="true" class="text-gray-400 dark:text-gray-500">›</li>
+          <li aria-current="page" class="truncate px-1 font-semibold text-gray-950 dark:text-white">{{ activeEntry.tool.label }}</li>
+        </ol>
+      </nav>
 
-    <!-- Werkzeug-Auswahl -->
+      <div class="apple-workspace min-h-[70vh] p-4 sm:p-6">
+        <component :is="toolComponents[activeEntry.tool.id]" @back="closeTool" />
+      </div>
+    </section>
+
     <div v-else class="space-y-8">
-      <!-- Ansicht-Schalter: ein Schalter, zwei Zustände -->
-      <div class="flex justify-end">
-        <button
-          type="button"
-          role="switch"
-          :aria-checked="viewMode === 'rolodex'"
-          class="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300 focus-visible:outline-none
-                 focus-visible:ring-2 focus-visible:ring-primary-500 rounded-full px-1 py-0.5 group"
-          @click="setViewMode(viewMode === 'grid' ? 'rolodex' : 'grid')"
-        >
-          <span :class="viewMode === 'grid' ? 'font-semibold text-gray-900 dark:text-white' : ''">▦ Raster</span>
-          <span
-            class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200"
-            :class="viewMode === 'rolodex' ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'"
-            aria-hidden="true"
-          >
-            <span
-              class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all duration-200"
-              :class="viewMode === 'rolodex' ? 'left-[1.375rem]' : 'left-0.5'"
-            />
-          </span>
-          <span :class="viewMode === 'rolodex' ? 'font-semibold text-gray-900 dark:text-white' : ''">▤ Rolodex</span>
-        </button>
+      <div v-if="!normalizedSearch" class="flex justify-end">
+        <div class="inline-flex rounded-full bg-gray-200/80 p-1 shadow-inner ring-1 ring-black/5 dark:bg-white/10 dark:ring-white/10" role="group" aria-label="Darstellung der Werkzeuge">
+          <button
+            type="button"
+            class="rounded-full px-4 py-2 text-sm font-semibold transition duration-200"
+            :class="viewMode === 'grid' ? 'bg-white text-gray-950 shadow-sm dark:bg-white dark:text-gray-950' : 'text-gray-600 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white'"
+            :aria-pressed="viewMode === 'grid'"
+            @click="setViewMode('grid')"
+          >▦ Raster</button>
+          <button
+            type="button"
+            class="rounded-full px-4 py-2 text-sm font-semibold transition duration-200"
+            :class="viewMode === 'rolodex' ? 'bg-white text-gray-950 shadow-sm dark:bg-white dark:text-gray-950' : 'text-gray-600 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white'"
+            :aria-pressed="viewMode === 'rolodex'"
+            @click="setViewMode('rolodex')"
+          >▤ Rolodex</button>
+        </div>
       </div>
 
-      <!-- Raster-Ansicht: Werkzeuge in thematischen Gruppen -->
-      <template v-if="viewMode === 'grid'">
-        <section v-for="group in groups" :key="group.key" :aria-label="group.title">
-          <div class="flex items-baseline gap-2 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
-            <span aria-hidden="true" class="text-lg">{{ group.icon }}</span>
-            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wider">{{ group.title }}</h3>
-            <span class="text-xs text-gray-400 dark:text-gray-500">{{ group.tools.length }} Werkzeuge</span>
+      <template v-if="effectiveViewMode === 'grid'">
+        <section v-for="group in filteredGroups" :key="group.key" :aria-labelledby="`werkzeuggruppe-${group.key}`">
+          <div class="mb-4 flex flex-wrap items-end justify-between gap-2 px-1">
+            <div class="flex items-center gap-3">
+              <span class="grid h-10 w-10 place-items-center rounded-2xl text-xl shadow-sm" :class="groupIconClass(group.key)" aria-hidden="true">{{ group.icon }}</span>
+              <div>
+                <h2 :id="`werkzeuggruppe-${group.key}`" class="text-lg font-semibold tracking-[-0.025em] text-gray-950 dark:text-white">{{ group.title }}</h2>
+                <p class="text-sm font-medium text-gray-600 dark:text-gray-400">{{ group.tools.length }} {{ group.tools.length === 1 ? 'Werkzeug' : 'Werkzeuge' }}</p>
+              </div>
+            </div>
           </div>
-          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             <button
               v-for="tool in group.tools"
               :key="tool.id"
-              class="relative flex flex-col items-center gap-2 p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
-                     rounded-xl shadow-sm transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 group"
-              :class="isLocked(tool.id)
-                ? 'opacity-60 hover:border-primary-300'
-                : 'hover:shadow-md hover:-translate-y-0.5 hover:border-gray-300 dark:hover:border-gray-500'"
-              :title="isLocked(tool.id) ? LOCK_HINT : tool.desc"
+              type="button"
+              :data-tool-id="tool.id"
+              class="group relative min-h-44 overflow-hidden rounded-[1.35rem] bg-white/82 p-5 text-left shadow-apple-sm ring-1 ring-gray-300/80 backdrop-blur-xl transition duration-200 hover:-translate-y-1 hover:shadow-apple focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-white/[0.075] dark:ring-gray-600 dark:hover:bg-white/[0.105]"
+              :class="isLocked(tool.id) ? 'opacity-75' : ''"
+              :aria-label="`${tool.label}: ${isLocked(tool.id) ? LOCK_HINT : tool.description}`"
               @click="openTool(tool.id)"
             >
-              <span
-                v-if="isLocked(tool.id)"
-                class="absolute top-1.5 right-2 text-xs text-gray-600 dark:text-gray-400"
-                aria-hidden="true"
-              >🔒</span>
-              <div
-                class="w-10 h-10 rounded-lg flex items-center justify-center text-xl"
-                :class="[tool.color, isLocked(tool.id) ? 'grayscale' : '']"
-              >
-                {{ tool.icon }}
-              </div>
-              <span
-                class="text-sm font-medium text-center"
-                :class="isLocked(tool.id) ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'"
-              >{{ tool.label }}</span>
-              <span v-if="isLocked(tool.id)" class="text-xs text-primary-600 dark:text-primary-400 text-center">
-                Nur mit Anmeldung
-              </span>
-              <span v-else class="text-xs text-gray-500 dark:text-gray-400 text-center">{{ tool.desc }}</span>
+              <span class="mb-5 grid h-12 w-12 place-items-center rounded-2xl text-2xl shadow-sm transition duration-200 group-hover:scale-105" :class="groupIconClass(group.key)" aria-hidden="true">{{ tool.icon }}</span>
+              <span class="block text-base font-semibold tracking-[-0.02em] text-gray-950 dark:text-white">{{ tool.label }}</span>
+              <span class="mt-1.5 block text-sm leading-5 text-gray-600 dark:text-gray-300">{{ tool.description }}</span>
+              <span v-if="isLocked(tool.id)" class="mt-4 inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-2.5 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-500/15 dark:text-primary-300"><span aria-hidden="true">🔒</span> Anmeldung erforderlich</span>
+              <span v-else class="absolute bottom-5 right-5 grid h-8 w-8 place-items-center rounded-full bg-gray-950 text-white opacity-0 transition duration-200 group-hover:opacity-100 dark:bg-white dark:text-gray-950" aria-hidden="true">→</span>
             </button>
           </div>
         </section>
       </template>
 
-      <!-- Rolodex-Ansicht: eine Gruppe wählen, durch ihre Karten blättern.
-           Mehrere Karten bleiben nebeneinander sichtbar (Coverflow). -->
-      <div v-else class="select-none space-y-4">
-        <!-- Gruppen-Wahl -->
-        <div class="flex flex-wrap justify-center gap-2" role="tablist" aria-label="Werkzeug-Gruppe wählen">
+      <section v-else class="space-y-5" aria-label="Rolodex-Ansicht der Werkzeuge">
+        <nav class="flex flex-wrap justify-center gap-2" aria-label="Werkzeugkategorie auswählen">
           <button
-            v-for="group in groups"
+            v-for="group in availableGroups"
             :key="group.key"
-            role="tab"
-            :aria-selected="group.key === activeGroupKey"
-            class="px-3 py-1.5 rounded-full text-sm border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-            :class="group.key === activeGroupKey
-              ? 'bg-primary-600 border-primary-600 text-white'
-              : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-primary-400 hover:text-primary-600'"
+            type="button"
+            class="rounded-full px-3.5 py-2 text-sm font-semibold shadow-sm ring-1 transition duration-200"
+            :class="group.key === activeGroupKey ? 'bg-gray-950 text-white ring-gray-950 dark:bg-white dark:text-gray-950 dark:ring-white' : 'bg-white/75 text-gray-700 ring-gray-400/70 hover:bg-white hover:text-gray-950 dark:bg-white/10 dark:text-gray-200 dark:ring-gray-600 dark:hover:bg-white/15'"
+            :aria-pressed="group.key === activeGroupKey"
             @click="setGroup(group.key)"
-          >
-            <span aria-hidden="true">{{ group.icon }}</span> {{ group.title }}
-            <span class="opacity-70">({{ group.tools.length }})</span>
-          </button>
-        </div>
+          ><span aria-hidden="true">{{ group.icon }}</span> {{ group.title }}</button>
+        </nav>
 
         <div
           ref="rolodexEl"
-          class="relative h-72 overflow-hidden outline-none"
-          style="perspective: 1200px"
+          class="relative h-[22rem] overflow-hidden rounded-[1.75rem] bg-white/45 shadow-inner ring-1 ring-black/5 outline-none backdrop-blur-xl dark:bg-white/[0.035] dark:ring-white/10"
+          style="perspective: 1400px"
           tabindex="0"
-          role="listbox"
-          :aria-activedescendant="`rolodex-card-${rolodexIndex}`"
-          aria-label="Werkzeug-Karussell — Pfeiltasten zum Blättern, Enter zum Öffnen"
-          @keydown.left.prevent="step(-1)"
-          @keydown.right.prevent="step(1)"
-          @keydown.enter.prevent="openTool(groupTools[rolodexIndex].id)"
+          role="region"
+          :aria-label="`Werkzeug-Rolodex ${activeGroup?.title ?? ''}. Pfeiltasten zum Blättern, Pos1 und Ende zum Springen, Eingabetaste zum Öffnen.`"
+          @keydown.left.prevent="step(-1, true)"
+          @keydown.right.prevent="step(1, true)"
+          @keydown.home.prevent="selectRolodexIndex(0, true)"
+          @keydown.end.prevent="selectRolodexIndex(Math.max(0, groupTools.length - 1), true)"
+          @keydown.enter.prevent="openActiveRolodexTool"
           @wheel.prevent="onWheel"
         >
           <button
-            v-for="(tool, i) in groupTools"
-            :id="`rolodex-card-${i}`"
+            v-for="(tool, index) in groupTools"
             :key="tool.id"
-            role="option"
-            :aria-selected="i === rolodexIndex"
-            class="absolute left-0 top-1/2 w-52 h-56 flex flex-col items-center justify-center gap-3 p-5
-                   bg-white dark:bg-gray-800 border rounded-2xl shadow-lg
-                   will-change-transform
-                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-            :class="[
-              i === rolodexIndex ? 'border-primary-400 dark:border-primary-500' : 'border-gray-200 dark:border-gray-700',
-              isLocked(tool.id) ? 'opacity-70' : '',
-            ]"
-            :style="cardStyle(i)"
-            :title="isLocked(tool.id) ? LOCK_HINT : tool.desc"
-            @click="i === rolodexIndex ? openTool(tool.id) : (rolodexIndex = i)"
+            type="button"
+            :data-tool-id="tool.id"
+            :data-rolodex-index="index"
+            class="absolute left-1/2 top-1/2 flex h-64 w-60 flex-col rounded-[1.5rem] bg-white p-5 text-left shadow-apple ring-1 ring-gray-300 transition-all duration-300 ease-out will-change-transform focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-900 dark:ring-gray-600"
+            :class="isLocked(tool.id) ? 'grayscale' : ''"
+            :style="cardStyle(index)"
+            :tabindex="index === rolodexIndex ? 0 : -1"
+            :aria-pressed="index === rolodexIndex"
+            :aria-label="`${tool.label}: ${isLocked(tool.id) ? LOCK_HINT : tool.description}`"
+            @focus="selectRolodexIndex(index)"
+            @click="index === rolodexIndex ? openTool(tool.id) : selectRolodexIndex(index, true)"
           >
-            <div
-              class="w-14 h-14 rounded-xl flex items-center justify-center text-3xl"
-              :class="[tool.color, isLocked(tool.id) ? 'grayscale' : '']"
-            >
-              {{ tool.icon }}
-            </div>
-            <span
-              class="text-base font-semibold text-center"
-              :class="isLocked(tool.id) ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'"
-            >{{ tool.label }}</span>
-            <span v-if="isLocked(tool.id)" class="text-xs text-primary-600 dark:text-primary-400 text-center">
-              🔒 Nur mit Anmeldung
-            </span>
-            <span v-else class="text-xs text-gray-500 dark:text-gray-400 text-center">{{ tool.desc }}</span>
+            <span class="grid h-14 w-14 place-items-center rounded-2xl text-3xl shadow-sm" :class="groupIconClass(activeGroupKey)" aria-hidden="true">{{ tool.icon }}</span>
+            <span class="mt-5 text-lg font-semibold tracking-[-0.025em] text-gray-950 dark:text-white">{{ tool.label }}</span>
+            <span class="mt-2 text-sm leading-5 text-gray-600 dark:text-gray-300">{{ tool.description }}</span>
+            <span v-if="isLocked(tool.id)" class="mt-auto text-xs font-semibold text-primary-700 dark:text-primary-300">🔒 Anmeldung erforderlich</span>
+            <span v-else class="mt-auto text-sm font-semibold text-primary-600 dark:text-primary-400">Öffnen →</span>
           </button>
+
+          <p class="sr-only" aria-live="polite" aria-atomic="true">{{ activeRolodexTool ? `${activeRolodexTool.label}, ${rolodexIndex + 1} von ${groupTools.length}` : 'Keine Werkzeuge verfügbar' }}</p>
         </div>
 
-        <!-- Steuerung -->
         <div class="flex items-center justify-center gap-4">
-          <button
-            class="w-10 h-10 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300
-                   hover:border-primary-400 hover:text-primary-600 transition-colors disabled:opacity-30"
-            :disabled="rolodexIndex === 0"
-            aria-label="Vorheriges Werkzeug"
-            @click="stepAndFocus(-1)"
-          >
-            ←
-          </button>
-          <span class="text-sm text-gray-500 dark:text-gray-400 tabular-nums min-w-[6rem] text-center">
-            {{ rolodexIndex + 1 }} / {{ groupTools.length }}
-          </span>
-          <button
-            class="w-10 h-10 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300
-                   hover:border-primary-400 hover:text-primary-600 transition-colors disabled:opacity-30"
-            :disabled="rolodexIndex === groupTools.length - 1"
-            aria-label="Nächstes Werkzeug"
-            @click="stepAndFocus(1)"
-          >
-            →
-          </button>
+          <UiIconButton :disabled="rolodexIndex === 0" aria-label="Vorheriges Werkzeug" @click="step(-1, true)">←</UiIconButton>
+          <span class="min-w-24 text-center text-sm font-medium tabular-nums text-gray-600 dark:text-gray-300">{{ groupTools.length ? rolodexIndex + 1 : 0 }} / {{ groupTools.length }}</span>
+          <UiIconButton :disabled="rolodexIndex >= groupTools.length - 1" aria-label="Nächstes Werkzeug" @click="step(1, true)">→</UiIconButton>
         </div>
-        <p class="text-center text-xs text-gray-600 dark:text-gray-400">
-          Pfeiltasten oder Mausrad zum Blättern · Klick auf die vordere Karte öffnet das Werkzeug
-        </p>
+      </section>
+
+      <div v-if="filteredGroups.length === 0" class="apple-surface mx-auto max-w-xl px-6 py-12 text-center" role="status">
+        <div class="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-gray-100 text-2xl dark:bg-white/10" aria-hidden="true">⌕</div>
+        <h2 class="mt-4 text-lg font-semibold text-gray-950 dark:text-white">Kein Werkzeug gefunden</h2>
+        <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">Prüfen Sie die Schreibweise oder verwenden Sie einen allgemeineren Begriff.</p>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref, type Component } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
 import { useRouter } from 'vue-router'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
+import { useWorkspace } from '@/composables/useWorkspace'
 import { isAuthenticated } from '@/lib/auth'
 import { getHealth } from '@/lib/health'
+import { findTool, TOOL_GROUPS, type CatalogTool, type ToolDefinition, type ToolId } from '@/lib/toolCatalog'
+import { readStoredValue, writeStoredValue } from '@/lib/safeStorage'
 
-interface Tool {
-  id: string
-  label: string
-  desc: string
-  icon: string
-  color: string
-}
-
-interface ToolGroup {
-  key: string
-  title: string
-  icon: string
-  tools: Tool[]
-}
-
-const activeTool = ref<string | null>(null)
-const aiAvailable = ref(false)
-// Werkzeuge, die der Betreiber auf angemeldete Nutzer beschränkt hat
-const lockedTools = ref<Set<string>>(new Set())
+const props = withDefaults(defineProps<{ searchQuery?: string }>(), { searchQuery: '' })
 const router = useRouter()
+const activeTool = ref<ToolId | null>(null)
+const aiAvailable = ref(false)
+const lockedTools = ref<Set<string>>(new Set())
+const { openWorkspace, closeWorkspace } = useWorkspace()
 
-const LOCK_HINT = 'Dieses Werkzeug steht nur angemeldeten Nutzern zur Verfügung — Konto ist kostenlos.'
+const LOCK_HINT = 'Dieses Werkzeug steht nur angemeldeten Nutzern zur Verfügung – ein Konto ist kostenlos.'
+const VIEW_KEY = 'pdfapp_view_mode'
+const GROUP_KEY = 'pdfapp_rolodex_group'
+type ViewMode = 'grid' | 'rolodex'
 
-function isLocked(id: string): boolean {
+const viewMode = ref<ViewMode>(readStoredValue(VIEW_KEY) === 'rolodex' ? 'rolodex' : 'grid')
+const activeGroupKey = ref(readStoredValue(GROUP_KEY) ?? 'bearbeiten')
+const rolodexIndex = ref(0)
+const rolodexEl = ref<HTMLElement | null>(null)
+
+const activeEntry = computed(() => findTool(activeTool.value))
+const normalizedSearch = computed(() => props.searchQuery.trim().toLocaleLowerCase('de'))
+const effectiveViewMode = computed<ViewMode>(() => normalizedSearch.value ? 'grid' : viewMode.value)
+
+const availableGroups = computed(() => TOOL_GROUPS
+  .map((group) => ({ ...group, tools: group.tools.filter((tool: ToolDefinition) => !tool.requiresAi || aiAvailable.value) }))
+  .filter((group) => group.tools.length > 0))
+
+const filteredGroups = computed(() => {
+  const query = normalizedSearch.value
+  return availableGroups.value
+    .map((group) => ({
+      ...group,
+      tools: group.tools.filter((tool) => !query || `${tool.label} ${tool.description} ${group.title}`.toLocaleLowerCase('de').includes(query)),
+    }))
+    .filter((group) => group.tools.length > 0)
+})
+
+const activeGroup = computed(() => availableGroups.value.find((group) => group.key === activeGroupKey.value) ?? availableGroups.value[0] ?? null)
+const groupTools = computed<readonly CatalogTool[]>(() => activeGroup.value?.tools ?? [])
+const activeRolodexTool = computed(() => groupTools.value[rolodexIndex.value] ?? null)
+
+function isLocked(id: ToolId): boolean {
   return lockedTools.value.has(id) && !isAuthenticated.value
 }
 
-function openTool(id: string) {
-  if (isLocked(id)) {
-    router.push({ path: '/login', query: { werkzeug: id } })
-    return
-  }
-  activeTool.value = id
+function scrollToTop(): void {
+  if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-// Werkzeuge werden erst beim Öffnen geladen — die Startseite bleibt leicht,
-// obwohl der Editor-Teil pdf.js mitbringt.
-const toolComponents: Record<string, Component> = {
+function openTool(id: ToolId): void {
+  if (isLocked(id)) {
+    void router.push({ path: '/login', query: { werkzeug: id } })
+    return
+  }
+  const entry = findTool(id)
+  if (!entry) return
+  activeTool.value = id
+  openWorkspace({ toolId: id, toolName: entry.tool.label, groupName: entry.group.title })
+  scrollToTop()
+}
+
+async function closeTool(): Promise<void> {
+  const previous = activeTool.value
+  activeTool.value = null
+  closeWorkspace()
+  scrollToTop()
+  await nextTick()
+  if (previous) document.querySelector<HTMLButtonElement>(`[data-tool-id="${previous}"]`)?.focus()
+}
+
+function setViewMode(mode: ViewMode): void {
+  viewMode.value = mode
+  writeStoredValue(VIEW_KEY, mode)
+  if (mode === 'rolodex') rolodexIndex.value = Math.min(rolodexIndex.value, Math.max(0, groupTools.value.length - 1))
+}
+
+function setGroup(key: string): void {
+  activeGroupKey.value = key
+  writeStoredValue(GROUP_KEY, key)
+  rolodexIndex.value = 0
+  rolodexEl.value?.focus()
+}
+
+async function selectRolodexIndex(index: number, focus = false): Promise<void> {
+  rolodexIndex.value = Math.max(0, Math.min(index, Math.max(0, groupTools.value.length - 1)))
+  if (!focus) return
+  await nextTick()
+  rolodexEl.value?.querySelector<HTMLButtonElement>(`[data-rolodex-index="${rolodexIndex.value}"]`)?.focus()
+}
+
+function step(direction: number, focus = false): void {
+  void selectRolodexIndex(rolodexIndex.value + direction, focus)
+}
+
+function openActiveRolodexTool(): void {
+  const tool = activeRolodexTool.value
+  if (tool) openTool(tool.id)
+}
+
+let wheelLock = 0
+function onWheel(event: WheelEvent): void {
+  const now = Date.now()
+  if (now - wheelLock < 160) return
+  wheelLock = now
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+  if (delta > 0) step(1)
+  else if (delta < 0) step(-1)
+}
+
+function cardStyle(index: number): Record<string, string> {
+  const offset = index - rolodexIndex.value
+  const distance = Math.abs(offset)
+  const rotateY = Math.max(-52, Math.min(52, offset * -31))
+  const translateZ = -distance * 105
+  const scale = offset === 0 ? 1 : Math.max(0.76, 1 - distance * 0.08)
+  return {
+    transform: `translate(-50%, -50%) translateX(${offset * 178}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`,
+    zIndex: String(100 - distance),
+    cursor: offset === 0 ? 'pointer' : 'ew-resize',
+  }
+}
+
+function groupIconClass(key: string): string {
+  return {
+    bearbeiten: 'bg-blue-100 text-blue-700 dark:bg-blue-400/15 dark:text-blue-300',
+    seiten: 'bg-violet-100 text-violet-700 dark:bg-violet-400/15 dark:text-violet-300',
+    umwandeln: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300',
+    schuetzen: 'bg-rose-100 text-rose-700 dark:bg-rose-400/15 dark:text-rose-300',
+    stempel: 'bg-amber-100 text-amber-800 dark:bg-amber-400/15 dark:text-amber-300',
+    pruefen: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-400/15 dark:text-cyan-300',
+    office: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-400/15 dark:text-indigo-300',
+  }[key] ?? 'bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300'
+}
+
+const toolComponents = {
   merge: defineAsyncComponent(() => import('@/components/tools/PdfMerge.vue')),
   split: defineAsyncComponent(() => import('@/components/tools/PdfSplit.vue')),
   rotate: defineAsyncComponent(() => import('@/components/tools/PdfRotate.vue')),
@@ -267,199 +330,19 @@ const toolComponents: Record<string, Component> = {
   wordDiff: defineAsyncComponent(() => import('@/components/tools/WordDiff.vue')),
   wordMeta: defineAsyncComponent(() => import('@/components/tools/WordMetadata.vue')),
   excelMeta: defineAsyncComponent(() => import('@/components/tools/ExcelMetadata.vue')),
-}
-
-const TILE = 'bg-gray-100 dark:bg-gray-700/60'
-
-// Thematische Gruppen statt einer langen Liste: Die Startseite gliedert die
-// Werkzeuge nach Tätigkeit, und der Rolodex blättert je Gruppe — so bleiben
-// im Karussell immer nur eine Handvoll Karten, nicht alle 45.
-const groups = computed<ToolGroup[]>(() => [
-  {
-    key: 'bearbeiten',
-    title: 'Bearbeiten & Anmerken',
-    icon: '✏️',
-    tools: [
-      { id: 'textEditor', label: 'Text bearbeiten', desc: 'WYSIWYG im Dokument', icon: '✏️', color: TILE },
-      { id: 'annotate', label: 'Anmerkungen', desc: 'Markieren, Stempel, Zeichnen', icon: '🖍️', color: TILE },
-      { id: 'searchReplace', label: 'Suchen & Ersetzen', desc: 'Text austauschen', icon: '🔁', color: TILE },
-      { id: 'signImage', label: 'Unterschrift', desc: 'Bild-Signatur einfügen', icon: '✍️', color: TILE },
-      { id: 'imageReplace', label: 'Bild ersetzen', desc: 'Logo/Grafik austauschen', icon: '🖌️', color: TILE },
-      { id: 'formDesigner', label: 'Formular-Designer', desc: 'Felder anlegen, Layout lokal speichern', icon: '🧩', color: TILE },
-      { id: 'formFill', label: 'Formular ausfüllen', desc: 'AcroForm-Felder', icon: '📋', color: TILE },
-      { id: 'tocEditor', label: 'Lesezeichen', desc: 'Inhaltsverzeichnis bearbeiten', icon: '🔖', color: TILE },
-    ],
-  },
-  {
-    key: 'seiten',
-    title: 'Seiten & Struktur',
-    icon: '📑',
-    tools: [
-      { id: 'merge', label: 'Zusammenführen', desc: 'Mehrere PDFs verbinden', icon: '📎', color: TILE },
-      { id: 'split', label: 'Teilen', desc: 'PDF aufteilen', icon: '✂️', color: TILE },
-      { id: 'rotate', label: 'Rotieren', desc: 'Seiten drehen', icon: '🔄', color: TILE },
-      { id: 'pageEditor', label: 'Seiten ordnen', desc: 'Umsortieren & löschen', icon: '📑', color: TILE },
-      { id: 'insertBlank', label: 'Leere Seiten', desc: 'Seiten einfügen', icon: '➕', color: TILE },
-      { id: 'pdfCompare', label: 'PDF Vergleich', desc: 'Zwei PDFs vergleichen', icon: '⚖️', color: TILE },
-    ],
-  },
-  {
-    key: 'umwandeln',
-    title: 'Umwandeln & Exportieren',
-    icon: '🔁',
-    tools: [
-      { id: 'pdfToWord', label: 'PDF → Word', desc: 'Als DOCX exportieren', icon: '📝', color: TILE },
-      { id: 'pdfToExcel', label: 'PDF → Excel', desc: 'Tabellen extrahieren', icon: '📊', color: TILE },
-      { id: 'toImages', label: 'PDF → Bilder', desc: 'Als PNG/JPG exportieren', icon: '🖼️', color: TILE },
-      { id: 'imagesToPdf', label: 'Bilder → PDF', desc: 'Bilder zu PDF', icon: '📄', color: TILE },
-      { id: 'toText', label: 'PDF → Text', desc: 'Reinen Text extrahieren', icon: '📃', color: TILE },
-      { id: 'pdfExport', label: 'PDF exportieren', desc: 'Markdown, HTML, JSON, CSV', icon: '📤', color: TILE },
-      { id: 'ocr', label: 'OCR', desc: 'Texterkennung', icon: '🔍', color: TILE },
-      { id: 'pdfa', label: 'PDF/A', desc: 'Archivformat', icon: '🗄️', color: TILE },
-    ],
-  },
-  {
-    key: 'schuetzen',
-    title: 'Schützen & Signieren',
-    icon: '🔏',
-    tools: [
-      { id: 'protect', label: 'Schützen / Entsperren', desc: 'Passwortschutz', icon: '🔒', color: TILE },
-      { id: 'permissions', label: 'Rechteverwaltung', desc: 'Drucken/Kopieren einschränken', icon: '🛡️', color: TILE },
-      { id: 'redact', label: 'Schwärzen', desc: 'Text unwiderruflich entfernen', icon: '⬛', color: TILE },
-      { id: 'clean', label: 'Bereinigen', desc: 'Metadaten & Verstecktes entfernen', icon: '🧽', color: TILE },
-      { id: 'flatten', label: 'Einbrennen', desc: 'Anmerkungen fixieren', icon: '🔥', color: TILE },
-      { id: 'signDigital', label: 'Digital signieren', desc: 'Mit Zertifikat (PAdES)', icon: '🔏', color: TILE },
-      { id: 'verifySignatures', label: 'Signatur prüfen', desc: 'Integrität & Unterzeichner', icon: '✅', color: TILE },
-    ],
-  },
-  {
-    key: 'stempel',
-    title: 'Stempel & Nummern',
-    icon: '🏷️',
-    tools: [
-      { id: 'watermark', label: 'Wasserzeichen', desc: 'Text oder Bild', icon: '💧', color: TILE },
-      { id: 'pageNumbers', label: 'Seitenzahlen', desc: 'Nummerierung einfügen', icon: '🔢', color: TILE },
-      { id: 'headerFooter', label: 'Kopf-/Fußzeile', desc: 'Text oben/unten', icon: '📰', color: TILE },
-      { id: 'bates', label: 'Bates-Nummern', desc: 'Akten-Kennzeichnung', icon: '🏷️', color: TILE },
-      { id: 'pruefakte', label: 'Prüfakte', desc: 'Akte mit Lesezeichen + Bates', icon: '🗂️', color: TILE },
-    ],
-  },
-  {
-    key: 'pruefen',
-    title: 'Prüfen & Optimieren',
-    icon: '🩺',
-    tools: [
-      { id: 'compress', label: 'Komprimieren', desc: 'Dateigröße reduzieren', icon: '🗜️', color: TILE },
-      { id: 'scanOptimize', label: 'Scan optimieren', desc: 'Geraderücken + OCR', icon: '🧹', color: TILE },
-      { id: 'qualityCheck', label: 'Qualitätsprüfung', desc: 'Leere/doppelte Seiten finden', icon: '🩺', color: TILE },
-      { id: 'metadata', label: 'Metadaten', desc: 'Titel, Autor, Datum etc.', icon: 'ℹ️', color: TILE },
-      { id: 'batch', label: 'Batch', desc: 'Viele Dateien auf einmal', icon: '📦', color: TILE },
-      ...(aiAvailable.value
-        ? [{ id: 'aiAssistant', label: 'KI-Assistent', desc: 'Zusammenfassen & Fragen (lokal)', icon: '🤖', color: TILE }]
-        : []),
-    ],
-  },
-  {
-    key: 'office',
-    title: 'Word & Office',
-    icon: '🗃️',
-    tools: [
-      { id: 'wordToPdf', label: 'Word → PDF', desc: 'DOCX konvertieren', icon: '📝', color: TILE },
-      { id: 'wordMerge', label: 'Word verbinden', desc: 'DOCX zusammenführen', icon: '📋', color: TILE },
-      { id: 'wordDiff', label: 'Word Vergleich', desc: 'Unterschiede finden', icon: '🔍', color: TILE },
-      { id: 'wordMeta', label: 'Word Metadaten', desc: 'Eigenschaften ändern', icon: 'ℹ️', color: TILE },
-      { id: 'excelMeta', label: 'Excel Metadaten', desc: 'Eigenschaften ändern', icon: 'ℹ️', color: TILE },
-      { id: 'officeToPdf', label: 'Office → PDF', desc: 'Excel, PowerPoint, ODF, RTF', icon: '🗃️', color: TILE },
-    ],
-  },
-])
-
-// ── Ansicht (ein Schalter) + Rolodex je Gruppe ────────────────
-
-type ViewMode = 'grid' | 'rolodex'
-const VIEW_KEY = 'pdfapp_view_mode'
-const GROUP_KEY = 'pdfapp_rolodex_group'
-
-const viewMode = ref<ViewMode>(
-  localStorage.getItem(VIEW_KEY) === 'rolodex' ? 'rolodex' : 'grid',
-)
-const activeGroupKey = ref<string>(localStorage.getItem(GROUP_KEY) ?? 'bearbeiten')
-const rolodexIndex = ref(0)
-const rolodexEl = ref<HTMLElement | null>(null)
-
-const groupTools = computed<Tool[]>(() => {
-  const g = groups.value.find((g) => g.key === activeGroupKey.value)
-  return g ? g.tools : groups.value[0].tools
-})
-
-function setViewMode(mode: ViewMode) {
-  viewMode.value = mode
-  localStorage.setItem(VIEW_KEY, mode)
-  if (mode === 'rolodex') {
-    rolodexIndex.value = Math.min(rolodexIndex.value, groupTools.value.length - 1)
-  }
-}
-
-function setGroup(key: string) {
-  activeGroupKey.value = key
-  localStorage.setItem(GROUP_KEY, key)
-  rolodexIndex.value = 0
-  rolodexEl.value?.focus()
-}
-
-function step(dir: number) {
-  const next = rolodexIndex.value + dir
-  if (next >= 0 && next < groupTools.value.length) rolodexIndex.value = next
-}
-
-// Nach Klick auf die Pfeil-Knöpfe zurück zur Kartenliste fokussieren,
-// damit die Pfeiltasten sofort weiterblättern (Befund aus dem UI-Test).
-function stepAndFocus(dir: number) {
-  step(dir)
-  rolodexEl.value?.focus()
-}
-
-let wheelLock = 0
-function onWheel(e: WheelEvent) {
-  const now = Date.now()
-  if (now - wheelLock < 150) return
-  wheelLock = now
-  const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
-  if (delta > 0) step(1)
-  else if (delta < 0) step(-1)
-}
-
-function cardStyle(i: number): Record<string, string> {
-  // Linksbündiger Fächer wie im Videoarchiv: die aktive Karte steht am linken
-  // Rand, die folgenden fächern nach rechts auf — kein Start in der Mitte.
-  const offset = i - rolodexIndex.value
-  const abs = Math.abs(offset)
-  const translateX = 24 + offset * 165
-  const rotateY = Math.max(-55, Math.min(55, offset * -35))
-  const translateZ = -abs * 110
-  const scale = offset === 0 ? 1 : Math.max(0.72, 1 - abs * 0.09)
-  return {
-    transform: `translateY(-50%) translateX(${translateX}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`,
-    // Nur transform animieren (GPU-Pfad, kein Layout/Paint je Frame) mit
-    // ausklingender Kurve — animiert alles zugleich ruckelte spürbar.
-    transition: 'transform 450ms cubic-bezier(0.22, 1, 0.36, 1), border-color 200ms',
-    // Bewusst kein Ausblenden per opacity: die Tiefe entsteht über Skalierung,
-    // Drehung und z-Index. Ein Fade würde den Textkontrast der hinteren Karten
-    // unter die 4,5:1-Schwelle der BITV drücken (axe-Befund color-contrast).
-    opacity: '1',
-    zIndex: String(100 - abs),
-    cursor: offset === 0 ? 'pointer' : 'ew-resize',
-  }
-}
+} satisfies Record<ToolId, Component>
 
 onMounted(async () => {
   try {
     const health = await getHealth()
     aiAvailable.value = Boolean(health.features?.ai)
     lockedTools.value = new Set(health.login_required_tools ?? [])
+    if (!availableGroups.value.some((group) => group.key === activeGroupKey.value)) activeGroupKey.value = availableGroups.value[0]?.key ?? 'bearbeiten'
   } catch {
     aiAvailable.value = false
     lockedTools.value = new Set()
   }
 })
+
+onBeforeUnmount(closeWorkspace)
 </script>

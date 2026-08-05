@@ -1,128 +1,92 @@
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center gap-3">
-      <button class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600 flex items-center gap-1" @click="$emit('back')">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
-        Zurück
-      </button>
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Wasserzeichen hinzufügen</h2>
-    </div>
+  <div class="space-y-5">
+    <ToolHeader title="Wasserzeichen hinzufügen" description="Text oder Bild mit definierter Position und Transparenz überlagern." @back="$emit('back')" />
 
-    <!-- Upload -->
-    <div
-      class="border-2 border-dashed rounded-xl p-6 text-center transition-colors"
-      :class="file ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-300 dark:border-gray-600'"
-      @dragover.prevent
-      @drop.prevent="onDrop"
-    >
-      <input ref="fileInput" type="file" accept=".pdf" class="hidden" @change="onFileSelect" />
-      <div v-if="!file">
-        <p class="text-gray-500 dark:text-gray-400 mb-2">PDF hierher ziehen oder</p>
-        <button class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm" @click="($refs.fileInput as HTMLInputElement).click()">Datei auswählen</button>
-      </div>
-      <div v-else>
-        <p class="font-medium text-gray-900 dark:text-white">{{ file.name }}</p>
-        <button class="mt-1 text-sm text-red-500 hover:text-red-700" @click="file = null">Entfernen</button>
-      </div>
-    </div>
+    <FileDrop v-model="file" />
 
-    <!-- Options -->
-    <div v-if="file" class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-4">
-      <!-- Mode -->
-      <div class="flex gap-4">
-        <label class="flex items-center gap-2 text-sm"><input v-model="mode" type="radio" value="text" class="text-primary-600" /> Text</label>
-        <label class="flex items-center gap-2 text-sm"><input v-model="mode" type="radio" value="image" class="text-primary-600" /> Bild</label>
+    <UiPanel v-if="file" class="space-y-5">
+      <div class="flex flex-wrap gap-2" aria-label="Wasserzeichentyp">
+        <UiButton size="sm" :variant="mode === 'text' ? 'primary' : 'secondary'" :aria-pressed="mode === 'text'" @click="mode = 'text'">Text</UiButton>
+        <UiButton size="sm" :variant="mode === 'image' ? 'primary' : 'secondary'" :aria-pressed="mode === 'image'" @click="mode = 'image'">Bild</UiButton>
       </div>
 
-      <!-- Text options -->
-      <div v-if="mode === 'text'" class="space-y-3">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Text</label>
-          <input v-model="text" type="text" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm" placeholder="z.B. ENTWURF, VERTRAULICH" />
+      <template v-if="mode === 'text'">
+        <UiField label="Text" for-id="watermark-text">
+          <input id="watermark-text" v-model="text" type="text" class="ui-control w-full" placeholder="z. B. ENTWURF oder VERTRAULICH" />
+        </UiField>
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <UiField label="Schriftgröße" for-id="watermark-font-size">
+            <input id="watermark-font-size" v-model.number="fontSize" type="number" min="10" max="200" class="ui-control w-full" />
+          </UiField>
+          <UiField label="Farbe" for-id="watermark-color">
+            <input id="watermark-color" v-model="color" type="color" class="h-11 w-full cursor-pointer rounded-xl bg-transparent" />
+          </UiField>
+          <UiField label="Rotation" for-id="watermark-rotation">
+            <input id="watermark-rotation" v-model.number="rotation" type="number" min="-180" max="180" class="ui-control w-full" />
+          </UiField>
+          <UiField :label="`Transparenz: ${Math.round(opacity * 100)} %`" for-id="watermark-opacity-text">
+            <input id="watermark-opacity-text" v-model.number="opacity" type="range" min="0.05" max="1" step="0.05" class="w-full accent-primary-600" />
+          </UiField>
         </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div>
-            <label class="block text-xs text-gray-500 mb-1">Schriftgröße</label>
-            <input v-model.number="fontSize" type="number" min="10" max="200" class="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm" />
-          </div>
-          <div>
-            <label class="block text-xs text-gray-500 mb-1">Farbe</label>
-            <input v-model="color" type="color" class="w-full h-8 rounded cursor-pointer" />
-          </div>
-          <div>
-            <label class="block text-xs text-gray-500 mb-1">Rotation</label>
-            <input v-model.number="rotation" type="number" min="-180" max="180" class="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm" />
-          </div>
-          <div>
-            <label class="block text-xs text-gray-500 mb-1">Transparenz</label>
-            <input v-model.number="opacity" type="range" min="0.05" max="1" step="0.05" class="w-full" />
-            <span class="text-xs text-gray-600 dark:text-gray-400">{{ Math.round(opacity * 100) }}%</span>
-          </div>
+      </template>
+
+      <template v-else>
+        <FileDrop
+          v-model="watermarkImage"
+          accept=".png,.jpg,.jpeg,.gif,.bmp,.tiff,.tif,.webp"
+          label="Wasserzeichen-Bild"
+          :max-bytes="10 * 1024 * 1024"
+        />
+        <UiField :label="`Transparenz: ${Math.round(opacity * 100)} %`" for-id="watermark-opacity-image">
+          <input id="watermark-opacity-image" v-model.number="opacity" type="range" min="0.05" max="1" step="0.05" class="w-full accent-primary-600" />
+        </UiField>
+      </template>
+
+      <fieldset>
+        <legend class="ui-label">Position</legend>
+        <div class="flex flex-wrap gap-2">
+          <UiButton
+            v-for="positionOption in positions"
+            :key="positionOption.value"
+            size="sm"
+            :variant="position === positionOption.value ? 'primary' : 'secondary'"
+            :aria-pressed="position === positionOption.value"
+            @click="position = positionOption.value"
+          >{{ positionOption.label }}</UiButton>
         </div>
-      </div>
+      </fieldset>
 
-      <!-- Image options -->
-      <div v-if="mode === 'image'" class="space-y-3">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Wasserzeichen-Bild</label>
-          <input type="file" accept="image/*" class="text-sm text-gray-500" @change="onImageSelect" />
-        </div>
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Transparenz</label>
-          <input v-model.number="opacity" type="range" min="0.05" max="1" step="0.05" class="w-full" />
-          <span class="text-xs text-gray-600 dark:text-gray-400">{{ Math.round(opacity * 100) }}%</span>
-        </div>
-      </div>
+      <UiField label="Seiten" for-id="watermark-pages" hint="Leer lassen, um alle Seiten zu bearbeiten.">
+        <input id="watermark-pages" v-model="pages" type="text" class="ui-control w-full sm:w-64" placeholder="z. B. 1-5" />
+      </UiField>
+    </UiPanel>
 
-      <!-- Position -->
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Position</label>
-        <div class="grid grid-cols-3 gap-2 w-48">
-          <button
-            v-for="pos in positions" :key="pos.value"
-            class="p-2 text-xs rounded border transition-colors text-center"
-            :class="position === pos.value ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400' : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 text-gray-500'"
-            @click="position = pos.value"
-          >
-            {{ pos.label }}
-          </button>
-        </div>
-      </div>
+    <UiButton v-if="file" variant="primary" size="lg" :loading="loading" :disabled="!canApply" @click="doWatermark">
+      {{ loading ? 'Wasserzeichen wird hinzugefügt…' : 'Wasserzeichen hinzufügen' }}
+    </UiButton>
 
-      <!-- Pages -->
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Seiten (leer = alle)</label>
-        <input v-model="pages" type="text" class="w-48 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm" placeholder="z.B. 1-5" />
-      </div>
-    </div>
-
-    <button
-      v-if="file && (text || watermarkImage)"
-      :disabled="loading"
-      class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-      @click="doWatermark"
-    >
-      <svg v-if="loading" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-      </svg>
-      {{ loading ? 'Wasserzeichen wird hinzugefügt...' : 'Wasserzeichen hinzufügen' }}
-    </button>
-
-    <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import FileDrop from '@/components/FileDrop.vue'
+import ToolHeader from '@/components/ui/ToolHeader.vue'
+import UiAlert from '@/components/ui/UiAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import { usePdfTools } from '@/composables/usePdfTools'
 import { prefDefault } from '@/lib/auth'
 
-defineEmits<{ (e: 'back'): void }>()
+defineEmits<{ (event: 'back'): void }>()
+
+type WatermarkMode = 'text' | 'image'
 
 const { loading, error, withLoading, addWatermark } = usePdfTools()
 const file = ref<File | null>(null)
-const mode = ref('text')
+const mode = ref<WatermarkMode>('text')
 const text = ref(prefDefault('watermark_text', 'ENTWURF'))
 const watermarkImage = ref<File | null>(null)
 const position = ref('center')
@@ -133,49 +97,32 @@ const color = ref('#808080')
 const pages = ref('')
 
 const positions = [
-  { value: 'top-left', label: '↖' },
-  { value: 'center', label: '⊕' },
-  { value: 'top-right', label: '↗' },
-  { value: 'bottom-left', label: '↙' },
-  { value: 'center', label: '⊕' },
-  { value: 'bottom-right', label: '↘' },
-]
-// Deduplicate center
-const uniquePositions = [
-  { value: 'top-left', label: 'OL' },
+  { value: 'top-left', label: 'oben links' },
+  { value: 'top-right', label: 'oben rechts' },
   { value: 'center', label: 'Mitte' },
-  { value: 'top-right', label: 'OR' },
-  { value: 'bottom-left', label: 'UL' },
-  { value: 'center', label: 'M' },
-  { value: 'bottom-right', label: 'UR' },
+  { value: 'bottom-left', label: 'unten links' },
+  { value: 'bottom-right', label: 'unten rechts' },
 ]
 
-function onFileSelect(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (input.files?.[0]) file.value = input.files[0]
-}
+const canApply = computed(() =>
+  mode.value === 'text' ? text.value.trim().length > 0 : watermarkImage.value !== null,
+)
 
-function onDrop(e: DragEvent) {
-  const f = e.dataTransfer?.files?.[0]
-  if (f?.name.toLowerCase().endsWith('.pdf')) file.value = f
-}
+watch(mode, () => {
+  error.value = null
+})
 
-function onImageSelect(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (input.files?.[0]) watermarkImage.value = input.files[0]
-}
-
-async function doWatermark() {
-  if (!file.value) return
+async function doWatermark(): Promise<void> {
+  if (!file.value || !canApply.value) return
   await withLoading(() => addWatermark(file.value!, {
-    text: mode.value === 'text' ? text.value : undefined,
-    image: mode.value === 'image' ? watermarkImage.value || undefined : undefined,
+    text: mode.value === 'text' ? text.value.trim() : undefined,
+    image: mode.value === 'image' ? watermarkImage.value ?? undefined : undefined,
     position: position.value,
     opacity: opacity.value,
     rotation: rotation.value,
     fontSize: fontSize.value,
     color: color.value,
-    pages: pages.value || undefined,
+    pages: pages.value.trim() || undefined,
   }))
 }
 </script>
