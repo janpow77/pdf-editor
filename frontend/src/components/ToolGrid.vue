@@ -16,7 +16,9 @@
       </nav>
 
       <div class="apple-workspace min-h-[70vh] p-4 sm:p-6">
-        <component :is="toolComponents[activeEntry.tool.id]" @back="closeTool" />
+        <!-- switch-tool: die Werkbank reicht ihr Ergebnis per Handoff an ein
+             anderes Werkzeug weiter und wechselt direkt dorthin. -->
+        <component :is="toolComponents[activeEntry.tool.id]" @back="closeTool" @switch-tool="openTool" />
       </div>
     </section>
 
@@ -444,6 +446,7 @@ function cardStyle(index: number): Record<string, string> {
 
 function groupIconClass(key: string): string {
   return {
+    editor: 'bg-primary-100 text-primary-700 dark:bg-primary-400/15 dark:text-primary-300',
     bearbeiten: 'bg-blue-100 text-blue-700 dark:bg-blue-400/15 dark:text-blue-300',
     seiten: 'bg-violet-100 text-violet-700 dark:bg-violet-400/15 dark:text-violet-300',
     umwandeln: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300',
@@ -455,6 +458,7 @@ function groupIconClass(key: string): string {
 }
 
 const toolComponents = {
+  workbench: defineAsyncComponent(() => import('@/components/tools/PdfWorkbench.vue')),
   merge: defineAsyncComponent(() => import('@/components/tools/PdfMerge.vue')),
   split: defineAsyncComponent(() => import('@/components/tools/PdfSplit.vue')),
   rotate: defineAsyncComponent(() => import('@/components/tools/PdfRotate.vue')),

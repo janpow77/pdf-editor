@@ -1,6 +1,6 @@
 <template>
   <div class="space-y-2">
-    <div :class="isFormDesigner && !modelValue ? 'grid gap-4 md:grid-cols-2' : ''">
+    <div>
       <UiDropZone
         :active="isDragging"
         :accepted="Boolean(modelValue)"
@@ -24,25 +24,6 @@
           <UiButton variant="danger" size="sm" class="mt-3" @click="removeFile">Entfernen</UiButton>
         </div>
       </UiDropZone>
-
-      <!--
-        Nur im Formular-Designer erscheint eine gleichwertige zweite
-        Einstiegskarte. Das PDF wird vollständig im Browser erzeugt und
-        anschließend wie eine hochgeladene Datei an den bestehenden Editor
-        übergeben.
-      -->
-      <UiPanel
-        v-if="isFormDesigner && !modelValue"
-        as="button"
-        type="button"
-        class="flex min-h-64 flex-col items-center justify-center text-center transition hover:-translate-y-0.5 hover:shadow-apple"
-        @click="createBlankForm"
-      >
-        <span class="grid h-12 w-12 place-items-center rounded-2xl bg-violet-100 text-2xl text-violet-700 shadow-sm dark:bg-violet-400/15 dark:text-violet-300" aria-hidden="true">＋</span>
-        <span class="mt-3 font-semibold text-gray-950 dark:text-white">Leeres Formular erstellen</span>
-        <span class="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-300">DIN A4, Hochformat – ohne Dummy-Datei direkt im Editor starten.</span>
-        <span class="mt-4 rounded-full bg-gray-950 px-5 py-2.5 text-sm font-semibold text-white shadow-sm dark:bg-white dark:text-gray-950">Neu erstellen</span>
-      </UiPanel>
     </div>
 
     <UiAlert v-if="validationError" tone="danger">{{ validationError }}</UiAlert>
@@ -50,16 +31,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import UiAlert from '@/components/ui/UiAlert.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiDropZone from '@/components/ui/UiDropZone.vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
 import { useNotifications } from '@/composables/useNotifications'
-import { useWorkspace } from '@/composables/useWorkspace'
 import { currentFileLimit, formatFileSize, validatePdfFile } from '@/lib/fileValidation'
-import { createBlankA4Pdf } from '@/lib/pdfFactory'
-import { removeStoredValue } from '@/lib/safeStorage'
+import { takePendingHandoff } from '@/lib/handoff'
 
 const props = withDefaults(
   defineProps<{
@@ -76,9 +54,14 @@ const input = ref<HTMLInputElement | null>(null)
 const validationError = ref('')
 const isDragging = ref(false)
 const notifications = useNotifications()
-const { activeWorkspace } = useWorkspace()
-const isFormDesigner = computed(() => activeWorkspace.value?.toolId === 'formDesigner')
 let validationGeneration = 0
+
+// Von einem anderen Werkzeug übergebene Datei (z. B. Werkbank-Ergebnis)
+// durchläuft dieselbe Validierung wie eine manuelle Auswahl.
+onMounted(() => {
+  const pending = takePendingHandoff()
+  if (pending) void acceptFile(pending)
+})
 
 /** Prüft sowohl Dateiendungen als auch MIME-Angaben aus dem accept-Attribut. */
 function matches(file: File): boolean {
@@ -156,20 +139,5 @@ function removeFile(): void {
   validationError.value = ''
   isDragging.value = false
   emit('update:modelValue', null)
-}
-
-function createBlankForm(): void {
-  validationGeneration += 1
-  // „Von Grund auf“ bedeutet bewusst ohne automatisch restauriertes Alt-Layout.
-  removeStoredValue('pdfapp_form_layout')
-
-  const blob = createBlankA4Pdf()
-  const file = new File([blob], 'leeres-formular-din-a4.pdf', {
-    type: 'application/pdf',
-    lastModified: Date.now(),
-  })
-  validationError.value = ''
-  emit('update:modelValue', file)
-  notifications.success('Leeres Formular erstellt', 'Eine weiße DIN-A4-Seite wurde lokal erzeugt und im Designer geöffnet.')
 }
 </script>

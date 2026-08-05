@@ -24,6 +24,12 @@ export interface ToolGroupDefinition {
 
 export const TOOL_GROUPS = [
   {
+    key: 'editor', title: 'PDF-Editor', icon: '🛠️',
+    tools: [
+      { id: 'workbench', label: 'Werkbank', description: 'Mehrere PDFs mischen, schneiden, drehen und neu zusammenstellen', icon: '🛠️' },
+    ],
+  },
+  {
     key: 'bearbeiten', title: 'Bearbeiten & Anmerken', icon: '✏️',
     tools: [
       { id: 'textEditor', label: 'Text bearbeiten', description: 'WYSIWYG direkt im Dokument', icon: '✏️' },

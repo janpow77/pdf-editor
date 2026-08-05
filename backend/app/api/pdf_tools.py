@@ -277,6 +277,55 @@ async def merge_pdfs(
     return _pdf_response(result.file_content, "zusammengefuehrt.pdf")
 
 
+@router.post("/compose")
+async def compose_pages(
+    files: list[UploadFile] = File(..., description="Quelldokumente der Werkbank"),
+    plan: str = Form(
+        ...,
+        description=(
+            "JSON-Array der Zielseiten in Reihenfolge: "
+            '{"file": 0, "page": 3, "rotate": 90} oder {"blank": true, "width": 595.28, "height": 841.89}'
+        ),
+    ),
+):
+    """Assemble a new PDF from pages of several source documents (Werkbank)."""
+    if len(files) > 50:
+        raise HTTPException(status_code=400, detail="Maximum 50 Dateien")
+
+    file_data = []
+    total_size = 0
+    for f in files:
+        content = await f.read()
+        total_size += len(content)
+        if total_size > current_limits().max_total:
+            raise HTTPException(
+                status_code=400, detail=f"Gesamtgröße überschreitet {current_limits().max_total_mb} MB"
+            )
+        _validate_pdf(f, content)
+        file_data.append((f.filename or f"file_{len(file_data)}.pdf", content))
+
+    try:
+        entries = json.loads(plan)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Ungültiges JSON für plan")
+    if not isinstance(entries, list) or not entries:
+        raise HTTPException(status_code=400, detail="plan muss ein nicht-leeres JSON-Array sein")
+    if len(entries) > 2000:
+        raise HTTPException(status_code=400, detail="Maximal 2000 Seiten je Zusammenstellung")
+    if not all(isinstance(entry, dict) for entry in entries):
+        raise HTTPException(status_code=400, detail="Jeder Planeintrag muss ein Objekt sein")
+
+    service = get_pdf_tools()
+    result = await run_cpu(service.compose_pages, file_data, entries)
+
+    if not result.success:
+        # Plan-Fehler sind Eingabefehler des Aufrufers, keine Serverfehler.
+        status = 400 if result.error and result.error.startswith("Planeintrag") else 500
+        raise HTTPException(status_code=status, detail=result.error)
+
+    return _pdf_response(result.file_content, "werkbank.pdf")
+
+
 @router.post("/split")
 async def split_pdf(
     file: UploadFile = File(...),

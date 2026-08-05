@@ -38,6 +38,7 @@ TOOL_CATALOG: tuple[ToolEntry, ...] = (
     ToolEntry("watermark", "Wasserzeichen", _PDF, ("/api/pdf-tools/watermark",)),
     ToolEntry("imagesToPdf", "Bilder → PDF", _PDF, ("/api/pdf-tools/images-to-pdf",)),
     ToolEntry("pageEditor", "Seiten ordnen", _PDF, ("/api/pdf-tools/page-operations",)),
+    ToolEntry("workbench", "Werkbank", _PDF, ("/api/pdf-tools/compose",)),
     ToolEntry("insertBlank", "Leere Seiten", _PDF, ("/api/pdf-more/insert-blank",)),
     ToolEntry(
         "pdfCompare",

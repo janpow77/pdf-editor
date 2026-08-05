@@ -301,6 +301,117 @@ class PdfToolsService:
                 error=f"Fehler beim Zusammenführen: {e}",
             )
 
+    # ── Werkbank: Seiten frei zusammenstellen ──────────────────
+
+    def compose_pages(
+        self,
+        files: list[tuple[str, bytes]],
+        plan: list[dict],
+    ) -> PdfToolResult:
+        """Stellt aus mehreren Quelldokumenten eine neue Seitenfolge zusammen.
+
+        Grundlage der Werkbank: Mischen, Löschen, Herausschneiden, Drehen und
+        Einfügen über Dokumentgrenzen hinweg in einem einzigen Serverlauf.
+
+        Args:
+            files: Liste von (Dateiname, Inhalt) in der Reihenfolge, auf die
+                sich die ``file``-Indizes im Plan beziehen.
+            plan: Geordnete Einträge, je Seite einer:
+                ``{"file": 0, "page": 3, "rotate": 90}`` — Seite 3 (1-basiert)
+                aus Datei 0, zusätzlich zur vorhandenen Drehung rotiert;
+                ``{"blank": true, "width": 595.28, "height": 841.89}`` — Leerseite.
+        """
+        if not PYMUPDF_AVAILABLE:
+            return PdfToolResult(
+                success=False, output_format="pdf", error="PyMuPDF nicht verfügbar"
+            )
+        if not plan:
+            return PdfToolResult(
+                success=False, output_format="pdf", error="Der Seitenplan ist leer"
+            )
+
+        sources: list = []
+        try:
+            # Anders als beim Zusammenführen wird eine unlesbare Datei nicht
+            # übersprungen: Die Planeinträge verweisen auf feste Indizes, ein
+            # stilles Auslassen würde die falschen Seiten liefern.
+            for filename, content in files:
+                try:
+                    sources.append(open_pdf(content))
+                except Exception:
+                    return PdfToolResult(
+                        success=False,
+                        output_format="pdf",
+                        error=f"'{filename}' konnte nicht geöffnet werden",
+                    )
+
+            composed = fitz.open()
+            for position, entry in enumerate(plan, start=1):
+                if entry.get("blank"):
+                    width = float(entry.get("width") or 595.28)
+                    height = float(entry.get("height") or 841.89)
+                    if not (72 <= width <= 14400 and 72 <= height <= 14400):
+                        return PdfToolResult(
+                            success=False,
+                            output_format="pdf",
+                            error=f"Planeintrag {position}: unzulässige Leerseitengröße",
+                        )
+                    composed.new_page(width=width, height=height)
+                    continue
+
+                file_index = int(entry.get("file", -1))
+                page_number = int(entry.get("page", 0))
+                rotate = int(entry.get("rotate", 0) or 0)
+                if rotate not in (0, 90, 180, 270):
+                    return PdfToolResult(
+                        success=False,
+                        output_format="pdf",
+                        error=f"Planeintrag {position}: Winkel muss 0, 90, 180 oder 270 sein",
+                    )
+                if not 0 <= file_index < len(sources):
+                    return PdfToolResult(
+                        success=False,
+                        output_format="pdf",
+                        error=f"Planeintrag {position}: unbekannte Datei {file_index + 1}",
+                    )
+                src = sources[file_index]
+                if not 1 <= page_number <= src.page_count:
+                    return PdfToolResult(
+                        success=False,
+                        output_format="pdf",
+                        error=(
+                            f"Planeintrag {position}: Seite {page_number} existiert "
+                            f"nicht in Datei {file_index + 1}"
+                        ),
+                    )
+                composed.insert_pdf(src, from_page=page_number - 1, to_page=page_number - 1)
+                if rotate:
+                    page = composed[-1]
+                    page.set_rotation((page.rotation + rotate) % 360)
+
+            output = composed.tobytes(deflate=True, garbage=4)
+            page_count = composed.page_count
+            composed.close()
+
+            return PdfToolResult(
+                success=True,
+                output_format="pdf",
+                file_content=output,
+                metadata={"page_count": page_count},
+            )
+        except Exception as e:
+            return PdfToolResult(
+                success=False,
+                output_format="pdf",
+                error=f"Fehler beim Zusammenstellen: {e}",
+            )
+        finally:
+            for doc in sources:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
+
     # ── PDF Split ──────────────────────────────────────────────
 
     def split_pdf(
