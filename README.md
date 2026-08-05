@@ -94,11 +94,14 @@ Analog zum Muster in `docs/HETZNER_DEPLOY.md` des audit_designer-Repos:
 2. **Cloudflare-Tunnel**: im Cloudflare-Dashboard einen (eigenen) Tunnel anlegen und
    das Hostname-Mapping `pdf.flowaudit.de → http://frontend:80` konfigurieren;
    `TUNNEL_TOKEN` in die Env-Datei.
-3. **Start**: `cd /opt/pdf-editor && docker compose --env-file /etc/pdf-editor/env --profile prod up -d --build`
+3. **Start**: `cd /opt/pdf-editor && docker compose --env-file /etc/pdf-editor/env --profile prod pull && docker compose --env-file /etc/pdf-editor/env --profile prod up -d`
 4. **Verifikation**: `curl -s https://pdf.flowaudit.de/api/health` → `"status": "ok"`.
 
-Später (nach Extraktion in ein eigenes Repo): GitHub-Actions-Build nach ghcr
-(`audit_designer-pdf-{backend,frontend}`) und `docker compose pull` statt `--build`.
+GitHub Actions baut bei jedem Push auf `main` die Container-Images und legt sie
+als `ghcr.io/janpow77/pdf-editor-{backend,frontend}` ab
+(`.github/workflows/image.yaml`, Details in BETRIEB.md Teil B4). Der Server
+zieht fertige Bilder statt selbst zu bauen; `up -d --build` bleibt als
+Rückfallebene ohne GHCR-Zugriff erhalten.
 
 ## Herkunft des Codes
 

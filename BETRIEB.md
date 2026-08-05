@@ -193,50 +193,40 @@ Ebenfalls anzupassen, sonst laufen die Angaben ins Leere:
   KONZEPT.md, Abschnitt Lizenzlage).
 - Den Verweis auf `pdf-editor-app/` in der `CLAUDE.md` von audit_designer.
 
-### B4. Bilder bauen lassen (optional, aber empfohlen)
+### B4. Bilder bauen lassen (eingerichtet am 2026-08-05)
 
 Solange auf dem Zielserver gebaut wird, dauert jedes Deployment 10–20 Minuten
-und belegt Plattenplatz für Build-Zwischenstände. Im neuen Repository als
-`.github/workflows/image.yaml`:
+und belegt Plattenplatz für Build-Zwischenstände. Deshalb baut GitHub Actions
+die Bilder jetzt selbst: `.github/workflows/image.yaml` läuft bei jedem Push
+auf `main` (und bei Tags `v*`), baut beide Komponenten und schiebt sie als
 
-```yaml
-name: Images bauen und nach GHCR schieben
+    ghcr.io/janpow77/pdf-editor-backend:latest    (zusätzlich :<commit-sha>)
+    ghcr.io/janpow77/pdf-editor-frontend:latest   (zusätzlich :<commit-sha>)
 
-on:
-  push:
-    branches: [main]
-    tags: ['v*']
-  workflow_dispatch:
+in die GitHub Container Registry. Die Compose-Datei trägt diese Namen als
+`image:` neben dem `build:` — der Server zieht fertige Bilder, lokal baut
+`docker compose up --build` unverändert selbst.
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        component: [backend, frontend]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
-        with:
-          context: ./${{ matrix.component }}
-          push: true
-          tags: |
-            ghcr.io/janpow77/pdf-editor-${{ matrix.component }}:latest
-            ghcr.io/janpow77/pdf-editor-${{ matrix.component }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+**Einmalig nötig:** Beim ersten Lauf legt GitHub die beiden Pakete **privat**
+an, auch bei öffentlichem Repository. Entweder beide Pakete unter
+`github.com/janpow77?tab=packages` → Package settings → *Change visibility*
+auf öffentlich stellen (empfohlen — das Repository ist ohnehin öffentlich und
+die Bilder enthalten nichts darüber hinaus), oder auf dem Server einmal
+`docker login ghcr.io` mit einem PAT (`read:packages`) hinterlegen.
+
+Das Deployment auf dem Server ist damit:
+
+```bash
+cd /opt/pdf-editor
+git pull
+docker compose --env-file /etc/pdf-editor/env --profile prod pull
+docker compose --env-file /etc/pdf-editor/env --profile prod up -d
 ```
 
-Auf dem Server dann `image:` statt `build:` in der Compose-Datei und
-`docker compose pull` statt `--build`.
+`up -d --build` bleibt als Rückfallebene erhalten, falls GHCR nicht erreichbar
+ist. Die früher auf dem Server gebauten Bilder (`pdfapp-backend`,
+`pdfapp-frontend`) bleiben nach der Umstellung ungenutzt liegen —
+`docker image prune` räumt sie weg.
 
 ---
 
@@ -339,8 +329,13 @@ Cloudflare-Dashboard einen eigenen Tunnel anlegen, Hostname
 
 ```bash
 cd /opt/pdf-editor
-docker compose --env-file /etc/pdf-editor/env --profile prod up -d --build
+docker compose --env-file /etc/pdf-editor/env --profile prod pull
+docker compose --env-file /etc/pdf-editor/env --profile prod up -d
 ```
+
+Das `pull` holt die von GitHub Actions gebauten Bilder (Teil B4). Ohne
+GHCR-Zugriff stattdessen `up -d --build` — dann baut der Server selbst
+(10–20 Minuten beim ersten Mal).
 
 Im Produktivbetrieb erreicht der Tunnel den Frontend-Container über das
 Compose-Netz. Die Portfreigabe `127.0.0.1:8080` wird dafür **nicht** gebraucht
@@ -425,16 +420,21 @@ Skalierung erfordert vorher einen gemeinsamen Auftragsspeicher.
 
 ### D4. Rückfall
 
+Ohne Bauen, über die von Actions abgelegten Bilder (Teil B4): den letzten
+guten Commit heraussuchen und dessen SHA als Bild-Tag pinnen.
+
 ```bash
 cd /opt/pdf-editor
-git log --oneline -5
-git checkout <letzter-guter-stand>
-docker compose --env-file /etc/pdf-editor/env --profile prod up -d --build
+git log --oneline -5                      # guten Stand heraussuchen
+# in /etc/pdf-editor/env eintragen: PDFAPP_IMAGE_TAG=<voller-commit-sha>
+docker compose --env-file /etc/pdf-editor/env --profile prod pull
+docker compose --env-file /etc/pdf-editor/env --profile prod up -d
 curl -s https://pdf.flowaudit.de/api/health | jq .status
 ```
 
-Mit GHCR-Bildern (Teil B4) geht es schneller und ohne Bauen: Bild-Tag in der
-Compose-Datei zurücksetzen, `docker compose up -d --force-recreate`.
+Zurück auf den aktuellen Stand: `PDFAPP_IMAGE_TAG` wieder entfernen (oder auf
+`latest`), dann erneut `pull` und `up -d`. Rückfallebene ohne GHCR:
+`git checkout <letzter-guter-stand>` und `up -d --build` wie früher.
 
 Bei Datenbankänderungen gilt die Reihenfolge aus dem vorhandenen
 Hetzner-Runbook: erst sichern, dann die neue Anwendungsversion, danach die
@@ -481,9 +481,11 @@ docker compose up -d --build
 docker compose logs -f backend
 docker compose down                      # ohne -v, sonst sind die Konten weg
 
-# Hetzner
+# Hetzner (Deployment: Bilder kommen fertig aus GHCR, Teil B4)
 ssh hetzner
 cd /opt/pdf-editor
+git pull
+docker compose --env-file /etc/pdf-editor/env --profile prod pull
 docker compose --env-file /etc/pdf-editor/env --profile prod up -d
 docker compose --env-file /etc/pdf-editor/env logs -f backend
 curl -s https://pdf.flowaudit.de/api/health | jq .

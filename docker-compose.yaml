@@ -1,8 +1,10 @@
 # PDF-Editor-App — eigenständiger Stack (kein Bezug zum audit_designer-Stack).
 #
 # Lokal:      docker compose up --build          → http://localhost:8080
-# Produktion: docker compose --profile prod up -d  (zusätzlich cloudflared;
+# Produktion: docker compose --profile prod pull   (fertige Bilder aus GHCR)
+#             docker compose --profile prod up -d  (zusätzlich cloudflared;
 #             TUNNEL_TOKEN in .env bzw. /etc/pdf-editor/env setzen)
+#             Ohne GHCR-Zugriff weiterhin möglich: --profile prod up -d --build
 
 services:
   db:
@@ -22,6 +24,9 @@ services:
 
   backend:
     build: ./backend
+    # Gebaut von .github/workflows/image.yaml bei jedem Push auf main.
+    # PDFAPP_IMAGE_TAG=<commit-sha> pinnt einen früheren Stand (Rückfall).
+    image: ghcr.io/janpow77/pdf-editor-backend:${PDFAPP_IMAGE_TAG:-latest}
     depends_on:
       db:
         condition: service_healthy
@@ -55,6 +60,7 @@ services:
 
   frontend:
     build: ./frontend
+    image: ghcr.io/janpow77/pdf-editor-frontend:${PDFAPP_IMAGE_TAG:-latest}
     depends_on:
       - backend
     ports:
