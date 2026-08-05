@@ -47,6 +47,68 @@ def _hex_to_rgb(color: str) -> tuple[float, float, float]:
     return (0.0, 0.0, 0.0)
 
 
+def _search_instances(page, search: str, match_case: bool) -> list:
+    """Fundstellen eines Suchbegriffs, Groß-/Kleinschreibung selbst geprüft.
+
+    PyMuPDFs ``search_for`` findet grundsätzlich ohne Beachtung der
+    Schreibweise; die Search-Flags steuern nur Whitespace und Ligaturen.
+    Für ``match_case`` wird deshalb der tatsächliche Text jeder Fundstelle
+    nachgelesen und zeichengenau verglichen.
+    """
+    instances = page.search_for(search, flags=fitz.TEXT_PRESERVE_WHITESPACE)
+    if not match_case:
+        return instances
+    return [inst for inst in instances if search in page.get_text(clip=inst)]
+
+
+def _span_fontsize(page, rect) -> float:
+    """Schriftgröße der Fundstelle aus den Span-Daten, Fallback 11 pt."""
+    try:
+        data = page.get_text("dict", clip=rect)
+        sizes = [
+            span["size"]
+            for block in data.get("blocks", [])
+            for line in block.get("lines", [])
+            for span in line.get("spans", [])
+        ]
+        return float(sizes[0]) if sizes else 11.0
+    except Exception:
+        return 11.0
+
+
+def _write_replacement(page, rect, text: str, fontsize: float) -> None:
+    """Ersatztext sichtbar einsetzen — niemals stillschweigend verwerfen.
+
+    Der frühere Weg über den Text der Redaktionsannotation ließ längere
+    Ersetzungen kommentarlos verschwinden: ``insert_textbox`` schreibt nichts,
+    wenn der Text nicht in das schmale Rechteck des Suchtreffers passt.
+    Deshalb hier gestuft: erst im Original-Rechteck mit schrumpfender Schrift,
+    dann nach rechts erweitert, zuletzt kompakt per ``insert_text``.
+    """
+    if not text:
+        return  # Ersetzen durch nichts ist bewusst zulässig (Entfernen).
+    start_size = max(6.0, float(fontsize) or 11.0)
+    boxes = (
+        fitz.Rect(rect),
+        fitz.Rect(rect.x0, rect.y0, page.rect.x1 - 18, rect.y1),
+    )
+    for box in boxes:
+        if box.x1 - box.x0 < 6:
+            continue
+        size = start_size
+        while size >= 6.0:
+            grown = fitz.Rect(box.x0, box.y0, box.x1, max(box.y1, box.y0 + size * 1.4))
+            leftover = page.insert_textbox(
+                grown, text, fontname="helv", fontsize=size, align=fitz.TEXT_ALIGN_LEFT
+            )
+            if leftover >= 0:
+                return
+            size *= 0.85
+    page.insert_text(
+        fitz.Point(rect.x0, max(rect.y1 - 1.5, 6.0)), text, fontname="helv", fontsize=6.0
+    )
+
+
 class PdfEditorService:
     """Service for visual PDF editing operations."""
 
@@ -744,7 +806,6 @@ class PdfEditorService:
         try:
             doc = fitz.open(stream=file_content, filetype="pdf")
             total_replacements = 0
-            flags = 0 if match_case else fitz.TEXT_PRESERVE_WHITESPACE
 
             page_range = pages if pages else list(range(1, doc.page_count + 1))
 
@@ -753,24 +814,24 @@ class PdfEditorService:
                     continue
                 page = doc[page_num - 1]
 
-                # Find all occurrences
-                instances = page.search_for(search, flags=flags)
+                instances = _search_instances(page, search, match_case)
                 if not instances:
                     continue
 
+                # Erst alle Treffer redaktieren (entfernt die Originale), dann
+                # den Ersatztext getrennt schreiben: der Redaktions-Text von
+                # PyMuPDF verwirft nicht passende Ersetzungen stillschweigend.
+                targets = []
                 for inst in instances:
                     if max_replacements > 0 and total_replacements >= max_replacements:
                         break
-                    page.add_redact_annot(
-                        inst,
-                        text=replace,
-                        fontname="helv",
-                        fontsize=0,  # 0 = auto-detect from original
-                        align=fitz.TEXT_ALIGN_LEFT,
-                    )
+                    targets.append((fitz.Rect(inst), _span_fontsize(page, inst)))
+                    page.add_redact_annot(inst)
                     total_replacements += 1
 
                 page.apply_redactions()
+                for rect, size in targets:
+                    _write_replacement(page, rect, replace, size)
 
             output = doc.tobytes(deflate=True, garbage=4)
             doc.close()
@@ -1137,12 +1198,11 @@ class PdfEditorService:
         try:
             doc = fitz.open(stream=file_content, filetype="pdf")
             results = []
-            flags = 0 if match_case else fitz.TEXT_PRESERVE_WHITESPACE
 
             for page_idx in range(doc.page_count):
                 page = doc[page_idx]
                 rect = page.rect
-                instances = page.search_for(search, flags=flags)
+                instances = _search_instances(page, search, match_case)
                 for inst in instances:
                     results.append(
                         {

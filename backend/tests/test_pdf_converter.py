@@ -54,3 +54,34 @@ def test_to_excel_smoke(client):
     if r.status_code != 200:
         detail = r.json()["detail"]
         assert "Tabellen" in str(detail), r.text
+
+
+@pytest.mark.skipif(
+    not (svc.TABULA_AVAILABLE and svc.PANDAS_AVAILABLE),
+    reason="tabula/pandas nicht verfügbar (Java erforderlich)",
+)
+def test_to_excel_preview_zeigt_tabelleninhalt(client):
+    from tests.test_pdf_more import make_table_pdf
+
+    r = client.post(
+        "/api/pdf-convert/to-excel/preview",
+        files={"file": ("tabelle.pdf", make_table_pdf(), "application/pdf")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["success"] is True
+    assert body["total_tables"] >= 1
+    assert body["pages_processed"] == [1]
+    tabelle = body["tables"][0]
+    assert tabelle["page"] == 1
+    assert tabelle["total_columns"] == 3
+    zellen = [zelle for zeile in tabelle["preview_rows"] for zelle in zeile]
+    assert "Posten" in zellen and "Miete" in zellen and "1.000,00" in zellen
+
+
+def test_to_excel_preview_nur_pdf_erlaubt_400(client):
+    r = client.post(
+        "/api/pdf-convert/to-excel/preview",
+        files={"file": ("notiz.txt", b"kein pdf", "text/plain")},
+    )
+    assert r.status_code == 400

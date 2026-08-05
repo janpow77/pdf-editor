@@ -12,6 +12,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import current_limits
+from app.offload import run_cpu
 from app.services.pdf_more_service import OFFICE_EXTENSIONS, get_pdf_more
 
 router = APIRouter(prefix="/pdf-more", tags=["PDF Erweiterungen"])
@@ -90,7 +91,7 @@ async def export_format(fmt: str, file: UploadFile = File(...)):
         )
     content = await file.read()
     _validate_pdf(file, content)
-    result = get_pdf_more().export_text_format(content, fmt)
+    result = await run_cpu(get_pdf_more().export_text_format, content, fmt)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     media, suffix = _EXPORT_MEDIA[fmt]
@@ -110,7 +111,7 @@ async def to_csv(
 ):
     content = await file.read()
     _validate_pdf(file, content)
-    result = get_pdf_more().pdf_to_csv(content, pages=pages or None)
+    result = await run_cpu(get_pdf_more().pdf_to_csv, content, pages=pages or None)
     if not result.success:
         status = 422 if "Keine Tabellen" in (result.error or "") else 500
         raise HTTPException(status_code=status, detail=result.error)
@@ -133,7 +134,7 @@ async def clean_pdf(file: UploadFile = File(...)):
     Inhalte entfernen."""
     content = await file.read()
     _validate_pdf(file, content)
-    result = get_pdf_more().clean_pdf(content)
+    result = await run_cpu(get_pdf_more().clean_pdf, content)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return _pdf_response(result.file_content, f"{_name(file)}_bereinigt.pdf")
@@ -155,7 +156,7 @@ async def set_permissions(
     ohne Öffnen-Passwort, gesichert über ein Besitzer-Passwort."""
     content = await file.read()
     _validate_pdf(file, content)
-    result = get_pdf_more().set_permissions(
+    result = await run_cpu(get_pdf_more().set_permissions,
         content,
         owner_password,
         allow_print=allow_print,
@@ -205,7 +206,7 @@ async def insert_blank(
 ):
     content = await file.read()
     _validate_pdf(file, content)
-    result = get_pdf_more().insert_blank_pages(content, after_page, count=count)
+    result = await run_cpu(get_pdf_more().insert_blank_pages, content, after_page, count=count)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return _pdf_response(result.file_content, f"{_name(file)}_ergaenzt.pdf")
@@ -239,7 +240,7 @@ async def build_pruefakte(
             )
         _validate_pdf(f, content)
         file_data.append((f.filename or f"datei_{len(file_data)}.pdf", content))
-    result = get_pdf_more().build_pruefakte(
+    result = await run_cpu(get_pdf_more().build_pruefakte,
         file_data, bates_prefix=bates_prefix, bates_digits=bates_digits
     )
     if not result.success:

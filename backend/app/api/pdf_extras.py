@@ -7,6 +7,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import current_limits
+from app.offload import run_cpu
 from app.services.pdf_extras_service import REDACTION_PATTERNS, get_pdf_extras
 
 router = APIRouter(prefix="/pdf-extras", tags=["PDF Extras"])
@@ -49,7 +50,7 @@ async def check_status():
 async def pdf_to_text(file: UploadFile = File(...)):
     content = await file.read()
     _validate_pdf(file, content)
-    result = get_pdf_extras().extract_text(content)
+    result = await run_cpu(get_pdf_extras().extract_text, content)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return StreamingResponse(
@@ -63,7 +64,7 @@ async def pdf_to_text(file: UploadFile = File(...)):
 async def form_fields(file: UploadFile = File(...)):
     content = await file.read()
     _validate_pdf(file, content)
-    result = get_pdf_extras().get_form_fields(content)
+    result = await run_cpu(get_pdf_extras().get_form_fields, content)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return result.metadata
@@ -82,7 +83,7 @@ async def form_fill(
         assert isinstance(values_dict, dict)
     except (json.JSONDecodeError, AssertionError):
         raise HTTPException(status_code=400, detail="values muss ein JSON-Objekt sein")
-    result = get_pdf_extras().fill_form(content, values_dict, flatten=flatten)
+    result = await run_cpu(get_pdf_extras().fill_form, content, values_dict, flatten=flatten)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return _pdf_response(
@@ -103,10 +104,11 @@ async def form_export_csv(
     content = await file.read()
     _validate_pdf(file, content)
     service = get_pdf_extras()
-    result = (
-        service.export_values_template_csv(content)
+    result = await run_cpu(
+        service.export_values_template_csv
         if template
-        else service.export_field_values_csv(content)
+        else service.export_field_values_csv,
+        content,
     )
     if not result.success:
         raise HTTPException(status_code=422, detail=result.error)
@@ -135,7 +137,7 @@ async def form_fill_csv(
     csv_content = await data.read()
     if len(csv_content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="CSV-Datei zu groß (max 5 MB)")
-    result = get_pdf_extras().fill_from_csv(content, csv_content, flatten=flatten)
+    result = await run_cpu(get_pdf_extras().fill_from_csv, content, csv_content, flatten=flatten)
     if not result.success:
         raise HTTPException(status_code=422, detail=result.error)
     meta = result.metadata or {}
@@ -185,7 +187,7 @@ async def form_create(
         raise HTTPException(
             status_code=400, detail="fields muss eine JSON-Liste aus Objekten sein"
         )
-    result = get_pdf_extras().create_form_fields(content, fields_list)
+    result = await run_cpu(get_pdf_extras().create_form_fields, content, fields_list)
     if dry_run:
         meta = result.metadata or {}
         return {
@@ -221,7 +223,7 @@ async def bates_numbers(
 ):
     content = await file.read()
     _validate_pdf(file, content)
-    result = get_pdf_extras().add_bates_numbers(
+    result = await run_cpu(get_pdf_extras().add_bates_numbers,
         content,
         prefix=prefix,
         start=start,
@@ -248,7 +250,7 @@ async def redact_by_search(
 ):
     content = await file.read()
     _validate_pdf(file, content)
-    result = get_pdf_extras().redact_search(content, term, match_case=match_case)
+    result = await run_cpu(get_pdf_extras().redact_search, content, term, match_case=match_case)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return _pdf_response(
@@ -348,7 +350,7 @@ async def sign_with_image(
     image_content = await image.read()
     if len(image_content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Bild zu groß (max 10 MB)")
-    result = get_pdf_extras().place_image(
+    result = await run_cpu(get_pdf_extras().place_image,
         content, image_content, page_num=page, x=x, y=y, width_frac=width
     )
     if not result.success:
@@ -373,7 +375,7 @@ async def edit_text_blocks(
         raise HTTPException(status_code=400, detail="edits muss eine JSON-Liste sein")
     if len(edits_list) > 200:
         raise HTTPException(status_code=400, detail="Maximal 200 Änderungen pro Aufruf")
-    result = get_pdf_extras().edit_text_blocks(content, edits_list)
+    result = await run_cpu(get_pdf_extras().edit_text_blocks, content, edits_list)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return _pdf_response(
