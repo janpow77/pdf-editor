@@ -153,10 +153,16 @@ function filenameFromDisposition(disposition: string | null): string | null {
  * zulässt – in die lokale Ergebnisliste. Der unmittelbare Download findet auch
  * dann statt, wenn die Sitzungsliste keinen weiteren großen Blob halten kann.
  */
-export async function downloadBlob(response: Response, fallbackName: string): Promise<void> {
+export async function downloadBlob(
+  response: Response,
+  fallbackName: string,
+  options?: { forceName?: boolean },
+): Promise<void> {
   const blob = await response.blob()
+  // `forceName`: der Aufrufer hat den Namen bewusst gewählt (z. B. Dialog der
+  // Werkbank) — dann darf die Content-Disposition des Servers nicht gewinnen.
   const filename = safeFilename(
-    filenameFromDisposition(response.headers.get('Content-Disposition')) ?? fallbackName,
+    (options?.forceName ? null : filenameFromDisposition(response.headers.get('Content-Disposition'))) ?? fallbackName,
     fallbackName,
   )
 

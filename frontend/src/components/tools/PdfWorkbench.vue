@@ -51,9 +51,31 @@
         </nav>
         <span class="mx-1 h-6 w-px bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>
         <UiButton v-if="history.length" size="sm" variant="secondary" :title="`Rückgängig: ${history[history.length - 1]?.label}`" @click="undo">↩ Rückgängig</UiButton>
-        <UiButton size="sm" variant="primary" :loading="busy" :disabled="!activeItems.length" @click="composeAndDownload(activeItems, 'werkbank.pdf')">
+        <UiButton size="sm" variant="primary" :loading="busy" :disabled="!activeItems.length" @click="nameDialogSubset = 'alle'">
           Ergebnis ({{ activeItems.length }} S.)
         </UiButton>
+        <!-- Dateiname erfragen statt stumpf „werkbank.pdf" -->
+        <Teleport to="body">
+          <div v-if="nameDialogSubset" class="fixed inset-0 z-[70] grid place-items-center bg-black/30 p-4" @click.self="nameDialogSubset = null">
+            <div class="w-full max-w-sm space-y-3 rounded-2xl bg-white p-5 shadow-apple ring-1 ring-gray-300 dark:bg-gray-900 dark:ring-gray-600" role="dialog" aria-label="Dateiname für das Ergebnis">
+              <h3 class="font-semibold text-gray-950 dark:text-white">Ergebnis speichern</h3>
+              <label class="block text-sm">
+                <span class="mb-1 block font-medium text-gray-800 dark:text-gray-100">Name</span>
+                <input
+                  v-model="exportName"
+                  type="text"
+                  class="w-full rounded-xl bg-white px-3 py-2 text-sm text-gray-950 ring-1 ring-gray-400/70 focus:ring-2 focus:ring-primary-500 dark:bg-gray-950 dark:text-white dark:ring-gray-600"
+                  @keydown.enter.prevent="confirmExport"
+                />
+              </label>
+              <p class="text-xs text-gray-600 dark:text-gray-300">Dateiname: <strong>{{ exportFilename }}</strong>{{ nameDialogSubset === 'auswahl' ? ` — nur die ${selectedActiveItems.length} ausgewählten Seiten` : '' }}</p>
+              <div class="flex justify-end gap-2">
+                <UiButton variant="ghost" @click="nameDialogSubset = null">Abbrechen</UiButton>
+                <UiButton variant="primary" :loading="busy" @click="confirmExport">Herunterladen</UiButton>
+              </div>
+            </div>
+          </div>
+        </Teleport>
         <!-- Kategorienmenü: per Teleport aus der Kopfleiste gelöst und an den
              Viewport geklemmt, Außenklick schließt -->
         <Teleport to="body">
@@ -105,7 +127,7 @@
       <UiButton size="sm" variant="danger" @click="removeSelection(true)">✕ Entfernen</UiButton>
       <UiButton size="sm" variant="secondary" @click="removeSelection(false)">⤺ Wiederherstellen</UiButton>
       <span class="mx-1 h-5 w-px bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>
-      <UiButton v-if="selectedActiveItems.length" size="sm" variant="secondary" :disabled="busy" @click="composeAndDownload(selectedActiveItems, 'werkbank-auswahl.pdf')">
+      <UiButton v-if="selectedActiveItems.length" size="sm" variant="secondary" :disabled="busy" @click="nameDialogSubset = 'auswahl'">
         Auswahl als PDF exportieren ({{ selectedActiveItems.length }})
       </UiButton>
     </div>
@@ -502,7 +524,9 @@ const SHORT_TITLES: Record<string, string> = {
   office: 'Office',
 }
 
-const menuGroups = computed(() => TOOL_GROUPS.map((group) => ({
+// Die Rubrik „PDF-Editor" enthält nur die Werkbank selbst — die ist hier
+// bereits offen und hat in der eigenen Menüleiste nichts zu suchen.
+const menuGroups = computed(() => TOOL_GROUPS.filter((group) => group.key !== 'editor').map((group) => ({
   key: group.key,
   title: group.title,
   shortTitle: SHORT_TITLES[group.key] ?? group.title,
@@ -879,13 +903,36 @@ function guardSubset(subset: WorkbenchItem[]): boolean {
   return true
 }
 
+// ── Ergebnis speichern: Name erfragen, Muster JJJJMMTT_Name.pdf ─
+
+const nameDialogSubset = ref<'alle' | 'auswahl' | null>(null)
+const exportName = ref('Werkbank')
+
+function dateStamp(): string {
+  const now = new Date()
+  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
+}
+
+function sanitizeName(name: string): string {
+  const clean = name.replace(/[\\/:*?"<>|]/g, '').trim()
+  return clean || 'Werkbank'
+}
+
+const exportFilename = computed(() => `${dateStamp()}_${sanitizeName(exportName.value)}.pdf`)
+
+async function confirmExport(): Promise<void> {
+  const subset = nameDialogSubset.value === 'auswahl' ? selectedActiveItems.value : activeItems.value
+  nameDialogSubset.value = null
+  await composeAndDownload(subset, exportFilename.value)
+}
+
 async function composeAndDownload(subset: WorkbenchItem[], filename: string): Promise<void> {
   if (!guardSubset(subset)) return
   busy.value = true
   errorText.value = ''
   try {
     const response = await requestCompose(subset)
-    await downloadBlob(response, filename)
+    await downloadBlob(response, filename, { forceName: true })
   } catch (caught: unknown) {
     errorText.value = notifications.errorFromUnknown(caught, 'Die Zusammenstellung ist fehlgeschlagen.')
   } finally {
