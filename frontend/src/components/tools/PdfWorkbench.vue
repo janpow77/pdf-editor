@@ -32,34 +32,42 @@
       <span class="flex-1"></span>
 
       <template v-if="items.length">
-        <UiButton v-if="!selectedItems.length" size="sm" variant="secondary" @click="selectAll(true)">Alle auswählen</UiButton>
-        <UiButton size="sm" variant="secondary" @click="insertBlank">➕ Leerseite</UiButton>
-        <UiButton v-if="history.length" size="sm" variant="secondary" :title="`Rückgängig: ${history[history.length - 1]?.label}`" @click="undo">↩ Rückgängig</UiButton>
+        <!-- Werkzeugkategorien als Menüleiste: jede Kategorie öffnet ihr
+             eigenes kurzes Menü — statt einem langen Gesamt-Dropdown -->
+        <nav class="flex flex-wrap items-center gap-0.5" aria-label="Werkzeugkategorien">
+          <UiButton
+            v-for="group in menuGroups"
+            :key="group.key"
+            size="sm"
+            variant="ghost"
+            :disabled="busy || !activeItems.length"
+            aria-haspopup="menu"
+            :aria-expanded="openMenuKey === group.key"
+            :title="group.title"
+            @click="toggleCategory(group.key, $event)"
+          >
+            {{ group.icon }} {{ group.shortTitle }}
+          </UiButton>
+        </nav>
         <span class="mx-1 h-6 w-px bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>
+        <UiButton v-if="history.length" size="sm" variant="secondary" :title="`Rückgängig: ${history[history.length - 1]?.label}`" @click="undo">↩ Rückgängig</UiButton>
         <UiButton size="sm" variant="primary" :loading="busy" :disabled="!activeItems.length" @click="composeAndDownload(activeItems, 'werkbank.pdf')">
           Ergebnis ({{ activeItems.length }} S.)
         </UiButton>
-        <span ref="menuAnchor">
-          <UiButton size="sm" variant="secondary" :disabled="busy || !activeItems.length" aria-haspopup="menu" :aria-expanded="menuOpen" @click="toggleMenu">
-            Werkzeuge ▾
-          </UiButton>
-        </span>
-        <!-- Vollständiges Werkzeugmenü: per Teleport aus der Kopfleiste gelöst
-             und an den Viewport geklemmt — right-0 am Knopf ragte bei
-             umgebrochener Leiste über den linken Bildschirmrand hinaus. -->
+        <!-- Kategorienmenü: per Teleport aus der Kopfleiste gelöst und an den
+             Viewport geklemmt, Außenklick schließt -->
         <Teleport to="body">
-          <div v-if="menuOpen" class="fixed inset-0 z-[60]" @click="menuOpen = false">
+          <div v-if="openMenu" class="fixed inset-0 z-[60]" @click="openMenuKey = null">
             <div
-              class="absolute w-80 overflow-y-auto rounded-2xl bg-white p-2 shadow-apple ring-1 ring-gray-300 dark:bg-gray-900 dark:ring-gray-600"
+              class="absolute w-72 overflow-y-auto rounded-2xl bg-white p-2 shadow-apple ring-1 ring-gray-300 dark:bg-gray-900 dark:ring-gray-600"
               :style="menuStyle"
               role="menu"
-              aria-label="Aktuellen Stand in einem Werkzeug weiterbearbeiten"
+              :aria-label="`Werkzeuge: ${openMenu.title}`"
               @click.stop
             >
-            <div v-for="group in menuGroups" :key="group.title" class="mb-1">
-              <p class="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ group.icon }} {{ group.title }}</p>
+            <p class="px-2 pb-0.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ openMenu.icon }} {{ openMenu.title }}</p>
               <button
-                v-for="tool in group.tools"
+                v-for="tool in openMenu.tools"
                 :key="tool.id"
                 type="button"
                 role="menuitem"
@@ -76,7 +84,6 @@
                 <span v-if="tool.panel" class="rounded bg-primary-100 px-1 text-[10px] font-semibold text-primary-700 dark:bg-primary-500/20 dark:text-primary-300" title="Läuft direkt im Editor">direkt</span>
                 <span v-else-if="tool.reason" class="text-[10px]" aria-hidden="true">—</span>
               </button>
-            </div>
             </div>
           </div>
         </Teleport>
@@ -119,11 +126,24 @@
       <!-- Seitenübersicht -->
       <aside
         v-if="items.length"
-        class="shrink-0 space-y-2 overflow-y-auto border-r border-gray-200 bg-white/60 p-2 dark:border-gray-700 dark:bg-gray-900/50"
+        class="flex shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50"
         :style="{ width: sidebarWidth + 'px' }"
-        role="list"
-        aria-label="Seitenübersicht. Klick zeigt die Seite groß, das Häkchen wählt für Mehrfach-Aktionen aus. Reihenfolge per Ziehen ändern."
+        aria-label="Seitenübersicht"
       >
+        <!-- Aktionsleiste der Übersicht: Auswahl und Leerseite gehören zu den
+             Seiten — deshalb hier statt in der Kopfleiste -->
+        <div class="flex shrink-0 flex-wrap items-center gap-1 border-b border-gray-200 bg-white/80 p-1.5 dark:border-gray-700 dark:bg-gray-900/70">
+          <UiButton size="sm" variant="ghost" @click="selectAll(selectedItems.length < items.length)">
+            {{ selectedItems.length < items.length ? 'Alle auswählen' : 'Aufheben' }}
+          </UiButton>
+          <UiButton size="sm" variant="ghost" title="Leerseite einfügen (nach der letzten Auswahl, sonst ans Ende)" @click="insertBlank">➕ Leerseite</UiButton>
+        </div>
+
+        <div
+          class="min-h-0 flex-1 space-y-2 overflow-y-auto p-2"
+          role="list"
+          aria-label="Seiten. Klick zeigt die Seite groß, das Häkchen wählt für Mehrfach-Aktionen aus. Reihenfolge per Ziehen ändern."
+        >
         <div
           v-for="(item, index) in items"
           :key="item.uid"
@@ -174,6 +194,7 @@
             <button type="button" class="pointer-events-auto grid h-6 w-6 place-items-center rounded-md bg-white/95 text-xs text-gray-700 shadow ring-1 ring-gray-300 hover:text-primary-700 dark:bg-gray-800/95 dark:text-gray-200 dark:ring-gray-600" :aria-label="`Position ${index + 1} duplizieren`" title="Duplizieren" @click.stop="duplicateItemAt(index)">⧉</button>
             <button type="button" class="pointer-events-auto grid h-6 w-6 place-items-center rounded-md bg-white/95 text-xs shadow ring-1 ring-gray-300 dark:bg-gray-800/95 dark:ring-gray-600" :class="item.removed ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'" :aria-label="item.removed ? `Position ${index + 1} wiederherstellen` : `Position ${index + 1} entfernen`" :title="item.removed ? 'Wiederherstellen' : 'Entfernen'" @click.stop="item.removed = !item.removed">{{ item.removed ? '⤺' : '✕' }}</button>
           </div>
+        </div>
         </div>
       </aside>
 
@@ -243,7 +264,6 @@
                  den Kacheln der Übersicht, das spart hier eine ganze Zeile -->
             <div class="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
               <span class="rounded-full px-2.5 py-0.5 font-semibold" :class="badgeClass(focusedItem)">{{ badgeText(focusedItem) }}</span>
-              <span class="font-medium tabular-nums">Position {{ focusedIndex + 1 }} / {{ items.length }}</span>
               <span v-if="focusedItem.rotation" class="font-medium">gedreht {{ focusedItem.rotation }}°</span>
               <span v-if="focusedItem.removed" class="font-semibold text-rose-700 dark:text-rose-300">entfernt</span>
             </div>
@@ -389,18 +409,17 @@ const loadingDocs = ref(0)
 const busy = ref(false)
 const errorText = ref('')
 const dragIndex = ref(-1)
-const menuOpen = ref(false)
-const menuAnchor = ref<HTMLElement | null>(null)
+const openMenuKey = ref<string | null>(null)
 const menuStyle = ref<Record<string, string>>({})
 
-/** Menü öffnen und an den Viewport klemmen: rechtsbündig am Knopf, aber nie
- *  über einen Bildschirmrand hinaus; Resthöhe nach unten als Maximalhöhe. */
-function toggleMenu(): void {
-  if (menuOpen.value) { menuOpen.value = false; return }
-  const anchor = menuAnchor.value?.getBoundingClientRect()
-  const MENU_WIDTH = 320
+/** Kategorienmenü am geklickten Knopf öffnen und an den Viewport klemmen:
+ *  nie über einen Bildschirmrand hinaus, Resthöhe nach unten als Maximum. */
+function toggleCategory(key: string, event: MouseEvent): void {
+  if (openMenuKey.value === key) { openMenuKey.value = null; return }
+  const anchor = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
+  const MENU_WIDTH = 288
   const left = anchor
-    ? Math.max(8, Math.min(anchor.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8))
+    ? Math.max(8, Math.min(anchor.left, window.innerWidth - MENU_WIDTH - 8))
     : 8
   const top = anchor ? anchor.bottom + 6 : 56
   menuStyle.value = {
@@ -408,11 +427,10 @@ function toggleMenu(): void {
     top: `${Math.round(top)}px`,
     maxHeight: `${Math.max(160, window.innerHeight - top - 12)}px`,
   }
-  menuOpen.value = true
+  openMenuKey.value = key
 }
 
 const focusedItem = computed(() => items.value.find((item) => item.uid === focusedUid.value) ?? null)
-const focusedIndex = computed(() => items.value.findIndex((item) => item.uid === focusedUid.value))
 const focusedDocFile = computed(() => {
   const item = focusedItem.value
   if (!item || item.docUid === null) return null
@@ -472,8 +490,22 @@ const DISABLED_REASON: Record<string, string> = {
   officeToPdf: 'Erwartet eine Office-Datei als Eingabe.',
 }
 
+/** Kurztitel für die Menüleiste im Kopf — die vollen Titel stehen im Tooltip
+ *  und als Überschrift im aufgeklappten Menü. */
+const SHORT_TITLES: Record<string, string> = {
+  bearbeiten: 'Bearbeiten',
+  seiten: 'Seiten',
+  umwandeln: 'Umwandeln',
+  schuetzen: 'Schützen',
+  stempel: 'Stempel',
+  pruefen: 'Prüfen',
+  office: 'Office',
+}
+
 const menuGroups = computed(() => TOOL_GROUPS.map((group) => ({
+  key: group.key,
   title: group.title,
+  shortTitle: SHORT_TITLES[group.key] ?? group.title,
   icon: group.icon,
   tools: group.tools.map((tool) => ({
     id: tool.id as ToolId,
@@ -484,6 +516,8 @@ const menuGroups = computed(() => TOOL_GROUPS.map((group) => ({
   })),
 })))
 
+const openMenu = computed(() => menuGroups.value.find((group) => group.key === openMenuKey.value) ?? null)
+
 // ── Seitenpanels: Transformation direkt im Editor ────────────
 
 const activePanel = ref<PanelSpec | null>(null)
@@ -492,7 +526,7 @@ const panelBusy = ref(false)
 const panelReport = ref<string | null>(null)
 
 function openTool(id: ToolId): void {
-  menuOpen.value = false
+  openMenuKey.value = null
   const spec = WORKBENCH_PANELS[id]
   if (!spec) { void embedTool(id); return }
   embeddedToolId.value = null
