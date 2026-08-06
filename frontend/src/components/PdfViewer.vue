@@ -10,7 +10,7 @@
       <UiIconButton :disabled="zoom <= MIN_ZOOM" aria-label="PDF verkleinern" @click="setZoom(zoom - 0.25)">−</UiIconButton>
       <span class="w-16 text-center font-medium tabular-nums text-gray-600 dark:text-gray-300">{{ Math.round(zoom * 100) }} %</span>
       <UiIconButton :disabled="zoom >= MAX_ZOOM" aria-label="PDF vergrößern" @click="setZoom(zoom + 0.25)">+</UiIconButton>
-      <UiButton size="sm" @click="fitWidth">Breite anpassen</UiButton>
+      <UiIconButton aria-label="Breite anpassen" title="Breite anpassen" @click="fitWidth">⤢</UiIconButton>
       <span v-if="loading" class="text-sm font-medium text-gray-600 dark:text-gray-300" role="status">PDF wird gerendert…</span>
     </div>
 
@@ -40,7 +40,6 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as pdfjs from 'pdfjs-dist'
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist'
 import UiAlert from '@/components/ui/UiAlert.vue'
-import UiButton from '@/components/ui/UiButton.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href

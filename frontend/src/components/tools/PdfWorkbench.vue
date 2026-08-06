@@ -39,19 +39,23 @@
         <UiButton size="sm" variant="primary" :loading="busy" :disabled="!activeItems.length" @click="composeAndDownload(activeItems, 'werkbank.pdf')">
           Ergebnis ({{ activeItems.length }} S.)
         </UiButton>
-        <div class="relative">
-          <UiButton size="sm" variant="secondary" :disabled="busy || !activeItems.length" aria-haspopup="menu" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
+        <span ref="menuAnchor">
+          <UiButton size="sm" variant="secondary" :disabled="busy || !activeItems.length" aria-haspopup="menu" :aria-expanded="menuOpen" @click="toggleMenu">
             Werkzeuge ▾
           </UiButton>
-          <!-- Vollständiges Werkzeugmenü: aktiver Stand wird komponiert und ans
-               gewählte Werkzeug übergeben; nicht übergabefähige Werkzeuge sind
-               ausgegraut und nennen den Grund. -->
-          <div
-            v-if="menuOpen"
-            class="absolute right-0 top-11 z-50 max-h-[70vh] w-80 overflow-y-auto rounded-2xl bg-white p-2 shadow-apple ring-1 ring-gray-300 dark:bg-gray-900 dark:ring-gray-600"
-            role="menu"
-            aria-label="Aktuellen Stand in einem Werkzeug weiterbearbeiten"
-          >
+        </span>
+        <!-- Vollständiges Werkzeugmenü: per Teleport aus der Kopfleiste gelöst
+             und an den Viewport geklemmt — right-0 am Knopf ragte bei
+             umgebrochener Leiste über den linken Bildschirmrand hinaus. -->
+        <Teleport to="body">
+          <div v-if="menuOpen" class="fixed inset-0 z-[60]" @click="menuOpen = false">
+            <div
+              class="absolute w-80 overflow-y-auto rounded-2xl bg-white p-2 shadow-apple ring-1 ring-gray-300 dark:bg-gray-900 dark:ring-gray-600"
+              :style="menuStyle"
+              role="menu"
+              aria-label="Aktuellen Stand in einem Werkzeug weiterbearbeiten"
+              @click.stop
+            >
             <div v-for="group in menuGroups" :key="group.title" class="mb-1">
               <p class="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ group.icon }} {{ group.title }}</p>
               <button
@@ -73,8 +77,9 @@
                 <span v-else-if="tool.reason" class="text-[10px]" aria-hidden="true">—</span>
               </button>
             </div>
+            </div>
           </div>
-        </div>
+        </Teleport>
       </template>
     </header>
 
@@ -123,7 +128,7 @@
           v-for="(item, index) in items"
           :key="item.uid"
           role="listitem"
-          class="rounded-xl bg-white p-1.5 shadow-apple-sm ring-1 transition dark:bg-gray-900"
+          class="group relative rounded-xl bg-white p-1.5 shadow-apple-sm ring-1 transition dark:bg-gray-900"
           :class="[
             item.uid === focusedUid ? 'ring-2 ring-primary-500' : item.selected ? 'ring-2 ring-primary-300 dark:ring-primary-700' : 'ring-gray-300 dark:ring-gray-600',
             item.removed ? 'opacity-55 grayscale' : '',
@@ -159,6 +164,16 @@
             <span v-else class="grid h-full place-items-center text-3xl" aria-hidden="true">📄</span>
             <span v-if="item.removed" class="absolute inset-0 grid place-items-center bg-white/75 text-xs font-bold text-rose-700 dark:bg-gray-950/75 dark:text-rose-300">Entfernt</span>
           </button>
+
+          <!-- Seiten-Aktionen direkt auf der Kachel (bei Zeigen/Fokus) — hält
+               die obere Leiste und den Hauptbereich frei -->
+          <div class="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center gap-1 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100">
+            <button type="button" class="pointer-events-auto grid h-6 w-6 place-items-center rounded-md bg-white/95 text-xs text-gray-700 shadow ring-1 ring-gray-300 hover:text-primary-700 disabled:opacity-40 dark:bg-gray-800/95 dark:text-gray-200 dark:ring-gray-600" :disabled="index === 0" :aria-label="`Position ${index + 1} nach vorn`" title="Nach vorn" @click.stop="moveItem(index, -1)">↑</button>
+            <button type="button" class="pointer-events-auto grid h-6 w-6 place-items-center rounded-md bg-white/95 text-xs text-gray-700 shadow ring-1 ring-gray-300 hover:text-primary-700 disabled:opacity-40 dark:bg-gray-800/95 dark:text-gray-200 dark:ring-gray-600" :disabled="index === items.length - 1" :aria-label="`Position ${index + 1} nach hinten`" title="Nach hinten" @click.stop="moveItem(index, 1)">↓</button>
+            <button type="button" class="pointer-events-auto grid h-6 w-6 place-items-center rounded-md bg-white/95 text-xs text-gray-700 shadow ring-1 ring-gray-300 hover:text-primary-700 dark:bg-gray-800/95 dark:text-gray-200 dark:ring-gray-600" :aria-label="`Position ${index + 1} um 90 Grad drehen`" title="Drehen" @click.stop="rotateItem(item)">⟳</button>
+            <button type="button" class="pointer-events-auto grid h-6 w-6 place-items-center rounded-md bg-white/95 text-xs text-gray-700 shadow ring-1 ring-gray-300 hover:text-primary-700 dark:bg-gray-800/95 dark:text-gray-200 dark:ring-gray-600" :aria-label="`Position ${index + 1} duplizieren`" title="Duplizieren" @click.stop="duplicateItemAt(index)">⧉</button>
+            <button type="button" class="pointer-events-auto grid h-6 w-6 place-items-center rounded-md bg-white/95 text-xs shadow ring-1 ring-gray-300 dark:bg-gray-800/95 dark:ring-gray-600" :class="item.removed ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'" :aria-label="item.removed ? `Position ${index + 1} wiederherstellen` : `Position ${index + 1} entfernen`" :title="item.removed ? 'Wiederherstellen' : 'Entfernen'" @click.stop="item.removed = !item.removed">{{ item.removed ? '⤺' : '✕' }}</button>
+          </div>
         </div>
       </aside>
 
@@ -224,18 +239,13 @@
           </div>
 
           <div v-else-if="focusedItem" class="space-y-3">
-            <!-- Schnellaktionen für die fokussierte Seite -->
-            <div class="flex flex-wrap items-center gap-2 text-sm">
-              <span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="badgeClass(focusedItem)">{{ badgeText(focusedItem) }}</span>
-              <span class="text-xs font-medium tabular-nums text-gray-600 dark:text-gray-300">Position {{ focusedIndex + 1 }} / {{ items.length }}</span>
-              <span class="mx-1 h-5 w-px bg-gray-300 dark:bg-gray-600" aria-hidden="true"></span>
-              <UiButton size="sm" variant="secondary" title="Seite um 90 Grad drehen" @click="rotateItem(focusedItem)">⟳ Drehen{{ focusedItem.rotation ? ` (${focusedItem.rotation}°)` : '' }}</UiButton>
-              <UiButton size="sm" variant="secondary" @click="duplicateFocused">⧉ Duplizieren</UiButton>
-              <UiButton size="sm" :variant="focusedItem.removed ? 'secondary' : 'danger'" @click="focusedItem.removed = !focusedItem.removed">
-                {{ focusedItem.removed ? '⤺ Wiederherstellen' : '✕ Entfernen' }}
-              </UiButton>
-              <UiButton size="sm" variant="secondary" :disabled="focusedIndex <= 0" title="Nach vorn verschieben" @click="moveItem(focusedIndex, -1)">←</UiButton>
-              <UiButton size="sm" variant="secondary" :disabled="focusedIndex >= items.length - 1" title="Nach hinten verschieben" @click="moveItem(focusedIndex, 1)">→</UiButton>
+            <!-- Schlanke Infozeile — die Seiten-Aktionen liegen als Overlay auf
+                 den Kacheln der Übersicht, das spart hier eine ganze Zeile -->
+            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+              <span class="rounded-full px-2.5 py-0.5 font-semibold" :class="badgeClass(focusedItem)">{{ badgeText(focusedItem) }}</span>
+              <span class="font-medium tabular-nums">Position {{ focusedIndex + 1 }} / {{ items.length }}</span>
+              <span v-if="focusedItem.rotation" class="font-medium">gedreht {{ focusedItem.rotation }}°</span>
+              <span v-if="focusedItem.removed" class="font-semibold text-rose-700 dark:text-rose-300">entfernt</span>
             </div>
 
             <PdfViewer
@@ -380,6 +390,26 @@ const busy = ref(false)
 const errorText = ref('')
 const dragIndex = ref(-1)
 const menuOpen = ref(false)
+const menuAnchor = ref<HTMLElement | null>(null)
+const menuStyle = ref<Record<string, string>>({})
+
+/** Menü öffnen und an den Viewport klemmen: rechtsbündig am Knopf, aber nie
+ *  über einen Bildschirmrand hinaus; Resthöhe nach unten als Maximalhöhe. */
+function toggleMenu(): void {
+  if (menuOpen.value) { menuOpen.value = false; return }
+  const anchor = menuAnchor.value?.getBoundingClientRect()
+  const MENU_WIDTH = 320
+  const left = anchor
+    ? Math.max(8, Math.min(anchor.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8))
+    : 8
+  const top = anchor ? anchor.bottom + 6 : 56
+  menuStyle.value = {
+    left: `${Math.round(left)}px`,
+    top: `${Math.round(top)}px`,
+    maxHeight: `${Math.max(160, window.innerHeight - top - 12)}px`,
+  }
+  menuOpen.value = true
+}
 
 const focusedItem = computed(() => items.value.find((item) => item.uid === focusedUid.value) ?? null)
 const focusedIndex = computed(() => items.value.findIndex((item) => item.uid === focusedUid.value))
@@ -403,10 +433,9 @@ function onViewerPageChange(page: number): void {
   if (match) focusedUid.value = match.uid
 }
 
-function duplicateFocused(): void {
-  const index = focusedIndex.value
-  const item = focusedItem.value
-  if (index < 0 || !item) return
+function duplicateItemAt(index: number): void {
+  const item = items.value[index]
+  if (!item) return
   items.value.splice(index + 1, 0, { ...item, uid: nextUid(), selected: false })
 }
 
