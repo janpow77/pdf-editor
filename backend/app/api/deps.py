@@ -2,11 +2,11 @@
 
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.clock import utc_now
 from app.config import settings
 from app.db import SessionLocal, get_db
 from app.models import User, UserRole
@@ -33,7 +33,7 @@ def _resolve_user(token: str, db: Session) -> User:
         raise HTTPException(status_code=401, detail="Benutzer existiert nicht mehr")
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Benutzer ist deaktiviert")
-    if user.locked_until and user.locked_until > datetime.utcnow():
+    if user.locked_until and user.locked_until > utc_now():
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED, detail="Konto ist temporär gesperrt"
         )

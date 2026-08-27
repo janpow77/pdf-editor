@@ -23,7 +23,7 @@ Konzept, Phasenplan, Soll-Kriterien und Datenschutz-Details: [KONZEPT.md](./KONZ
 # Backend
 cd backend
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 pytest tests/                       # Smoke-Tests
 uvicorn app.main:app --port 8000    # API auf :8000, Docs unter /docs
 

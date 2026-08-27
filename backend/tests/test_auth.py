@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.main import app
+from app.security import verify_password
 from tests.test_smoke import make_pdf
 
 GOOD_PW = "Sicheres-Passwort-1!"
@@ -17,7 +18,9 @@ def client():
 
 
 def _register(client, email, password=GOOD_PW):
-    return client.post("/api/auth/register", json={"email": email, "password": password})
+    return client.post(
+        "/api/auth/register", json={"email": email, "password": password}
+    )
 
 
 def _login(client, email, password=GOOD_PW):
@@ -28,6 +31,14 @@ def _login(client, email, password=GOOD_PW):
 
 def _auth_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
+
+
+def test_passlib_bestandshash_bleibt_gueltig():
+    """Direktes bcrypt muss bereits gespeicherte Passlib-Hashes akzeptieren."""
+
+    passlib_hash = "$2b$12$420qH8XoFtBGtnLg8GwlTuBSwen1QHderpJhvCcSIAP3Ios0EgWOS"
+    assert verify_password("Bestands-Passwort-123!", passlib_hash)
+    assert not verify_password("Falsches-Passwort-123!", passlib_hash)
 
 
 def test_register_login_me_roundtrip(client):
@@ -148,9 +159,7 @@ def test_preferences_roundtrip_and_size_cap(client):
     assert r.status_code == 200
     assert client.get("/api/me/preferences", headers=h).json()["ocr_language"] == "eng"
 
-    r = client.put(
-        "/api/me/preferences", json={"blob": "x" * 20000}, headers=h
-    )
+    r = client.put("/api/me/preferences", json={"blob": "x" * 20000}, headers=h)
     assert r.status_code == 413
 
 

@@ -8,7 +8,7 @@ identisch (kein User-Enumeration-Kanal).
 import hashlib
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
@@ -16,6 +16,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.clock import utc_now
 from app.config import settings
 from app.db import get_db
 from app.models import User, UserRole
@@ -67,11 +68,14 @@ def register(
 ):
     """Offene Registrierung: E-Mail + Passwort, Konto sofort aktiv."""
     _require_db(request)
-    verify_turnstile_or_403(payload.turnstile_token, request.client.host if request.client else None)
+    verify_turnstile_or_403(
+        payload.turnstile_token, request.client.host if request.client else None
+    )
     email = payload.email.strip().lower()
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(
-            status_code=409, detail="Für diese E-Mail-Adresse existiert bereits ein Konto"
+            status_code=409,
+            detail="Für diese E-Mail-Adresse existiert bereits ein Konto",
         )
     user = User(
         email=email,
@@ -99,7 +103,7 @@ def login(
     email = form_data.username.strip().lower()
     user = db.query(User).filter(User.email == email).first()
 
-    if user and user.locked_until and user.locked_until > datetime.utcnow():
+    if user and user.locked_until and user.locked_until > utc_now():
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail="Konto ist temporär gesperrt — bitte in 30 Minuten erneut versuchen",
@@ -114,7 +118,7 @@ def login(
         if user:
             user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
             if user.failed_login_attempts >= 10:
-                user.locked_until = datetime.utcnow() + timedelta(minutes=30)
+                user.locked_until = utc_now() + timedelta(minutes=30)
             db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -127,7 +131,7 @@ def login(
 
     user.failed_login_attempts = 0
     user.locked_until = None
-    user.last_login = datetime.utcnow()
+    user.last_login = utc_now()
     db.commit()
 
     return _token_for(user)
@@ -166,7 +170,7 @@ def issue_verification(db: Session, user: User, background: BackgroundTasks) -> 
         return
     token = secrets.token_urlsafe(32)
     user.verify_token_hash = _hash_token(token)
-    user.verify_token_expires = datetime.utcnow() + timedelta(hours=24)
+    user.verify_token_expires = utc_now() + timedelta(hours=24)
     db.commit()
     link = f"{settings.public_base_url.rstrip('/')}/email-bestaetigen?token={token}"
     background.add_task(
@@ -193,7 +197,8 @@ def request_verification(
         return {"detail": "E-Mail-Adresse ist bereits bestätigt"}
     if not _flows_enabled():
         raise HTTPException(
-            status_code=503, detail="Mailversand ist auf diesem Server nicht konfiguriert"
+            status_code=503,
+            detail="Mailversand ist auf diesem Server nicht konfiguriert",
         )
     db_user = db.get(User, user.id)
     issue_verification(db, db_user, background)
@@ -212,7 +217,7 @@ def verify_email(
     if (
         not user
         or not user.verify_token_expires
-        or user.verify_token_expires < datetime.utcnow()
+        or user.verify_token_expires < utc_now()
     ):
         raise HTTPException(status_code=400, detail="Link ist ungültig oder abgelaufen")
     user.is_verified = True
@@ -241,7 +246,7 @@ def request_password_reset(
         return generic
     token = secrets.token_urlsafe(32)
     user.reset_token_hash = _hash_token(token)
-    user.reset_token_expires = datetime.utcnow() + timedelta(hours=2)
+    user.reset_token_expires = utc_now() + timedelta(hours=2)
     db.commit()
     link = f"{settings.public_base_url.rstrip('/')}/passwort-reset?token={token}"
     background.add_task(
@@ -266,11 +271,7 @@ def reset_password(
     _require_db(request)
     token_hash = _hash_token(payload.token)
     user = db.query(User).filter(User.reset_token_hash == token_hash).first()
-    if (
-        not user
-        or not user.reset_token_expires
-        or user.reset_token_expires < datetime.utcnow()
-    ):
+    if not user or not user.reset_token_expires or user.reset_token_expires < utc_now():
         raise HTTPException(status_code=400, detail="Link ist ungültig oder abgelaufen")
     user.hashed_password = get_password_hash(payload.password)
     user.reset_token_hash = None
