@@ -12,6 +12,7 @@ from sqlalchemy import JSON, Boolean, DateTime, Enum, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.clock import utc_now
 from app.db import Base
 
 
@@ -33,20 +34,24 @@ class User(Base):
     preferences: Mapped[dict] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql"), default=dict
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     last_login: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # E-Mail-Verifikation + Passwort-Reset: nur Token-HASHES werden gespeichert
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     verify_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    verify_token_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    verify_token_expires: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     reset_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    reset_token_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reset_token_expires: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
 
     @property
     def is_locked(self) -> bool:
-        return bool(self.locked_until and self.locked_until > datetime.utcnow())
+        return bool(self.locked_until and self.locked_until > utc_now())
 
 
 class AppSetting(Base):
@@ -64,5 +69,5 @@ class AppSetting(Base):
         JSON().with_variant(JSONB(), "postgresql"), default=dict
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utc_now, onupdate=utc_now
     )

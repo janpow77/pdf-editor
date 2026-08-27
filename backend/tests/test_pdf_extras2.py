@@ -3,7 +3,7 @@
 import io
 import json
 import zipfile
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import fitz
 import pytest
@@ -30,7 +30,7 @@ def _make_p12(passphrase: bytes) -> bytes:
 
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Test Signer")])
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     cert = (
         x509.CertificateBuilder()
         .subject_name(name)
@@ -79,7 +79,12 @@ def test_sign_digital_roundtrip(client):
     assert r.status_code == 200, r.text
     # Signaturfeld vorhanden?
     with fitz.open(stream=r.content, filetype="pdf") as doc:
-        sig_fields = [w for p in doc for w in (p.widgets() or []) if w.field_type_string == "Signature"]
+        sig_fields = [
+            w
+            for p in doc
+            for w in (p.widgets() or [])
+            if w.field_type_string == "Signature"
+        ]
         assert len(sig_fields) == 1
 
 
@@ -100,7 +105,9 @@ def test_sign_digital_wrong_passphrase_400(client):
     assert "Test Signer" not in r.text
 
 
-@pytest.mark.skipif(not svc.OCRMYPDF_AVAILABLE, reason="OCRmyPDF/Ghostscript nicht verfügbar")
+@pytest.mark.skipif(
+    not svc.OCRMYPDF_AVAILABLE, reason="OCRmyPDF/Ghostscript nicht verfügbar"
+)
 def test_scan_optimize(client):
     pdf = make_pdf(1, "Scan-Inhalt")
     r = client.post(
@@ -204,7 +211,9 @@ def test_ink_annotation_regression(client):
         {
             "type": "ink",
             "page": 1,
-            "paths": [[{"x": 0.2, "y": 0.5}, {"x": 0.3, "y": 0.52}, {"x": 0.4, "y": 0.5}]],
+            "paths": [
+                [{"x": 0.2, "y": 0.5}, {"x": 0.3, "y": 0.52}, {"x": 0.4, "y": 0.5}]
+            ],
             "color": "#ff0000",
             "width": 2,
         }

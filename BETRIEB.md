@@ -4,8 +4,7 @@ Handbuch für den Weg von der Entwicklung bis zum laufenden Dienst: erst auf der
 NUC, dann als eigenes Repository, dann auf dem Hetzner-Server. Danach die
 Pflichten, die ein Dauerbetrieb mit sich bringt.
 
-**Stand: 2026-08-01** · Branch `claude/pdf-editor-app-planning-fvkauh`, noch
-nicht nach `main` gemergt.
+**Stand: 2026-08-27** · Eigenständiges Repository, Branch `main`.
 
 > **Was hier nicht steht, ist genauso wichtig:** Die Befehle in diesem Dokument
 > sind aus `docker-compose.yaml`, `.env.example` und dem vorhandenen
@@ -24,19 +23,7 @@ nicht nach `main` gemergt.
 sudo mkdir -p /opt/pdf-editor && sudo chown $USER:$USER /opt/pdf-editor
 cd /opt/pdf-editor
 
-git clone -b claude/pdf-editor-app-planning-fvkauh \
-  https://github.com/janpow77/audit_designer.git .
-
-cd pdf-editor-app
-```
-
-Wer das Repo auf der NUC schon hat, spart sich den zweiten Klon:
-
-```bash
-cd ~/audit_designer
-git fetch origin claude/pdf-editor-app-planning-fvkauh
-git worktree add /opt/pdf-editor claude/pdf-editor-app-planning-fvkauh
-cd /opt/pdf-editor/pdf-editor-app
+git clone https://github.com/janpow77/pdf-editor.git .
 ```
 
 ### A2. Konfiguration
@@ -53,7 +40,7 @@ cp .env.example .env
   echo "PDFAPP_DB_PASSWORD=$(openssl rand -hex 24)"
   echo "PDFAPP_ADMIN_EMAIL=<ihre-adresse>"
   echo "PDFAPP_ADMIN_PASSWORD=$(openssl rand -base64 18)"
-  echo "PDFAPP_SOURCE_URL=https://github.com/janpow77/audit_designer"
+  echo "PDFAPP_SOURCE_URL=https://github.com/janpow77/pdf-editor"
 } >> .env
 chmod 600 .env
 grep PDFAPP_ADMIN_PASSWORD .env      # einmalig notieren
@@ -77,6 +64,13 @@ Der erste Build dauert 10–20 Minuten: LibreOffice, Ghostscript und Tesseract
 wandern ins Backend-Image. Die Ports des audit_designer-Stacks (8003, 3002,
 5433, 6381, 5555, 8889, 8010) werden nicht berührt; die App lauscht auf
 `127.0.0.1:8080`.
+
+Der Vite-Entwicklungsserver (`npm run dev`) wird dafür nicht benötigt und kann
+auf der NUC ausgeschaltet bleiben. Das Frontend wird beim Image-Bau einmalig
+erzeugt und danach ausschließlich als statische Dateien durch nginx
+ausgeliefert. Nach dem ersten Build läuft der vorhandene Stack auch ohne
+Internetzugang; nur neue Builds oder das Herunterladen neuer Images benötigen
+Netzzugang.
 
 ### A4. Nachsehen, ob es wirklich läuft
 

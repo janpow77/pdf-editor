@@ -1,0 +1,6 @@
+-r requirements.txt
+
+pytest>=9.0
+# Starlette verwendet für TestClient künftig httpx2; das bisherige httpx-
+# Fallback erzeugt bei jedem Testlauf eine Deprecation-Warnung.
+httpx2>=2.12
