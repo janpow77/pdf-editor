@@ -33,9 +33,13 @@
         </div>
         <div>
           <dt class="font-semibold">Personennamen (KI-Erkennung)</dt>
-          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Die einzige KI-gestützte Methode: Ein spaCy-Sprachmodell (<code>de_core_news_sm</code>) liest den Fließtext und schätzt, welche Wortfolgen Personennamen sind — läuft vollständig auf unserem Server, kein Cloud-Aufruf. Im Gegensatz zu den Regex-Mustern ist das eine Schätzung: Namen können übersehen werden, und einzelne andere Wörter können fälschlich als Name erkannt werden. Deshalb vor dem Schwärzen immer die Vorschau prüfen.</dd>
+          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Die einzige KI-gestützte Methode: Ein spaCy-Modell (<code>de_core_news_sm</code>) liest den Fließtext und schätzt, welche Wortfolgen Personennamen sind — läuft vollständig auf unserem Server, kein Cloud-Aufruf, kein Sprachmodell und keine generative KI, sondern ein kleines, spezialisiertes Erkennungsmodell (NER). Im Gegensatz zu den Regex-Mustern ist das eine Schätzung: Namen können übersehen werden, und einzelne andere Wörter können fälschlich als Name erkannt werden. Deshalb vor dem Schwärzen immer die Vorschau prüfen.</dd>
         </div>
       </dl>
+      <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+        Einzelheiten zu Funktionsweise und rechtlicher Einordnung (KI-Verordnung) stehen in der
+        <RouterLink to="/datenschutz" class="font-semibold text-primary-600 underline hover:no-underline dark:text-primary-400">Datenschutzerklärung</RouterLink>.
+      </p>
     </details>
 
     <UiPanel v-if="file && mode === 'term'" class="space-y-4">
@@ -116,6 +120,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import FileDrop from '@/components/FileDrop.vue'
 import ToolHeader from '@/components/ui/ToolHeader.vue'
 import UiAlert from '@/components/ui/UiAlert.vue'

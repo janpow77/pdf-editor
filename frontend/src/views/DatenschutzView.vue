@@ -53,6 +53,34 @@
       </section>
 
       <section>
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Schwärzung: KI-Namenserkennung (optional)</h2>
+        <p>
+          Das Werkzeug „Schwärzen" bietet neben exakter Textsuche und festen Textmustern
+          (Regex, z.&nbsp;B. für IBAN oder E-Mail-Adressen) optional eine
+          KI-gestützte Erkennung von Personennamen. Eingesetzt wird das Modell
+          <code>de_core_news_sm</code> der Bibliothek spaCy — ein kleines,
+          spezialisiertes Modell zur Eigennamenerkennung (Named Entity Recognition),
+          kein Sprachmodell und keine generative KI. Es erzeugt keine neuen Inhalte,
+          sondern schätzt anhand des vorhandenen Texts, welche Wortfolgen Personennamen
+          sein könnten. Wie die anderen KI-Funktionen läuft es ausschließlich auf der
+          eigenen Infrastruktur des Betreibers, ohne Cloud-Anbindung; der Dokumentinhalt
+          verlässt den Server nicht. Da eine Schätzung — anders als die deterministische
+          Muster- und Begriffssuche — Namen übersehen oder Wörter fälschlich als Name
+          einstufen kann, zeigt das Werkzeug vor jeder unwiderruflichen Schwärzung eine
+          Vorschau der Fundstellen zur Prüfung.
+        </p>
+        <p class="mt-2">
+          Nach eigener Einschätzung des Betreibers handelt es sich um ein „KI-System" im
+          weiten Sinn von Art. 3 Abs. 1 der KI-Verordnung (EU) 2024/1689, jedoch weder um
+          ein verbotenes (Art. 5) noch um ein Hochrisiko-System nach Anhang III, und die
+          Transparenzpflichten aus Art. 50 (u.&nbsp;a. für Chatbots, synthetische Inhalte,
+          Emotionserkennung) treffen auf eine hintergründige, vom Nutzer vor Anwendung
+          geprüfte Namenserkennung nicht unmittelbar zu. Diese Einschätzung ersetzt keine
+          Rechtsberatung.
+        </p>
+      </section>
+
+      <section>
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Mailversand</h2>
         <p>
           Wenn Sie Ergebnisse per E-Mail versenden, wird die angegebene Empfängeradresse
