@@ -19,6 +19,24 @@
       >{{ modeOption.label }}</UiButton>
     </div>
 
+    <details v-if="file" class="rounded-2xl bg-gray-100/70 p-3 text-sm dark:bg-white/5">
+      <summary class="cursor-pointer font-semibold">Welche Technik erkennt was?</summary>
+      <dl class="mt-3 space-y-3">
+        <div>
+          <dt class="font-semibold">Einzelner Begriff / Begriffsliste</dt>
+          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Exakte Textsuche im PDF-Inhalt — findet nur, was Zeichen für Zeichen übereinstimmt (optional ohne Groß-/Kleinschreibung, optional nur ganze Wörter).</dd>
+        </div>
+        <div>
+          <dt class="font-semibold">Muster (Regex)</dt>
+          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Feste, reguläre Ausdrücke pro Format — z.&nbsp;B. IBAN, E-Mail-Adresse oder Datum. Deterministisch: dieselbe Eingabe liefert immer denselben Treffer, keine KI beteiligt. Erkennt nur Formate, keine Bedeutung — ein Datum wird als Datum erkannt, unabhängig davon, ob es ein Geburtsdatum ist.</dd>
+        </div>
+        <div>
+          <dt class="font-semibold">Personennamen (KI-Erkennung)</dt>
+          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Ein spaCy-Sprachmodell (<code>de_core_news_sm</code>) liest den Fließtext und schätzt, welche Wortfolgen Personennamen sind — läuft vollständig auf unserem Server, kein Cloud-Aufruf. Im Gegensatz zu den Regex-Mustern ist das eine Schätzung: Namen können übersehen werden, und einzelne andere Wörter können fälschlich als Name erkannt werden. Deshalb vor dem Schwärzen immer die Vorschau prüfen.</dd>
+        </div>
+      </dl>
+    </details>
+
     <UiPanel v-if="file && mode === 'term'" class="space-y-4">
       <UiField label="Zu schwärzender Text" for-id="redact-term" hint="Zum Beispiel Name, Aktenzeichen oder Anschrift.">
         <input id="redact-term" v-model="term" type="text" class="ui-control w-full" />

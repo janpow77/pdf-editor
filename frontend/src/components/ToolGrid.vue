@@ -185,11 +185,25 @@ const rolodexEl = ref<HTMLElement | null>(null)
  * entsteht bewusst ohne opacity (BITV-Kontrast, siehe KONZEPT.md), und bei
  * prefers-reduced-motion wird hart gesprungen statt animiert.
  */
-const CARD_SPACING = 178
+/*
+ * Der Kartenabstand richtet sich nach der tatsächlichen Breite des
+ * Rolodex-Containers statt nach einer festen Zahl: Bei einer festen Zahl
+ * blieb der sichtbare Kartenfächer auf breiten Bildschirmen ein kleiner
+ * Klumpen in der Mitte, während links und rechts ungenutzter Platz blieb.
+ * Ein ResizeObserver hält den Wert bei Fenster-/Layoutänderungen aktuell.
+ */
+const MIN_CARD_SPACING = 150
+const MAX_CARD_SPACING = 340
+const cardSpacing = ref(178)
 const renderPos = ref(0)
 let targetPos = 0
 let rafId = 0
 let lastFrameAt = 0
+let resizeObserver: ResizeObserver | null = null
+
+function updateCardSpacing(el: HTMLElement): void {
+  cardSpacing.value = Math.max(MIN_CARD_SPACING, Math.min(MAX_CARD_SPACING, Math.round(el.clientWidth / 5.4)))
+}
 
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -361,6 +375,28 @@ let drag: RolodexDrag | null = null
 let pressIndex: number | null = null
 let dragConsumedClick = false
 
+/*
+ * pointermove kann auf Trackpads/Präzisionsmäusen weit über der Bildwieder-
+ * holrate feuern (mehrere hundert Ereignisse pro Sekunde). Ein direktes
+ * renderPos.value = … je Ereignis erzwingt dafür ebenso viele Vue-Renderings
+ * und wirkte ruckelig; hier wird nur der letzte Wert gemerkt und höchstens
+ * einmal pro Animationsframe übernommen.
+ */
+let pendingDragPos: number | null = null
+let dragRafId = 0
+
+function flushDragPos(): void {
+  dragRafId = 0
+  if (pendingDragPos !== null) {
+    renderPos.value = pendingDragPos
+    pendingDragPos = null
+  }
+}
+
+function scheduleDragFrame(): void {
+  if (!dragRafId) dragRafId = requestAnimationFrame(flushDragPos)
+}
+
 function onPointerDown(event: PointerEvent): void {
   if (event.pointerType === 'mouse' && event.button !== 0) return
   dragConsumedClick = false
@@ -389,28 +425,37 @@ function onPointerMove(event: PointerEvent): void {
     if (Math.abs(dx) < 7 || Math.abs(dx) < Math.abs(dy)) return
     drag.engaged = true
     dragConsumedClick = true
-    drag.startPos = renderPos.value + dx / CARD_SPACING
+    drag.startPos = renderPos.value + dx / cardSpacing.value
     stopAnimation()
     rolodexEl.value?.setPointerCapture(event.pointerId)
   }
   const now = performance.now()
   const dtMs = now - drag.lastT
   if (dtMs > 0) {
-    const instant = ((drag.lastX - event.clientX) / CARD_SPACING) / (dtMs / 1000)
+    const instant = ((drag.lastX - event.clientX) / cardSpacing.value) / (dtMs / 1000)
     drag.velocity = drag.velocity * 0.75 + instant * 0.25
   }
   drag.lastX = event.clientX
   drag.lastT = now
   const max = Math.max(0, groupTools.value.length - 1)
-  let pos = drag.startPos - dx / CARD_SPACING
+  let pos = drag.startPos - dx / cardSpacing.value
   if (pos < 0) pos *= 0.35
   else if (pos > max) pos = max + (pos - max) * 0.35
-  renderPos.value = pos
+  pendingDragPos = pos
+  scheduleDragFrame()
 }
 
 function onPointerEnd(event: PointerEvent): void {
   if (!drag || event.pointerId !== drag.id) return
   const engaged = drag.engaged
+  if (dragRafId) {
+    cancelAnimationFrame(dragRafId)
+    dragRafId = 0
+  }
+  if (pendingDragPos !== null) {
+    renderPos.value = pendingDragPos
+    pendingDragPos = null
+  }
   const projected = renderPos.value + drag.velocity * 0.14
   drag = null
   if (engaged) void selectRolodexIndex(Math.round(projected))
@@ -439,7 +484,7 @@ function cardStyle(index: number): Record<string, string> {
   const translateZ = -distance * 105
   const scale = Math.max(0.76, 1 - distance * 0.08)
   return {
-    transform: `translate(-50%, -50%) translateX(${offset * CARD_SPACING}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`,
+    transform: `translate(-50%, -50%) translateX(${offset * cardSpacing.value}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`,
     zIndex: String(1000 - Math.round(distance * 20)),
     cursor: distance < 0.5 ? 'pointer' : 'ew-resize',
   }
@@ -467,6 +512,18 @@ watch(() => groupTools.value.length, () => {
   }
 })
 
+// Der Rolodex-Container existiert nur im DOM, solange die Rolodex-Ansicht
+// aktiv ist (v-else tauscht die Zweige komplett aus) — der Observer wird
+// deshalb bei jedem Auftauchen neu angehängt statt einmalig in onMounted.
+watch(rolodexEl, (el) => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  if (!el) return
+  updateCardSpacing(el)
+  resizeObserver = new ResizeObserver(() => updateCardSpacing(el))
+  resizeObserver.observe(el)
+})
+
 onMounted(async () => {
   try {
     const health = await getHealth()
@@ -481,6 +538,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopAnimation()
+  if (dragRafId) cancelAnimationFrame(dragRafId)
+  resizeObserver?.disconnect()
   closeWorkspace()
 })
 </script>
