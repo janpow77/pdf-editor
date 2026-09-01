@@ -28,11 +28,24 @@
 
     <UiPanel v-if="file && mode === 'patterns'" class="space-y-5">
       <fieldset>
-        <legend class="ui-label">Muster</legend>
+        <div class="mb-2 flex items-center justify-between gap-2">
+          <legend class="ui-label">Muster</legend>
+          <UiButton size="sm" variant="secondary" @click="selectStandardPatterns">Standardmuster auswählen</UiButton>
+        </div>
         <div class="grid gap-2 sm:grid-cols-2">
-          <label v-for="pattern in patterns" :key="pattern.id" class="ui-choice !items-start">
-            <input type="checkbox" class="mt-1 rounded" :checked="selectedPatterns.has(pattern.id)" @change="togglePattern(pattern.id)" />
-            <span>{{ pattern.label }}<span class="block text-xs font-normal opacity-70">{{ pattern.hint }}</span></span>
+          <label v-for="pattern in patterns" :key="pattern.id" class="ui-choice !items-start" :class="{ 'opacity-50': pattern.ai && !nerAvailable }">
+            <input
+              type="checkbox"
+              class="mt-1 rounded"
+              :disabled="pattern.ai && !nerAvailable"
+              :checked="selectedPatterns.has(pattern.id)"
+              @change="togglePattern(pattern.id)"
+            />
+            <span>
+              {{ pattern.label }}
+              <span v-if="pattern.ai" class="ml-1 rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">KI</span>
+              <span class="block text-xs font-normal opacity-70">{{ pattern.hint }}<template v-if="pattern.ai && !nerAvailable"> — auf diesem Server nicht installiert.</template></span>
+            </span>
           </label>
         </div>
       </fieldset>
@@ -99,6 +112,7 @@ interface PatternInfo {
   id: string
   label: string
   hint: string
+  ai: boolean
 }
 interface Finding {
   pattern: string
@@ -127,6 +141,7 @@ const selectedPatterns = ref<Set<string>>(new Set())
 const preview = ref<Preview | null>(null)
 const confirmed = ref(false)
 const patternLoadError = ref('')
+const nerAvailable = ref(false)
 
 const modes: { value: RedactMode; label: string }[] = [
   { value: 'term', label: 'Einzelner Begriff' },
@@ -153,6 +168,12 @@ function selectMode(nextMode: RedactMode): void {
   mode.value = nextMode
   preview.value = null
   done.value = false
+  confirmed.value = false
+}
+
+function selectStandardPatterns(): void {
+  selectedPatterns.value = new Set(patterns.value.filter((p) => !p.ai).map((p) => p.id))
+  preview.value = null
   confirmed.value = false
 }
 
@@ -221,8 +242,9 @@ async function apply(): Promise<void> {
 
 onMounted(async () => {
   try {
-    const body = await apiGetJson<{ patterns: PatternInfo[] }>('/api/pdf-extras/redact/patterns')
+    const body = await apiGetJson<{ patterns: PatternInfo[]; ner_available: boolean }>('/api/pdf-extras/redact/patterns')
     patterns.value = body.patterns
+    nerAvailable.value = body.ner_available
   } catch {
     patterns.value = []
     patternLoadError.value = 'Vordefinierte Muster konnten nicht geladen werden. Eigene Begriffe bleiben verfügbar.'

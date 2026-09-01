@@ -21,3 +21,8 @@ pyhanko>=0.21
 ocrmypdf>=16
 httpx>=0.27
 alembic>=1.13
+spacy>=3.7,<3.8
+# Deutsches NER-Modell für die optionale KI-Namenserkennung bei der Schwärzung
+# (PdfRedact „ki_namen"). Ohne diese Zeile bleibt spaCy installiert, aber ohne
+# Modell — die Muster-Schwärzung (Regex) funktioniert davon unabhängig.
+https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.7.0/de_core_news_sm-3.7.0-py3-none-any.whl

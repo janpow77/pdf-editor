@@ -112,6 +112,44 @@ except ImportError:  # pragma: no cover
     ocrmypdf = None  # type: ignore[assignment]
     _OCRMYPDF_IMPORTED = False
 
+try:
+    import spacy
+
+    SPACY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    spacy = None  # type: ignore[assignment]
+    SPACY_AVAILABLE = False
+
+
+# spaCy-Modell für die optionale KI-Namenserkennung bei der Schwärzung. Das
+# Modell ist eine separate Installation (`de_core_news_sm`) — die Bibliothek
+# kann vorhanden sein, ohne dass das Modell heruntergeladen wurde. Einmaliges
+# Laden hier statt in jedem Service-Aufruf: das Einlesen dauert spürbar.
+_NER_MODEL: Any = None
+_NER_MODEL_LOAD_ATTEMPTED = False
+
+
+def load_de_ner_model() -> Any:
+    """Deutsches spaCy-NER-Modell (nur Tok2Vec+NER, ohne ungenutzte Pipes).
+
+    Gibt ``None`` zurück, wenn spaCy oder das Modell fehlen — nie eine
+    Exception, damit Aufrufer nur auf ``None`` prüfen müssen.
+    """
+    global _NER_MODEL, _NER_MODEL_LOAD_ATTEMPTED
+    if _NER_MODEL_LOAD_ATTEMPTED:
+        return _NER_MODEL
+    _NER_MODEL_LOAD_ATTEMPTED = True
+    if not SPACY_AVAILABLE:
+        return None
+    try:
+        _NER_MODEL = spacy.load(
+            "de_core_news_sm",
+            exclude=["parser", "tagger", "morphologizer", "lemmatizer", "attribute_ruler"],
+        )
+    except OSError:  # pragma: no cover — Modell nicht heruntergeladen
+        _NER_MODEL = None
+    return _NER_MODEL
+
 
 # ── Externe Programme ─────────────────────────────────────────
 #
@@ -216,6 +254,19 @@ DEPENDENCIES: tuple[Dependency, ...] = (
         license="MIT",
         url="https://python-docx.readthedocs.io/",
         available=DOCX_AVAILABLE,
+    ),
+    Dependency(
+        key="spacy",
+        name="spaCy (de_core_news_sm)",
+        kind="bibliothek",
+        purpose=(
+            "Optionale KI-Namenserkennung bei der Schwärzung — läuft lokal, "
+            "keine Daten verlassen den Server"
+        ),
+        license="MIT (Bibliothek); Modell de_core_news_sm: MIT",
+        url="https://spacy.io/",
+        alternative="ohne spaCy bleiben die musterbasierten Schwärzungen (Regex) nutzbar",
+        available=SPACY_AVAILABLE and load_de_ner_model() is not None,
     ),
     Dependency(
         key="openpyxl",

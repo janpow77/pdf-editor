@@ -204,6 +204,69 @@ def test_batch_unknown_operation_422(client):
     assert r.status_code == 422
 
 
+def test_batch_redact_patterns(client):
+    """Automatisierte Schwärzung über mehrere Dateien: Fundstellen raus, Rest bleibt."""
+    files = [
+        ("files", ("a.pdf", make_pdf(1, "Kontakt Geheimwort a@example.com Ende"), "application/pdf")),
+        ("files", ("b.pdf", make_pdf(1, "Ohne Treffer hier"), "application/pdf")),
+    ]
+    r = client.post(
+        "/api/pdf-extras/batch",
+        data={
+            "operation": "redact",
+            "params": json.dumps({"patterns": ["email"], "terms": "Geheimwort"}),
+        },
+        files=files,
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers["X-Batch-Ok"] == "2"
+    with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+        names = zf.namelist()
+        assert "a_geschwaerzt.pdf" in names
+        assert "b.pdf" in names  # keine Fundstelle → unverändert, kein Fehler
+        assert "schwaerzungen.txt" in names
+        manifest = zf.read("schwaerzungen.txt").decode()
+        assert "a.pdf" in manifest and "b.pdf" in manifest
+        with fitz.open(stream=zf.read("a_geschwaerzt.pdf"), filetype="pdf") as doc:
+            text = doc[0].get_text()
+            assert "Geheimwort" not in text
+            assert "a@example.com" not in text
+
+
+def test_batch_redact_unknown_pattern_400(client):
+    r = client.post(
+        "/api/pdf-extras/batch",
+        data={"operation": "redact", "params": json.dumps({"patterns": ["nonsense"]})},
+        files=[("files", ("a.pdf", make_pdf(1, "A"), "application/pdf"))],
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.skipif(not svc.get_pdf_extras().ner_available(), reason="spaCy-Modell nicht installiert")
+def test_redact_patterns_ner_preview(client):
+    """KI-Namenserkennung findet Personennamen, die kein Regex-Muster abdeckt."""
+    pdf = make_pdf(1, "Sehr geehrter Herr Max Mustermann, herzliche Gruesse")
+    r = client.post(
+        "/api/pdf-extras/redact-patterns",
+        data={"patterns": json.dumps([svc.NER_PATTERN_ID]), "preview": "true"},
+        files={"file": ("d.pdf", pdf, "application/pdf")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total"] >= 1
+    assert any(f["pattern"] == svc.NER_PATTERN_ID for f in body["findings"])
+
+
+def test_redact_patterns_lists_ai_flag(client):
+    r = client.get("/api/pdf-extras/redact/patterns")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    by_id = {p["id"]: p for p in body["patterns"]}
+    assert by_id[svc.NER_PATTERN_ID]["ai"] is True
+    assert by_id["email"]["ai"] is False
+    assert "ner_available" in body
+
+
 def test_ink_annotation_regression(client):
     """Regressionstest: add_ink_annot braucht Float-Paare (PyMuPDF-Kompatibilität)."""
     pdf = make_pdf(1, "Zeichnung")

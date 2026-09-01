@@ -29,7 +29,9 @@ from app.pdf_backend import (
     OCRMYPDF_AVAILABLE,
     PYHANKO_AVAILABLE,
     PYMUPDF_AVAILABLE,
+    SPACY_AVAILABLE,
     fitz,
+    load_de_ner_model,
     ocrmypdf as _ocrmypdf,
     open_pdf,
     pyhanko_signers as _pyhanko_signers,
@@ -171,7 +173,13 @@ class RedactionPattern:
     label: str
     regex: str
     hint: str
+    #: KI-basiert (spaCy-NER) statt Regex — kein fester Ausdruck, dafür
+    #: unsicherer als die übrigen Muster. Wird in find_pattern_matches
+    #: getrennt behandelt statt kompiliert.
+    ai: bool = False
 
+
+NER_PATTERN_ID = "ki_namen"
 
 REDACTION_PATTERNS: dict[str, RedactionPattern] = {
     "iban": RedactionPattern(
@@ -218,6 +226,13 @@ REDACTION_PATTERNS: dict[str, RedactionPattern] = {
         "Aktenzeichen",
         r"\b[A-Z]{1,4}[-/ ]?\d{1,6}[-/]\d{2,4}\b",
         "Muster wie AZ-1234/26 — vor dem Schwärzen prüfen",
+    ),
+    NER_PATTERN_ID: RedactionPattern(
+        "Personennamen (KI-Erkennung)",
+        "",
+        "spaCy-NER statt Regex — erkennt Namen im Fließtext, ist aber "
+        "unsicherer als die übrigen Muster: Vorschau vor dem Schwärzen prüfen",
+        ai=True,
     ),
 }
 
@@ -350,6 +365,7 @@ class PdfExtrasService:
             "form_design": PYMUPDF_AVAILABLE,
             "bates": PYMUPDF_AVAILABLE,
             "redact_search": PYMUPDF_AVAILABLE,
+            "redact_ner": self.ner_available(),
             "sign_image": PYMUPDF_AVAILABLE,
             "text_edit_blocks": PYMUPDF_AVAILABLE,
             "pdfa": bool(GHOSTSCRIPT_BIN),
@@ -495,6 +511,24 @@ class PdfExtrasService:
             result.append((" ".join(text_parts), spans, words))
         return result
 
+    def ner_available(self) -> bool:
+        """Ist die optionale KI-Namenserkennung (spaCy) einsatzbereit?"""
+        return SPACY_AVAILABLE and load_de_ner_model() is not None
+
+    @staticmethod
+    def _span_rect(spans: list[tuple[int, int]], words: list, start: int, end: int):
+        """Wort-Rechtecke, die einen Zeichenbereich der Zeile überdecken, zu
+        einem Fundstellen-Rechteck vereinigen — None, wenn keins trifft."""
+        hit_rects = [
+            fitz.Rect(w[:4]) for (s, e), w in zip(spans, words) if s < end and e > start
+        ]
+        if not hit_rects:
+            return None
+        box = hit_rects[0]
+        for r in hit_rects[1:]:
+            box |= r
+        return box
+
     def find_pattern_matches(
         self,
         file_content: bytes,
@@ -511,7 +545,7 @@ class PdfExtrasService:
         flags = 0 if case_sensitive else re.IGNORECASE
         for key in patterns:
             spec = REDACTION_PATTERNS.get(key)
-            if spec:
+            if spec and not spec.ai:
                 compiled.append((key, re.compile(spec.regex, flags)))
         for term in terms or []:
             term = term.strip()
@@ -521,38 +555,58 @@ class PdfExtrasService:
             if whole_word:
                 escaped = rf"(?<!\w){escaped}(?!\w)"
             compiled.append((f"begriff:{term}", re.compile(escaped, flags)))
+        use_ner = NER_PATTERN_ID in patterns
 
         findings: list[dict] = []
         counts: dict[str, int] = {}
         doc = fitz.open(stream=file_content, filetype="pdf")
         try:
+            line_records: list[tuple[int, str, list[tuple[int, int]], list]] = []
             for pno in range(doc.page_count):
-                page = doc[pno]
-                for line_text, spans, words in self._line_groups(page):
-                    for key, rx in compiled:
-                        for match in rx.finditer(line_text):
-                            start, end = match.span()
-                            hit_rects = [
-                                fitz.Rect(w[:4])
-                                for (s, e), w in zip(spans, words)
-                                if s < end and e > start
-                            ]
-                            if not hit_rects:
-                                continue
-                            box = hit_rects[0]
-                            for r in hit_rects[1:]:
-                                box |= r
-                            findings.append(
-                                {
-                                    "pattern": key,
-                                    "page": pno + 1,
-                                    "text": match.group(0),
-                                    "rect": [round(v, 2) for v in box],
-                                }
-                            )
-                            counts[key] = counts.get(key, 0) + 1
+                for line_text, spans, words in self._line_groups(doc[pno]):
+                    line_records.append((pno, line_text, spans, words))
         finally:
             doc.close()
+
+        for pno, line_text, spans, words in line_records:
+            for key, rx in compiled:
+                for match in rx.finditer(line_text):
+                    box = self._span_rect(spans, words, *match.span())
+                    if box is None:
+                        continue
+                    findings.append(
+                        {
+                            "pattern": key,
+                            "page": pno + 1,
+                            "text": match.group(0),
+                            "rect": [round(v, 2) for v in box],
+                        }
+                    )
+                    counts[key] = counts.get(key, 0) + 1
+
+        if use_ner:
+            nlp = load_de_ner_model()
+            if nlp is not None:
+                texts = [lr[1] for lr in line_records]
+                for (pno, line_text, spans, words), ner_doc in zip(
+                    line_records, nlp.pipe(texts)
+                ):
+                    for ent in ner_doc.ents:
+                        if ent.label_ != "PER":
+                            continue
+                        box = self._span_rect(spans, words, ent.start_char, ent.end_char)
+                        if box is None:
+                            continue
+                        findings.append(
+                            {
+                                "pattern": NER_PATTERN_ID,
+                                "page": pno + 1,
+                                "text": ent.text,
+                                "rect": [round(v, 2) for v in box],
+                            }
+                        )
+                        counts[NER_PATTERN_ID] = counts.get(NER_PATTERN_ID, 0) + 1
+        findings.sort(key=lambda f: f["page"])
         return findings, counts
 
     def redact_patterns(
@@ -1246,6 +1300,7 @@ class PdfExtrasService:
         "clean",
         "sign",
         "rename",
+        "redact",
     )
 
     def batch_apply(
@@ -1271,6 +1326,7 @@ class PdfExtrasService:
         ok = 0
         buf = io.BytesIO()
         bates_counter = int(params.get("start", 1))
+        redaction_log: list[str] = []
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for filename, content in files:
                 base = filename.rsplit(".", 1)[0]
@@ -1346,6 +1402,41 @@ class PdfExtrasService:
                         zf.writestr(f"{new_base}.pdf", content)
                         ok += 1
                         continue
+                    elif operation == "redact":
+                        pattern_list = params.get("patterns") or []
+                        if not isinstance(pattern_list, list):
+                            pattern_list = []
+                        term_list = [
+                            t.strip()
+                            for t in str(params.get("terms", "")).splitlines()
+                            if t.strip()
+                        ][:200]
+                        if NER_PATTERN_ID in pattern_list and not self.ner_available():
+                            errors.append(
+                                f"{filename}: KI-Namenserkennung nicht verfügbar (spaCy-Modell fehlt)"
+                            )
+                            continue
+                        redact_result = self.redact_patterns(
+                            content,
+                            pattern_list,
+                            term_list,
+                            bool(params.get("case_sensitive", False)),
+                            bool(params.get("whole_word", True)),
+                        )
+                        if redact_result.success and redact_result.file_content:
+                            zf.writestr(f"{base}_geschwaerzt.pdf", redact_result.file_content)
+                            count = (redact_result.metadata or {}).get("redactions", 0)
+                            redaction_log.append(f"{filename}: {count} Fundstelle(n) geschwärzt")
+                            ok += 1
+                        elif redact_result.error and "Keine Fundstellen" in redact_result.error:
+                            # Nichts gefunden ist kein Fehler — Datei unverändert übernehmen,
+                            # damit sie im Batch nicht kommentarlos fehlt.
+                            zf.writestr(f"{base}.pdf", content)
+                            redaction_log.append(f"{filename}: 0 Fundstellen — unverändert übernommen")
+                            ok += 1
+                        else:
+                            errors.append(f"{filename}: {redact_result.error}")
+                        continue
                     else:  # pdfa
                         result = self.convert_pdfa(
                             content, level=params.get("level", "2b")
@@ -1361,6 +1452,8 @@ class PdfExtrasService:
                     errors.append(f"{filename}: {e}")
             if errors:
                 zf.writestr("fehler.txt", "\n".join(errors))
+            if redaction_log:
+                zf.writestr("schwaerzungen.txt", "\n".join(redaction_log))
         return PdfToolResult(
             success=ok > 0,
             output_format="zip",

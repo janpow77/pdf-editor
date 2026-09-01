@@ -2,7 +2,7 @@
   <div class="space-y-5">
     <ToolHeader title="Batch-Verarbeitung" description="Eine Operation auf bis zu 50 validierte PDF-Dateien anwenden." @back="$emit('back')" />
 
-    <UiAlert tone="info">Die Ausgabe wird gesammelt als ZIP bereitgestellt. Fehler einzelner Dateien stehen darin in <code>fehler.txt</code>.</UiAlert>
+    <UiAlert tone="info">Die Ausgabe wird gesammelt als ZIP bereitgestellt. Fehler einzelner Dateien stehen darin in <code>fehler.txt</code><template v-if="operation === 'redact'">, die Fundstellen je Datei in <code>schwaerzungen.txt</code></template>.</UiAlert>
 
     <UiDropZone :active="dragging" :invalid="Boolean(uploadError)" :accepted="Boolean(items.length)" @drag-active="dragging = $event" @drop="enqueueFiles">
       <input ref="input" type="file" accept=".pdf,application/pdf" multiple class="hidden" @change="onSelect" />
@@ -37,7 +37,7 @@
           <option value="protect">Passwortschutz</option><option value="bates">Bates-Nummerierung</option>
           <option value="pdfa">PDF/A</option><option value="watermark">Wasserzeichen</option>
           <option value="clean">Bereinigen</option><option value="sign">Digital signieren</option>
-          <option value="rename">Umbenennen</option>
+          <option value="rename">Umbenennen</option><option value="redact">Schwärzen</option>
         </select>
       </UiField>
 
@@ -74,6 +74,42 @@
         <UiField label="Startnummer" for-id="batch-rename-start"><input id="batch-rename-start" v-model.number="params.start" type="number" min="0" class="ui-control w-full" /></UiField>
         <UiField label="Stellen" for-id="batch-rename-digits"><input id="batch-rename-digits" v-model.number="params.rename_digits" type="number" min="1" max="8" class="ui-control w-full" /></UiField>
       </div>
+      <div v-else-if="operation === 'redact'" class="space-y-4">
+        <UiAlert tone="warning">Schwärzung ist unwiderruflich und wird auf alle Dateien angewendet. Dateien ohne Fundstellen bleiben unverändert im ZIP.</UiAlert>
+        <fieldset>
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <legend class="ui-label">Muster</legend>
+            <UiButton size="sm" variant="secondary" @click="selectStandardPatterns">Standardmuster auswählen</UiButton>
+          </div>
+          <UiAlert v-if="patternLoadError" tone="warning">{{ patternLoadError }}</UiAlert>
+          <div class="grid gap-2 sm:grid-cols-2">
+            <label v-for="pattern in redactPatterns" :key="pattern.id" class="ui-choice !items-start" :class="{ 'opacity-50': pattern.ai && !nerAvailable }">
+              <input
+                type="checkbox"
+                class="mt-1 rounded"
+                :disabled="pattern.ai && !nerAvailable"
+                :checked="selectedPatterns.has(pattern.id)"
+                @change="toggleRedactPattern(pattern.id)"
+              />
+              <span>
+                {{ pattern.label }}
+                <span v-if="pattern.ai" class="ml-1 rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">KI</span>
+                <span class="block text-xs font-normal opacity-70">{{ pattern.hint }}<template v-if="pattern.ai && !nerAvailable"> — auf diesem Server nicht installiert.</template></span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+        <UiField label="Begriffe oder Namen" for-id="batch-redact-terms" hint="Ein Begriff pro Zeile.">
+          <textarea id="batch-redact-terms" v-model="params.redact_terms" rows="4" class="ui-control w-full font-mono" placeholder="Erika Musterfrau&#10;Musterhausen"></textarea>
+        </UiField>
+        <div class="flex flex-wrap gap-2">
+          <label class="ui-choice"><input v-model="params.case_sensitive" type="checkbox" class="rounded" /> Groß- und Kleinschreibung beachten</label>
+          <label class="ui-choice"><input v-model="params.whole_word" type="checkbox" class="rounded" /> Nur ganze Wörter</label>
+        </div>
+        <label class="ui-choice !rounded-2xl">
+          <input v-model="redactConfirmed" type="checkbox" class="rounded" /> Ich bestätige die unwiderrufliche Schwärzung aller Fundstellen in diesen Dateien.
+        </label>
+      </div>
     </UiPanel>
 
     <UiAlert v-if="summary" tone="success" live>{{ summary }} – ZIP heruntergeladen.</UiAlert>
@@ -85,7 +121,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import FileDrop from '@/components/FileDrop.vue'
 import ToolHeader from '@/components/ui/ToolHeader.vue'
 import UiAlert from '@/components/ui/UiAlert.vue'
@@ -95,18 +131,20 @@ import UiField from '@/components/ui/UiField.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import { useNotifications } from '@/composables/useNotifications'
-import { apiPost, downloadBlob } from '@/lib/api'
+import { apiGetJson, apiPost, downloadBlob } from '@/lib/api'
 import { formatFileSize, validatePdfFile, validateTotalFileSize } from '@/lib/fileValidation'
 
 defineEmits<{ (event: 'back'): void }>()
 
-type BatchOperation = 'compress' | 'rotate' | 'protect' | 'bates' | 'pdfa' | 'watermark' | 'clean' | 'sign' | 'rename'
+type BatchOperation = 'compress' | 'rotate' | 'protect' | 'bates' | 'pdfa' | 'watermark' | 'clean' | 'sign' | 'rename' | 'redact'
 interface BatchItem { id: string; file: File }
+interface PatternInfo { id: string; label: string; hint: string; ai: boolean }
 interface BatchParams {
   quality: 'low' | 'medium' | 'high'; rotation: 90 | 180 | 270; password: string
   prefix: string; start: number; digits: number; level: '1b' | '2b' | '3b'
   text: string; opacity: number; font_size: number; pattern: string
   rename_digits: number; reason: string
+  redact_terms: string; case_sensitive: boolean; whole_word: boolean
 }
 
 const MAX_FILES = 50
@@ -114,7 +152,11 @@ const notifications = useNotifications()
 const input = ref<HTMLInputElement | null>(null)
 const items = ref<BatchItem[]>([])
 const operation = ref<BatchOperation>('compress')
-const params = reactive<BatchParams>({ quality: 'medium', rotation: 90, password: '', prefix: 'AKTE-', start: 1, digits: 6, level: '2b', text: 'ENTWURF', opacity: 0.3, font_size: 60, pattern: 'AKTE-{n}_{name}', rename_digits: 3, reason: '' })
+const params = reactive<BatchParams>({
+  quality: 'medium', rotation: 90, password: '', prefix: 'AKTE-', start: 1, digits: 6, level: '2b',
+  text: 'ENTWURF', opacity: 0.3, font_size: 60, pattern: 'AKTE-{n}_{name}', rename_digits: 3, reason: '',
+  redact_terms: '', case_sensitive: false, whole_word: true,
+})
 const certificate = ref<File | null>(null)
 const passphrase = ref('')
 const loading = ref(false)
@@ -123,6 +165,11 @@ const dragging = ref(false)
 const uploadError = ref('')
 const error = ref<string | null>(null)
 const summary = ref('')
+const redactPatterns = ref<PatternInfo[]>([])
+const selectedPatterns = ref<Set<string>>(new Set())
+const nerAvailable = ref(false)
+const patternLoadError = ref('')
+const redactConfirmed = ref(false)
 let nextId = 1
 let runGeneration = 0
 let addQueue = Promise.resolve()
@@ -132,7 +179,35 @@ const canRun = computed(() => {
   if (operation.value === 'sign') return Boolean(certificate.value)
   if (operation.value === 'watermark') return Boolean(params.text.trim())
   if (operation.value === 'rename') return Boolean(params.pattern.trim())
+  if (operation.value === 'redact') {
+    const hasSelection = selectedPatterns.value.size > 0 || params.redact_terms.trim().length > 0
+    return hasSelection && redactConfirmed.value
+  }
   return true
+})
+
+function selectStandardPatterns(): void {
+  selectedPatterns.value = new Set(redactPatterns.value.filter((p) => !p.ai).map((p) => p.id))
+  redactConfirmed.value = false
+}
+
+function toggleRedactPattern(id: string): void {
+  const next = new Set(selectedPatterns.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedPatterns.value = next
+  redactConfirmed.value = false
+}
+
+onMounted(async () => {
+  try {
+    const body = await apiGetJson<{ patterns: PatternInfo[]; ner_available: boolean }>('/api/pdf-extras/redact/patterns')
+    redactPatterns.value = body.patterns
+    nerAvailable.value = body.ner_available
+  } catch {
+    redactPatterns.value = []
+    patternLoadError.value = 'Vordefinierte Muster konnten nicht geladen werden. Eigene Begriffe bleiben verfügbar.'
+  }
 })
 
 function onSelect(event: Event): void {
@@ -205,6 +280,7 @@ function resetResult(): void {
   runGeneration += 1
   summary.value = ''
   error.value = null
+  redactConfirmed.value = false
 }
 
 async function apply(): Promise<void> {
@@ -218,7 +294,16 @@ async function apply(): Promise<void> {
     const formData = new FormData()
     snapshot.forEach((item) => formData.append('files', item.file))
     formData.append('operation', operation.value)
-    const payload = operation.value === 'rename' ? { ...params, digits: params.rename_digits } : { ...params }
+    let payload: Record<string, unknown> = { ...params }
+    if (operation.value === 'rename') payload = { ...params, digits: params.rename_digits }
+    else if (operation.value === 'redact') {
+      payload = {
+        patterns: [...selectedPatterns.value],
+        terms: params.redact_terms,
+        case_sensitive: params.case_sensitive,
+        whole_word: params.whole_word,
+      }
+    }
     formData.append('params', JSON.stringify(payload))
     if (operation.value === 'sign' && certificate.value) {
       formData.append('certificate', certificate.value)

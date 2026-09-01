@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import current_limits
 from app.offload import run_cpu
-from app.services.pdf_extras_service import REDACTION_PATTERNS, get_pdf_extras
+from app.services.pdf_extras_service import NER_PATTERN_ID, REDACTION_PATTERNS, get_pdf_extras
 
 router = APIRouter(prefix="/pdf-extras", tags=["PDF Extras"])
 
@@ -265,9 +265,10 @@ async def list_redaction_patterns():
     """Verfügbare Suchmuster für die Schwärzung."""
     return {
         "patterns": [
-            {"id": key, "label": p.label, "hint": p.hint}
+            {"id": key, "label": p.label, "hint": p.hint, "ai": p.ai}
             for key, p in REDACTION_PATTERNS.items()
-        ]
+        ],
+        "ner_available": get_pdf_extras().ner_available(),
     }
 
 
@@ -303,6 +304,11 @@ def redact_by_patterns(
         raise HTTPException(status_code=400, detail="Mindestens ein Muster oder Begriff nötig")
 
     service = get_pdf_extras()
+    if NER_PATTERN_ID in pattern_list and not service.ner_available():
+        raise HTTPException(
+            status_code=503,
+            detail="KI-Namenserkennung nicht verfügbar (spaCy-Modell fehlt)",
+        )
     if preview:
         found = service.find_pattern_matches(
             content, pattern_list, term_list, case_sensitive, whole_word
@@ -451,7 +457,7 @@ def batch_apply(
     operation: str = Form(
         ...,
         description=(
-            "compress | rotate | protect | bates | pdfa | watermark | clean | sign | rename"
+            "compress | rotate | protect | bates | pdfa | watermark | clean | sign | rename | redact"
         ),
     ),
     params: str = Form("{}", description="JSON-Objekt mit Operations-Parametern"),
@@ -470,6 +476,17 @@ def batch_apply(
         assert isinstance(params_dict, dict)
     except (json.JSONDecodeError, AssertionError):
         raise HTTPException(status_code=400, detail="params muss ein JSON-Objekt sein")
+
+    if operation == "redact":
+        batch_patterns = params_dict.get("patterns") or []
+        unknown = [p for p in batch_patterns if p not in REDACTION_PATTERNS]
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"Unbekannte Muster: {', '.join(unknown)}")
+        if NER_PATTERN_ID in batch_patterns and not get_pdf_extras().ner_available():
+            raise HTTPException(
+                status_code=503,
+                detail="KI-Namenserkennung nicht verfügbar (spaCy-Modell fehlt)",
+            )
 
     limits = current_limits()
     total = 0
