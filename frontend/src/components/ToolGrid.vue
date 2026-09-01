@@ -269,6 +269,22 @@ const activeGroup = computed(() => availableGroups.value.find((group) => group.k
 const groupTools = computed<readonly CatalogTool[]>(() => activeGroup.value?.tools ?? [])
 const activeRolodexTool = computed(() => groupTools.value[rolodexIndex.value] ?? null)
 
+/*
+ * Startet das Rolodex bei Index 0, hängt die aktive Kachel am linken Rand
+ * des Fächers — links bleibt leerer Platz, rechts läuft er weg. Die mittlere
+ * Position sorgt dafür, dass von der ersten gerenderten Frame an Kacheln zu
+ * beiden Seiten sichtbar sind. Bei 7 Werkzeugen z.B. Index 3 ("4 / 7").
+ */
+function middleIndex(length: number): number {
+  return length > 0 ? Math.floor((length - 1) / 2) : 0
+}
+
+// Läuft synchron während des Setups, also vor dem ersten Rendern — kein
+// sichtbarer Sprung von Index 0 zur Mitte, falls die Rolodex-Ansicht
+// (gespeicherte Präferenz) schon beim Laden aktiv ist.
+rolodexIndex.value = middleIndex(groupTools.value.length)
+jumpTo(rolodexIndex.value)
+
 function isLocked(id: ToolId): boolean {
   return lockedTools.value.has(id) && !isAuthenticated.value
 }
@@ -310,8 +326,9 @@ function setViewMode(mode: ViewMode): void {
 function setGroup(key: string): void {
   activeGroupKey.value = key
   writeStoredValue(GROUP_KEY, key)
-  rolodexIndex.value = 0
-  jumpTo(0)
+  const start = middleIndex(groupTools.value.length)
+  rolodexIndex.value = start
+  jumpTo(start)
   rolodexEl.value?.focus()
 }
 
