@@ -110,12 +110,12 @@
           <button
             v-for="(tool, index) in groupTools"
             :key="tool.id"
+            :ref="(el) => setCardRef(el, index)"
             type="button"
             :data-tool-id="tool.id"
             :data-rolodex-index="index"
             class="absolute left-1/2 top-1/2 flex h-64 w-60 flex-col rounded-[1.5rem] bg-white p-5 text-left shadow-apple ring-1 ring-gray-300 will-change-transform focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-900 dark:ring-gray-600"
             :class="isLocked(tool.id) ? 'grayscale' : ''"
-            :style="cardStyle(index)"
             :tabindex="index === rolodexIndex ? 0 : -1"
             :aria-pressed="index === rolodexIndex"
             :aria-label="`${tool.label}: ${isLocked(tool.id) ? LOCK_HINT : tool.description}`"
@@ -149,7 +149,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, type ComponentPublicInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import { useWorkspace } from '@/composables/useWorkspace'
@@ -195,14 +195,45 @@ const rolodexEl = ref<HTMLElement | null>(null)
 const MIN_CARD_SPACING = 150
 const MAX_CARD_SPACING = 340
 const cardSpacing = ref(178)
-const renderPos = ref(0)
-let targetPos = 0
 let rafId = 0
 let lastFrameAt = 0
 let resizeObserver: ResizeObserver | null = null
 
+/*
+ * renderPos ist bewusst KEIN Vue-Ref: Als Ref hätte jede der bis zu 60
+ * Positionsänderungen pro Sekunde ein Vue-Rerendering samt VDOM-Diff über
+ * die ganze Kartenliste ausgelöst — der eigentliche Grund für das frühere
+ * Ruckeln. Die Karten-Elemente werden stattdessen per Ref eingesammelt
+ * (cardEls) und ihr transform/z-index/cursor direkt im DOM gesetzt, ohne
+ * Vue dazwischen. rolodexIndex bleibt reaktiv — der ändert sich selten
+ * (pro Kartenwechsel, nicht pro Frame) und steuert nur Text/ARIA/Fokus.
+ */
+let renderPos = 0
+let targetPos = 0
+const cardEls = new Map<number, HTMLElement>()
+
+function setCardRef(el: Element | ComponentPublicInstance | null, index: number): void {
+  if (el instanceof HTMLElement) cardEls.set(index, el)
+  else cardEls.delete(index)
+}
+
+function applyCardStyles(): void {
+  const spacing = cardSpacing.value
+  for (const [index, el] of cardEls) {
+    const offset = index - renderPos
+    const distance = Math.abs(offset)
+    const rotateY = Math.max(-52, Math.min(52, offset * -31))
+    const translateZ = -distance * 105
+    const scale = Math.max(0.76, 1 - distance * 0.08)
+    el.style.transform = `translate(-50%, -50%) translateX(${offset * spacing}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`
+    el.style.zIndex = String(1000 - Math.round(distance * 20))
+    el.style.cursor = distance < 0.5 ? 'pointer' : 'ew-resize'
+  }
+}
+
 function updateCardSpacing(el: HTMLElement): void {
   cardSpacing.value = Math.max(MIN_CARD_SPACING, Math.min(MAX_CARD_SPACING, Math.round(el.clientWidth / 5.4)))
+  applyCardStyles()
 }
 
 function prefersReducedMotion(): boolean {
@@ -220,19 +251,22 @@ function animateFrame(now: number): void {
   rafId = 0
   const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameAt) / 1000))
   lastFrameAt = now
-  const diff = targetPos - renderPos.value
+  const diff = targetPos - renderPos
   if (Math.abs(diff) < 0.001) {
-    renderPos.value = targetPos
+    renderPos = targetPos
+    applyCardStyles()
     return
   }
-  renderPos.value += diff * (1 - Math.exp(-14 * dt))
+  renderPos += diff * (1 - Math.exp(-14 * dt))
+  applyCardStyles()
   rafId = requestAnimationFrame(animateFrame)
 }
 
 function moveTowardsTarget(): void {
   if (prefersReducedMotion()) {
     stopAnimation()
-    renderPos.value = targetPos
+    renderPos = targetPos
+    applyCardStyles()
     return
   }
   if (!rafId) {
@@ -244,7 +278,8 @@ function moveTowardsTarget(): void {
 function jumpTo(index: number): void {
   stopAnimation()
   targetPos = index
-  renderPos.value = index
+  renderPos = index
+  nextTick(() => applyCardStyles())
 }
 
 const activeEntry = computed(() => findTool(activeTool.value))
@@ -394,10 +429,9 @@ let dragConsumedClick = false
 
 /*
  * pointermove kann auf Trackpads/Präzisionsmäusen weit über der Bildwieder-
- * holrate feuern (mehrere hundert Ereignisse pro Sekunde). Ein direktes
- * renderPos.value = … je Ereignis erzwingt dafür ebenso viele Vue-Renderings
- * und wirkte ruckelig; hier wird nur der letzte Wert gemerkt und höchstens
- * einmal pro Animationsframe übernommen.
+ * holrate feuern (mehrere hundert Ereignisse pro Sekunde) — mehr, als je
+ * Frame überhaupt sichtbar würde. Nur der letzte Wert wird gemerkt und
+ * höchstens einmal pro Animationsframe ins DOM geschrieben.
  */
 let pendingDragPos: number | null = null
 let dragRafId = 0
@@ -405,8 +439,9 @@ let dragRafId = 0
 function flushDragPos(): void {
   dragRafId = 0
   if (pendingDragPos !== null) {
-    renderPos.value = pendingDragPos
+    renderPos = pendingDragPos
     pendingDragPos = null
+    applyCardStyles()
   }
 }
 
@@ -422,7 +457,7 @@ function onPointerDown(event: PointerEvent): void {
     id: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
-    startPos: renderPos.value,
+    startPos: renderPos,
     engaged: false,
     lastX: event.clientX,
     lastT: performance.now(),
@@ -442,7 +477,7 @@ function onPointerMove(event: PointerEvent): void {
     if (Math.abs(dx) < 7 || Math.abs(dx) < Math.abs(dy)) return
     drag.engaged = true
     dragConsumedClick = true
-    drag.startPos = renderPos.value + dx / cardSpacing.value
+    drag.startPos = renderPos + dx / cardSpacing.value
     stopAnimation()
     rolodexEl.value?.setPointerCapture(event.pointerId)
   }
@@ -470,10 +505,11 @@ function onPointerEnd(event: PointerEvent): void {
     dragRafId = 0
   }
   if (pendingDragPos !== null) {
-    renderPos.value = pendingDragPos
+    renderPos = pendingDragPos
     pendingDragPos = null
+    applyCardStyles()
   }
-  const projected = renderPos.value + drag.velocity * 0.14
+  const projected = renderPos + drag.velocity * 0.14
   drag = null
   if (engaged) void selectRolodexIndex(Math.round(projected))
 }
@@ -494,19 +530,6 @@ function onCardClick(tool: CatalogTool, index: number, event: MouseEvent): void 
   else void selectRolodexIndex(index, true)
 }
 
-function cardStyle(index: number): Record<string, string> {
-  const offset = index - renderPos.value
-  const distance = Math.abs(offset)
-  const rotateY = Math.max(-52, Math.min(52, offset * -31))
-  const translateZ = -distance * 105
-  const scale = Math.max(0.76, 1 - distance * 0.08)
-  return {
-    transform: `translate(-50%, -50%) translateX(${offset * cardSpacing.value}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`,
-    zIndex: String(1000 - Math.round(distance * 20)),
-    cursor: distance < 0.5 ? 'pointer' : 'ew-resize',
-  }
-}
-
 function groupIconClass(key: string): string {
   return {
     editor: 'bg-primary-100 text-primary-700 dark:bg-primary-400/15 dark:text-primary-300',
@@ -523,7 +546,7 @@ function groupIconClass(key: string): string {
 
 watch(() => groupTools.value.length, () => {
   const max = Math.max(0, groupTools.value.length - 1)
-  if (rolodexIndex.value > max || renderPos.value > max) {
+  if (rolodexIndex.value > max || renderPos > max) {
     rolodexIndex.value = Math.min(rolodexIndex.value, max)
     jumpTo(rolodexIndex.value)
   }

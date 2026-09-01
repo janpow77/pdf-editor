@@ -21,19 +21,19 @@
 
     <details class="rounded-2xl bg-gray-100/70 p-3 text-sm dark:bg-white/5" open>
       <summary class="cursor-pointer font-semibold">Wie erkennt die Schwärzung Fundstellen? Ist das KI oder Fuzzy-Logik?</summary>
-      <p class="mt-3 text-gray-600 dark:text-gray-300">Kurz gesagt: <strong class="text-gray-950 dark:text-white">zwei von drei Methoden sind reine, deterministische Textsuche — keine Fuzzy-Logik, keine unscharfe Ähnlichkeitssuche.</strong> Nur die optionale Namenserkennung nutzt ein KI-Modell, und die ist klar als solche markiert.</p>
+      <p class="mt-3 text-gray-600 dark:text-gray-300">Kurz gesagt sind <strong class="text-gray-950 dark:text-white">zwei von drei Methoden reine, deterministische Textsuche — keine Fuzzy-Logik, keine unscharfe Ähnlichkeitssuche.</strong> Nur die optionale Namenserkennung nutzt ein KI-Modell, klar als solche gekennzeichnet.</p>
       <dl class="mt-3 space-y-3">
         <div>
           <dt class="font-semibold">Einzelner Begriff / Begriffsliste</dt>
-          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Exakte Textsuche im PDF-Inhalt — findet nur, was Zeichen für Zeichen übereinstimmt (optional ohne Groß-/Kleinschreibung, optional nur ganze Wörter). Keine Ähnlichkeitssuche: ein Tippfehler oder eine abweichende Schreibweise wird nicht gefunden.</dd>
+          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Exakte Textsuche im PDF-Inhalt — findet nur, was Zeichen für Zeichen übereinstimmt (optional ohne Groß-/Kleinschreibung, optional nur ganze Wörter). Eine Ähnlichkeitssuche findet nicht statt, ein Tippfehler oder eine abweichende Schreibweise wird deshalb nicht gefunden.</dd>
         </div>
         <div>
           <dt class="font-semibold">Muster (Regex)</dt>
-          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Feste, reguläre Ausdrücke pro Format — z.&nbsp;B. IBAN, E-Mail-Adresse oder Datum. Deterministisch: dieselbe Eingabe liefert immer denselben Treffer, keine KI und keine Fuzzy-Logik beteiligt. Erkennt nur Formate, keine Bedeutung — ein Datum wird als Datum erkannt, unabhängig davon, ob es ein Geburtsdatum ist.</dd>
+          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Feste, reguläre Ausdrücke pro Format — z.&nbsp;B. IBAN, E-Mail-Adresse oder Datum. Die Suche ist deterministisch, dieselbe Eingabe liefert immer denselben Treffer, ganz ohne KI und ohne Fuzzy-Logik. Erkannt werden nur Formate, keine Bedeutung — ein Datum wird als Datum erkannt, unabhängig davon, ob es ein Geburtsdatum ist.</dd>
         </div>
         <div>
           <dt class="font-semibold">Personennamen (KI-Erkennung)</dt>
-          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Die einzige KI-gestützte Methode: Ein spaCy-Modell (<code>de_core_news_sm</code>) liest den Fließtext und schätzt, welche Wortfolgen Personennamen sind — läuft vollständig auf unserem Server, kein Cloud-Aufruf, kein Sprachmodell und keine generative KI, sondern ein kleines, spezialisiertes Erkennungsmodell (NER). Im Gegensatz zu den Regex-Mustern ist das eine Schätzung: Namen können übersehen werden, und einzelne andere Wörter können fälschlich als Name erkannt werden. Deshalb vor dem Schwärzen immer die Vorschau prüfen.</dd>
+          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Die einzige KI-gestützte Methode. Ein spaCy-Modell (<code>de_core_news_sm</code>) liest den Fließtext und schätzt, welche Wortfolgen Personennamen sind — läuft vollständig auf unserem Server, ohne Cloud-Aufruf, kein Sprachmodell und keine generative KI, sondern ein kleines, spezialisiertes Erkennungsmodell (NER). Anders als bei den Regex-Mustern ist das eine Schätzung. Namen können übersehen werden, und einzelne andere Wörter können fälschlich als Name erkannt werden. Deshalb vor dem Schwärzen immer die Vorschau prüfen.</dd>
         </div>
       </dl>
       <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
