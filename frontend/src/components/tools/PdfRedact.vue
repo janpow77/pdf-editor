@@ -8,6 +8,11 @@
 
     <FileDrop v-model="file" />
 
+    <p class="text-sm text-gray-600 dark:text-gray-300">
+      Hier wird eine Datei bearbeitet. Mehrere Dateien schwärzen Sie mit denselben Mustern in einem Durchgang über die
+      <button type="button" class="font-semibold text-primary-700 underline hover:no-underline dark:text-primary-400" @click="emit('switch-tool', 'batch')">Batch-Verarbeitung</button>.
+    </p>
+
     <div v-if="file" class="flex flex-wrap gap-2" aria-label="Schwärzungsmethode">
       <UiButton
         v-for="modeOption in modes"
@@ -36,9 +41,9 @@
           <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Die einzige KI-gestützte Methode. Ein spaCy-Modell (<code>de_core_news_sm</code>) liest den Fließtext und schätzt, welche Wortfolgen Personennamen sind — läuft vollständig auf unserem Server, ohne Cloud-Aufruf, kein Sprachmodell und keine generative KI, sondern ein kleines, spezialisiertes Erkennungsmodell (NER). Anders als bei den Regex-Mustern ist das eine Schätzung. Namen können übersehen werden, und einzelne andere Wörter können fälschlich als Name erkannt werden. Deshalb vor dem Schwärzen immer die Vorschau prüfen.</dd>
         </div>
       </dl>
-      <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+      <p class="mt-3 text-xs text-gray-600 dark:text-gray-400">
         Einzelheiten zu Funktionsweise und rechtlicher Einordnung (KI-Verordnung) stehen in der
-        <RouterLink to="/datenschutz" class="font-semibold text-primary-600 underline hover:no-underline dark:text-primary-400">Datenschutzerklärung</RouterLink>.
+        <RouterLink to="/datenschutz" class="font-semibold text-primary-700 underline hover:no-underline dark:text-primary-400">Datenschutzerklärung</RouterLink>.
       </p>
     </details>
 
@@ -67,7 +72,7 @@
             <span>
               {{ pattern.label }}
               <span v-if="pattern.ai" class="ml-1 rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">KI</span>
-              <span class="block text-xs font-normal opacity-70">{{ pattern.hint }}<template v-if="pattern.ai && !nerAvailable"> — auf diesem Server nicht installiert.</template></span>
+              <span class="block text-xs font-normal text-gray-600 dark:text-gray-300">{{ pattern.hint }}<template v-if="pattern.ai && !nerAvailable"> — auf diesem Server nicht installiert.</template></span>
             </span>
           </label>
         </div>
@@ -92,10 +97,10 @@
         <ul class="max-h-64 divide-y divide-gray-200 overflow-y-auto text-sm dark:divide-gray-700">
           <li v-for="(finding, index) in preview.findings" :key="`${finding.pattern}-${finding.page}-${index}`" class="flex justify-between gap-3 py-2">
             <span class="truncate font-mono">{{ finding.text }}</span>
-            <span class="shrink-0 text-xs opacity-70">{{ patternLabel(finding.pattern) }} · S. {{ finding.page }}</span>
+            <span class="shrink-0 text-xs opacity-80">{{ patternLabel(finding.pattern) }} · S. {{ finding.page }}</span>
           </li>
         </ul>
-        <p v-if="preview.truncated" class="text-xs opacity-70">Nur die ersten 500 Fundstellen werden aufgelistet – geschwärzt werden alle.</p>
+        <p v-if="preview.truncated" class="text-xs opacity-80">Nur die ersten 500 Fundstellen werden aufgelistet – geschwärzt werden alle.</p>
       </template>
     </UiPanel>
 
@@ -129,8 +134,9 @@ import UiField from '@/components/ui/UiField.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import { useToolRun } from '@/composables/useToolRun'
 import { apiGetJson, apiPost } from '@/lib/api'
+import type { ToolId } from '@/lib/toolCatalog'
 
-defineEmits<{ (event: 'back'): void }>()
+const emit = defineEmits<{ (event: 'back'): void; (event: 'switch-tool', tool: ToolId): void }>()
 
 interface PatternInfo {
   id: string

@@ -1,6 +1,15 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{vue,ts}'],
+  /*
+   * Ohne dieses Merkmal gilt jede `hover:`-Klasse auch auf Touchgeräten: Nach
+   * einer Berührung blieb etwa die Ablagefläche blau hervorgehoben, bis
+   * anderswo getippt wurde. Der Schalter hängt die Hover-Varianten hinter
+   * `@media (hover: hover)`; ab Tailwind 4 ist das der Standard.
+   */
+  future: {
+    hoverOnlyWhenSupported: true,
+  },
   // Klassensteuerung ist erforderlich, damit der manuelle Schalter die
   // Systempräferenz überstimmen kann. `useTheme` setzt die Klasse zentral.
   darkMode: 'class',

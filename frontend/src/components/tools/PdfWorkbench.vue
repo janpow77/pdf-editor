@@ -227,6 +227,9 @@
         role="separator"
         aria-orientation="vertical"
         aria-label="Breite der Seitenübersicht ändern — Ziehen oder Pfeiltasten"
+        :aria-valuenow="sidebarWidth"
+        :aria-valuemin="SIDEBAR_MIN"
+        :aria-valuemax="SIDEBAR_MAX"
         tabindex="0"
         @pointerdown="startResize('sidebar', $event)"
         @keydown.left.prevent="resizeByKey('sidebar', -24)"
@@ -314,6 +317,9 @@
         role="separator"
         aria-orientation="vertical"
         aria-label="Breite des Panels ändern — Ziehen oder Pfeiltasten"
+        :aria-valuenow="panelWidth"
+        :aria-valuemin="PANEL_MIN"
+        :aria-valuemax="PANEL_MAX"
         tabindex="0"
         @pointerdown="startResize('panel', $event)"
         @keydown.left.prevent="resizeByKey('panel', 24)"
@@ -572,6 +578,17 @@ function storedWidth(key: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback
 }
 
+/*
+ * Grenzen der ziehbaren Breiten. Als Konstanten, weil die Trennlinien sie
+ * zusätzlich als aria-valuemin/-max melden: Eine fokussierbare Trennlinie ist
+ * nach ARIA ein Fensterteiler und braucht einen Wert, sonst kann eine
+ * Vorlesesoftware die Position weder ansagen noch ihre Änderung bestätigen.
+ */
+const SIDEBAR_MIN = 140
+const SIDEBAR_MAX = 480
+const PANEL_MIN = 240
+const PANEL_MAX = 560
+
 const sidebarWidth = ref(storedWidth(SIDEBAR_WIDTH_KEY, 224))
 const panelWidth = ref(storedWidth(PANEL_WIDTH_KEY, 320))
 
@@ -586,8 +603,8 @@ function startResize(which: 'sidebar' | 'panel', event: PointerEvent): void {
   const startWidth = which === 'sidebar' ? sidebarWidth.value : panelWidth.value
   const onMove = (move: PointerEvent) => {
     const delta = move.clientX - startX
-    if (which === 'sidebar') sidebarWidth.value = clampWidth(startWidth + delta, 140, 480)
-    else panelWidth.value = clampWidth(startWidth - delta, 240, 560)
+    if (which === 'sidebar') sidebarWidth.value = clampWidth(startWidth + delta, SIDEBAR_MIN, SIDEBAR_MAX)
+    else panelWidth.value = clampWidth(startWidth - delta, PANEL_MIN, PANEL_MAX)
   }
   const onUp = () => {
     window.removeEventListener('pointermove', onMove)
@@ -602,8 +619,8 @@ function startResize(which: 'sidebar' | 'panel', event: PointerEvent): void {
 }
 
 function resizeByKey(which: 'sidebar' | 'panel', delta: number): void {
-  if (which === 'sidebar') sidebarWidth.value = clampWidth(sidebarWidth.value + delta, 140, 480)
-  else panelWidth.value = clampWidth(panelWidth.value + delta, 240, 560)
+  if (which === 'sidebar') sidebarWidth.value = clampWidth(sidebarWidth.value + delta, SIDEBAR_MIN, SIDEBAR_MAX)
+  else panelWidth.value = clampWidth(panelWidth.value + delta, PANEL_MIN, PANEL_MAX)
 }
 
 // ── Eingebettete Editoren: Werkzeug läuft im Hauptbereich ────

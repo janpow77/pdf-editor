@@ -94,7 +94,7 @@
               <span>
                 {{ pattern.label }}
                 <span v-if="pattern.ai" class="ml-1 rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">KI</span>
-                <span class="block text-xs font-normal opacity-70">{{ pattern.hint }}<template v-if="pattern.ai && !nerAvailable"> — auf diesem Server nicht installiert.</template></span>
+                <span class="block text-xs font-normal text-gray-600 dark:text-gray-300">{{ pattern.hint }}<template v-if="pattern.ai && !nerAvailable"> — auf diesem Server nicht installiert.</template></span>
               </span>
             </label>
           </div>

@@ -14,7 +14,16 @@
       <span v-if="loading" class="text-sm font-medium text-gray-600 dark:text-gray-300" role="status">PDF wird gerendert…</span>
     </div>
 
-    <div ref="scroller" class="max-h-[78vh] overflow-auto rounded-[1.35rem] bg-gray-200/70 p-3 shadow-inner ring-1 ring-gray-400/60 dark:bg-black/35 dark:ring-gray-600">
+    <!-- tabindex: Die Fläche scrollt, enthält aber nur ein Canvas und damit
+         nichts Fokussierbares. Ohne eigenen Fokus wäre sie mit der Tastatur
+         nicht zu bewegen (WCAG 2.1.1). -->
+    <div
+      ref="scroller"
+      class="max-h-[78vh] overflow-auto rounded-[1.35rem] bg-gray-200/70 p-3 shadow-inner ring-1 ring-gray-400/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500 dark:bg-black/35 dark:ring-gray-600"
+      tabindex="0"
+      role="region"
+      aria-label="Seitenansicht — mit den Pfeiltasten scrollbar"
+    >
       <div class="relative mx-auto select-none bg-white shadow-apple" :style="{ width: cssWidth + 'px', height: cssHeight + 'px' }" data-testid="pdf-page">
         <canvas ref="canvasEl" class="block h-full w-full" />
         <div class="absolute inset-0">

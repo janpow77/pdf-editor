@@ -289,3 +289,57 @@ def test_ink_annotation_regression(client):
     assert r.status_code == 200, r.text
     with fitz.open(stream=r.content, filetype="pdf") as doc:
         assert len(list(doc[0].annots() or [])) == 1
+
+
+def _preview(client, text: str, patterns: list[str]) -> dict:
+    r = client.post(
+        "/api/pdf-extras/redact-patterns",
+        data={"patterns": json.dumps(patterns), "preview": "true"},
+        files={"file": ("d.pdf", make_pdf(1, text), "application/pdf")},
+    )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_redact_patterns_overlapping_matches_resolved(client):
+    """Eine IBAN ist genau eine Fundstelle — nicht zusätzlich Telefon und Kreditkarte.
+
+    Vor der Überlappungsauflösung meldete die Vorschau dieselbe Ziffernfolge
+    dreifach: als IBAN, als Telefonnummer („0000 0000 2020 51") und als
+    Kreditkartennummer („1203 0000 0000 2020").
+    """
+    body = _preview(
+        client,
+        "IBAN DE02 1203 0000 0000 2020 51",
+        ["iban", "telefon", "kreditkarte"],
+    )
+    assert body["total"] == 1
+    treffer = body["findings"][0]
+    assert treffer["pattern"] == "iban"
+    assert treffer["text"].startswith("DE02")
+
+
+def test_redact_patterns_telefon_nicht_in_belegnummer(client):
+    """Rechnungs- und Aktenzeichen sind keine Rufnummern."""
+    body = _preview(client, "Rechnung 2026-001 Aktenzeichen HMdF-2026-0815", ["telefon"])
+    assert body["total"] == 0
+
+
+def test_redact_patterns_telefon_weiterhin_gefunden(client):
+    """Gegenprobe zur Umschließung: echte Rufnummern bleiben Treffer."""
+    body = _preview(client, "Telefon 069 12345678 und +49 611 9876543", ["telefon"])
+    texte = [f["text"].strip() for f in body["findings"]]
+    assert body["total"] == 2
+    assert any(t.startswith("069") for t in texte)
+    assert any(t.startswith("+49") for t in texte)
+
+
+def test_redact_patterns_getrennte_treffer_bleiben_erhalten(client):
+    """Die Auflösung greift nur bei Überlappung, nicht bei Nachbarschaft."""
+    body = _preview(
+        client,
+        "Mail a@example.com IBAN DE02 1203 0000 0000 2020 51",
+        ["iban", "email"],
+    )
+    assert body["total"] == 2
+    assert {f["pattern"] for f in body["findings"]} == {"iban", "email"}

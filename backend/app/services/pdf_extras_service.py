@@ -194,7 +194,10 @@ REDACTION_PATTERNS: dict[str, RedactionPattern] = {
     ),
     "telefon": RedactionPattern(
         "Telefonnummer",
-        r"(?:\+49|0)\s?(?:\d{2,5}[\s/-]?){1,3}\d{2,8}",
+        # Die Umschließungen verhindern Treffer mitten in einer längeren
+        # Zeichenkette: Ohne sie fand die Regel in „Rechnung 2026-001" die
+        # Folge „026-001" und in „HMdF-2026-0815" die Folge „026-0815".
+        r"(?<![\w+/-])(?:\+49|0)\s?(?:\d{2,5}[\s/-]?){1,3}\d{2,8}(?![\d-])",
         "deutsche Rufnummern mit Vorwahl",
     ),
     "steuer_id": RedactionPattern(
@@ -235,6 +238,44 @@ REDACTION_PATTERNS: dict[str, RedactionPattern] = {
         ai=True,
     ),
 }
+
+#: Rangfolge bei gleich langen, überlappenden Treffern: ein selbst
+#: eingegebener Begriff schlägt den KI-Namen, dieser die Regex-Muster in
+#: Katalogreihenfolge. Nur relevant, wenn die Länge nicht schon entscheidet.
+_TERM_RANK = 0
+_PATTERN_RANK = {
+    key: index + 1 for index, key in enumerate(REDACTION_PATTERNS)
+}
+
+
+def _match_rank(key: str) -> int:
+    if key.startswith("begriff:"):
+        return _TERM_RANK
+    return _PATTERN_RANK.get(key, len(_PATTERN_RANK) + 1)
+
+
+def _ohne_ueberlappung(
+    kandidaten: list[tuple[int, int, str, str]],
+) -> list[tuple[int, int, str, str]]:
+    """Überlappende Treffer einer Zeile auf jeweils einen reduzieren.
+
+    Die Muster greifen ineinander: In der IBAN „DE02 1203 0000 0000 2020 51"
+    fand die Telefonregel „0000 0000 2020 51" und die Kreditkartenregel
+    „1203 0000 0000 2020". Die Vorschau meldete dieselbe Stelle dadurch
+    dreifach und unter falschem Etikett, und im Ergebnis wurden angrenzende
+    Angaben wie die Rechnungsnummer mitgeschwärzt. Es gewinnt der längste
+    Treffer, bei gleicher Länge der mit dem kleineren Rang.
+    """
+    behalten: list[tuple[int, int, str, str]] = []
+    for kandidat in sorted(
+        kandidaten,
+        key=lambda k: (-(k[1] - k[0]), _match_rank(k[2]), k[0]),
+    ):
+        start, ende = kandidat[0], kandidat[1]
+        if any(start < b[1] and b[0] < ende for b in behalten):
+            continue
+        behalten.append(kandidat)
+    return sorted(behalten, key=lambda k: k[0])
 
 
 # ── Formular-Designer: Feldtypen ──────────────────────────────
@@ -568,44 +609,44 @@ class PdfExtrasService:
         finally:
             doc.close()
 
-        for pno, line_text, spans, words in line_records:
-            for key, rx in compiled:
-                for match in rx.finditer(line_text):
-                    box = self._span_rect(spans, words, *match.span())
-                    if box is None:
-                        continue
-                    findings.append(
-                        {
-                            "pattern": key,
-                            "page": pno + 1,
-                            "text": match.group(0),
-                            "rect": [round(v, 2) for v in box],
-                        }
-                    )
-                    counts[key] = counts.get(key, 0) + 1
-
+        # Namen zuerst sammeln, damit sie in derselben Zeile mit den
+        # Regex-Treffern um die Fläche konkurrieren und nicht daneben
+        # ein zweites Rechteck über dieselbe Stelle legen.
+        ner_spans: dict[int, list[tuple[int, int, str, str]]] = {}
         if use_ner:
             nlp = load_de_ner_model()
             if nlp is not None:
                 texts = [lr[1] for lr in line_records]
-                for (pno, line_text, spans, words), ner_doc in zip(
-                    line_records, nlp.pipe(texts)
-                ):
-                    for ent in ner_doc.ents:
-                        if ent.label_ != "PER":
-                            continue
-                        box = self._span_rect(spans, words, ent.start_char, ent.end_char)
-                        if box is None:
-                            continue
-                        findings.append(
-                            {
-                                "pattern": NER_PATTERN_ID,
-                                "page": pno + 1,
-                                "text": ent.text,
-                                "rect": [round(v, 2) for v in box],
-                            }
-                        )
-                        counts[NER_PATTERN_ID] = counts.get(NER_PATTERN_ID, 0) + 1
+                for index, ner_doc in enumerate(nlp.pipe(texts)):
+                    treffer = [
+                        (ent.start_char, ent.end_char, NER_PATTERN_ID, ent.text)
+                        for ent in ner_doc.ents
+                        if ent.label_ == "PER"
+                    ]
+                    if treffer:
+                        ner_spans[index] = treffer
+
+        for index, (pno, line_text, spans, words) in enumerate(line_records):
+            kandidaten = [
+                (match.start(), match.end(), key, match.group(0))
+                for key, rx in compiled
+                for match in rx.finditer(line_text)
+            ]
+            kandidaten.extend(ner_spans.get(index, []))
+            for start, ende, key, text in _ohne_ueberlappung(kandidaten):
+                box = self._span_rect(spans, words, start, ende)
+                if box is None:
+                    continue
+                findings.append(
+                    {
+                        "pattern": key,
+                        "page": pno + 1,
+                        "text": text,
+                        "rect": [round(v, 2) for v in box],
+                    }
+                )
+                counts[key] = counts.get(key, 0) + 1
+
         findings.sort(key=lambda f: f["page"])
         return findings, counts
 

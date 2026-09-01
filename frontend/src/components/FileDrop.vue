@@ -46,8 +46,14 @@ const props = withDefaults(
     label?: string
     /** Optionales werkzeugspezifisches Limit, z. B. 10 MB für Wasserzeichenbilder. */
     maxBytes?: number
+    /**
+     * Ergänzt die Meldung bei falschem Dateityp um einen Wegweiser, etwa auf
+     * das zuständige Schwesterwerkzeug. Die reine Endungsliste beantwortet
+     * sonst nicht, wohin die abgewiesene Datei stattdessen gehört.
+     */
+    rejectionHint?: string
   }>(),
-  { accept: '.pdf', label: 'PDF', maxBytes: undefined },
+  { accept: '.pdf', label: 'PDF', maxBytes: undefined, rejectionHint: '' },
 )
 const emit = defineEmits<{ (event: 'update:modelValue', file: File | null): void }>()
 const input = ref<HTMLInputElement | null>(null)
@@ -96,6 +102,7 @@ async function acceptFile(file: File): Promise<void> {
 
   if (!matches(file)) {
     nextError = `Dieser Dateityp wird nicht unterstützt. Zulässig: ${props.accept}.`
+    if (props.rejectionHint) nextError += ` ${props.rejectionHint}`
   } else if (file.size > effectiveLimit) {
     nextError = `${file.name} ist ${formatFileSize(file.size)} groß. Zulässig sind maximal ${formatFileSize(effectiveLimit)}.`
   } else if (acceptsPdf()) {

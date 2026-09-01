@@ -27,7 +27,7 @@
           @drop.prevent="reorder(index)"
         >
           <span class="cursor-grab text-gray-500" aria-hidden="true">☰</span>
-          <span class="text-sm font-mono opacity-60">{{ index + 1 }}.</span>
+          <span class="text-sm font-mono text-gray-600 dark:text-gray-300">{{ index + 1 }}.</span>
           <span class="min-w-0 flex-1 truncate text-sm font-semibold">{{ item.file.name }}</span>
           <span class="text-xs opacity-65">{{ formatFileSize(item.file.size) }}</span>
           <UiIconButton size="sm" :disabled="index === 0" :aria-label="`${item.file.name} nach oben verschieben`" @click="moveItem(index, -1)">↑</UiIconButton>

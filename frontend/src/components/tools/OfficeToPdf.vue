@@ -3,13 +3,15 @@
     <ToolHeader title="Office → PDF" description="Office- und Textformate über LibreOffice in PDF konvertieren." @back="$emit('back')" />
 
     <UiAlert tone="info">
-      Unterstützt Excel, PowerPoint, OpenDocument, RTF, HTML und Text. Für Word-Dateien steht ein eigenes Werkzeug bereit.
+      Unterstützt Excel, PowerPoint, OpenDocument, RTF, HTML und Text. Word-Dateien wandelt das Werkzeug
+      <button type="button" class="font-semibold text-primary-700 underline hover:no-underline dark:text-primary-400" @click="emit('switch-tool', 'wordToPdf')">Word → PDF</button> um.
     </UiAlert>
 
     <FileDrop
       v-model="file"
       accept=".xlsx,.xls,.pptx,.ppt,.odt,.ods,.odp,.rtf,.txt,.html,.htm"
       label="Office-Datei"
+      rejection-hint="Word-Dateien (.docx, .doc) wandelt das Werkzeug „Word → PDF“ um."
     />
 
     <UiAlert v-if="done" tone="success" live>In PDF konvertiert und Datei heruntergeladen.</UiAlert>
@@ -28,8 +30,9 @@ import ToolHeader from '@/components/ui/ToolHeader.vue'
 import UiAlert from '@/components/ui/UiAlert.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import { useToolRun } from '@/composables/useToolRun'
+import type { ToolId } from '@/lib/toolCatalog'
 
-defineEmits<{ (event: 'back'): void }>()
+const emit = defineEmits<{ (event: 'back'): void; (event: 'switch-tool', tool: ToolId): void }>()
 
 const { loading, error, done, run } = useToolRun()
 const file = ref<File | null>(null)
