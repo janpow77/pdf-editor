@@ -133,6 +133,7 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import { useNotifications } from '@/composables/useNotifications'
 import { apiGetJson, apiPost, downloadBlob } from '@/lib/api'
 import { formatFileSize, validatePdfFile, validateTotalFileSize } from '@/lib/fileValidation'
+import { takePendingBatchHandoff } from '@/lib/handoff'
 
 defineEmits<{ (event: 'back'): void }>()
 
@@ -207,6 +208,14 @@ onMounted(async () => {
   } catch {
     redactPatterns.value = []
     patternLoadError.value = 'Vordefinierte Muster konnten nicht geladen werden. Eigene Begriffe bleiben verfügbar.'
+  }
+
+  // Übergabe vom Schwärzen-Werkzeug: mehrere abgelegte Dateien landen hier
+  // statt an einer Ein-Datei-Grenze abgewiesen zu werden.
+  const handoff = takePendingBatchHandoff()
+  if (handoff?.length) {
+    operation.value = 'redact'
+    enqueueFiles(handoff)
   }
 })
 

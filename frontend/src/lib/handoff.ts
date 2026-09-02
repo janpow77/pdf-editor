@@ -16,3 +16,20 @@ export function takePendingHandoff(): File | null {
   pending = null
   return file
 }
+
+/**
+ * Gleiches Prinzip für mehrere Dateien — z. B. wenn das Schwärzen-Werkzeug
+ * mehrere abgelegte Dateien an die Batch-Verarbeitung weiterreicht, statt
+ * nur die erste zu übernehmen.
+ */
+let pendingBatch: File[] | null = null
+
+export function setPendingBatchHandoff(files: File[]): void {
+  pendingBatch = files
+}
+
+export function takePendingBatchHandoff(): File[] | null {
+  const files = pendingBatch
+  pendingBatch = null
+  return files
+}

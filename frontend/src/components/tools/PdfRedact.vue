@@ -6,7 +6,8 @@
       Echte Schwärzung entfernt Fundstellen aus dem Dokumentinhalt – sie können anschließend weder kopiert noch durchsucht werden. Der Vorgang ist nicht umkehrbar.
     </UiAlert>
 
-    <FileDrop v-model="file" />
+    <FileDrop v-model="file" multiple-handler @multiple="handleMultipleFiles" />
+    <UiAlert v-if="redirecting" tone="info" live>Mehrere Dateien erkannt — leite zur Batch-Verarbeitung weiter …</UiAlert>
 
     <div v-if="file" class="flex flex-wrap gap-2" aria-label="Schwärzungsmethode">
       <UiButton
@@ -129,8 +130,10 @@ import UiField from '@/components/ui/UiField.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import { useToolRun } from '@/composables/useToolRun'
 import { apiGetJson, apiPost } from '@/lib/api'
+import { setPendingBatchHandoff } from '@/lib/handoff'
+import type { ToolId } from '@/lib/toolCatalog'
 
-defineEmits<{ (event: 'back'): void }>()
+const emit = defineEmits<{ (event: 'back'): void; (event: 'switch-tool', id: ToolId): void }>()
 
 interface PatternInfo {
   id: string
@@ -166,6 +169,7 @@ const preview = ref<Preview | null>(null)
 const confirmed = ref(false)
 const patternLoadError = ref('')
 const nerAvailable = ref(false)
+const redirecting = ref(false)
 
 const modes: { value: RedactMode; label: string }[] = [
   { value: 'term', label: 'Einzelner Begriff' },
@@ -187,6 +191,14 @@ watch([term, terms, matchCase, wholeWord], () => {
   preview.value = null
   confirmed.value = false
 })
+
+/** Mehrere abgelegte Dateien: Schwärzen kann nur eine Datei auf einmal —
+ *  die Batch-Verarbeitung übernimmt sie stattdessen samt Operation "redact". */
+function handleMultipleFiles(files: File[]): void {
+  redirecting.value = true
+  setPendingBatchHandoff(files)
+  emit('switch-tool', 'batch')
+}
 
 function selectMode(nextMode: RedactMode): void {
   mode.value = nextMode

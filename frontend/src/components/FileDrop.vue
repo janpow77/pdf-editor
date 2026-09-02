@@ -46,10 +46,16 @@ const props = withDefaults(
     label?: string
     /** Optionales werkzeugspezifisches Limit, z. B. 10 MB für Wasserzeichenbilder. */
     maxBytes?: number
+    /** Übergibt mehrere abgelegte Dateien per 'multiple'-Event an den Aufrufer,
+     *  statt der Standardmeldung "nur eine Datei möglich". */
+    multipleHandler?: boolean
   }>(),
-  { accept: '.pdf', label: 'PDF', maxBytes: undefined },
+  { accept: '.pdf', label: 'PDF', maxBytes: undefined, multipleHandler: false },
 )
-const emit = defineEmits<{ (event: 'update:modelValue', file: File | null): void }>()
+const emit = defineEmits<{
+  (event: 'update:modelValue', file: File | null): void
+  (event: 'multiple', files: File[]): void
+}>()
 const input = ref<HTMLInputElement | null>(null)
 const validationError = ref('')
 const isDragging = ref(false)
@@ -126,6 +132,10 @@ function onSelect(event: Event): void {
 
 function onDroppedFiles(files: File[]): void {
   isDragging.value = false
+  if (files.length > 1 && props.multipleHandler) {
+    emit('multiple', files)
+    return
+  }
   const file = files[0]
   if (!file) return
   if (files.length > 1) {
