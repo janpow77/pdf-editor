@@ -6,6 +6,11 @@
 Datenspeicherung. Alle Dateien werden ausschließlich im Arbeitsspeicher des Servers verarbeitet
 und nie persistiert.**
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/startseite-dark.png">
+  <img src="docs/assets/startseite-light.png" alt="Startseite des PDF-Editors mit Werkzeugsuche und Werkzeugkategorien" width="900">
+</picture>
+
 ## Auf einen Blick
 
 - **47 Werkzeuge** für PDF sowie Word und Excel: Text bearbeiten, Anmerkungen, Zusammenführen,
