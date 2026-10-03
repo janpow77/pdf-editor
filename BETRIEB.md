@@ -1,7 +1,7 @@
 # Betrieb der PDF-Editor-App
 
 Handbuch für den Weg von der Entwicklung bis zum laufenden Dienst: erst im
-lokalen Betrieb auf einem Arbeitsrechner, dann als eigenes Repository, dann im
+lokalen Betrieb auf einem Arbeitsrechner, dann Repository und Bilder, dann im
 Server-Betrieb. Danach die Pflichten, die ein Dauerbetrieb mit sich bringt.
 
 **Pfade und Namen sind Beispiele.** `/opt/pdf-editor` (Anwendung),
@@ -106,90 +106,26 @@ Danach ein Handgriff, den keine Automatik ersetzt — im Browser über
 
 ---
 
-## Teil B — In ein eigenes Repository überführen
+## Teil B — Repository und Bilder
 
-Die App hat **keine** Laufzeitabhängigkeit zu audit_designer: kein Import, kein
-gemeinsamer Pfad, kein geteiltes Compose. Geprüft durch eine Suche nach
-Verweisen aus dem Ordner heraus — es gibt keine. Die Trennung ist damit ein
-reiner Verwaltungsschritt.
+Die Anwendung liegt im eigenständigen Repository `github.com/janpow77/pdf-editor`
+(Branch `main`) und hat keine Laufzeitabhängigkeit zu einem anderen Projekt: kein
+Import, kein gemeinsamer Pfad, kein geteiltes Compose. Für den Betrieb zählt nur
+dieses Repository.
 
-### B1. Historie mitnehmen statt wegwerfen
+### B1–B3. Historie: Abspaltung aus audit_designer (abgeschlossen)
 
-`git subtree split` erzeugt einen Ast, der nur die Commits dieses
-Unterverzeichnisses enthält — mit Datum, Autor und Begründung. Ein
-Kopieren-und-neu-committen würde die gesamte Entwicklungsgeschichte
-vernichten, und damit die Nachvollziehbarkeit, warum etwas so gebaut ist.
-
-```bash
-cd ~/audit_designer
-git checkout claude/pdf-editor-app-planning-fvkauh
-git pull
-
-# Ast mit ausschließlich der Historie von pdf-editor-app/
-git subtree split --prefix=pdf-editor-app -b pdf-editor-standalone
-
-# Kontrolle: Liegt die Anwendung jetzt im Wurzelverzeichnis?
-git ls-tree --name-only pdf-editor-standalone
-# erwartet: .env.example  .gitignore  BETRIEB.md  KONZEPT.md
-#           MODULKATALOG_2026.md  README.md  backend  docker-compose.yaml
-#           frontend
-```
-
-Steht dort `pdf-editor-app`, hat der Split nicht gegriffen — dann stimmt der
-`--prefix` nicht.
-
-**Dieser Ablauf ist erprobt**, nicht nur beschrieben: Der Split wurde gegen den
-Stand vom 2026-08-01 ausgeführt und ergab 154 Dateien in 22 Commits — Dateibestand
-identisch zum Original, Historie bis zum ersten Commit erhalten. Im geklonten
-Ergebnis liefen 160 pytest-Fälle grün, `npm ci`, `vue-tsc` und `vite build`
-fehlerfrei.
-
-### B2. Neues Repository befüllen
-
-Auf GitHub ein leeres Repository anlegen (ohne README, ohne Lizenzdatei — sonst
-gibt es beim ersten Push einen Konflikt), dann:
-
-```bash
-git push git@github.com:janpow77/pdf-editor.git pdf-editor-standalone:main
-```
-
-Danach frisch klonen und **prüfen, ob der Klon baubar ist** — das ist der
-Schritt, der erfahrungsgemäß Überraschungen zutage fördert:
-
-```bash
-git clone git@github.com:janpow77/pdf-editor.git /tmp/pruefklon
-cd /tmp/pruefklon
-ls .gitignore docker-compose.yaml backend frontend    # alles da?
-cd frontend && npm ci --no-audit && npm run type-check && npm run build
-cd ../backend && python3 -m pytest tests/ -q
-```
-
-Genau hierfür trägt der Ordner eine **eigene `.gitignore`**: Die im
-Wurzelverzeichnis von audit_designer wandert beim Split nicht mit. Ohne die
-eigene Datei stünde das neue Repository ganz ohne Ignoriermuster da — beim
-ersten `git add .` landeten `node_modules`, `dist` und im schlimmsten Fall die
-`.env` in der Versionsverwaltung.
-
-### B3. Was im alten Repository passiert
-
-Erst wenn der Prüfklon baut und die Tests grün sind:
-
-```bash
-cd ~/audit_designer
-git rm -r pdf-editor-app
-git commit -m "chore: PDF-Editor-App in eigenes Repository ausgelagert"
-```
-
-Bis dahin bleibt der Ordner, wo er ist. Zwei Wochen Doppelablage sind billiger
-als ein verlorener Stand.
-
-Ebenfalls anzupassen, sonst laufen die Angaben ins Leere:
-
-- `PDFAPP_SOURCE_URL` auf das neue Repository umstellen — sonst zeigt die
-  Lizenzseite auf einen Quelltext, der die Anwendung nicht mehr enthält. Das
-  ist keine Kosmetik: Die Angabe erfüllt eine Lizenzbedingung (siehe
-  KONZEPT.md, Abschnitt Lizenzlage).
-- Den Verweis auf `pdf-editor-app/` in der `CLAUDE.md` von audit_designer.
+Nur zur Nachvollziehbarkeit, für den Betrieb ohne Bedeutung: Die App entstand
+als Unterordner `pdf-editor-app/` in audit_designer und wurde Anfang August 2026
+per `git subtree split` mit vollständiger Commit-Historie in dieses Repository
+überführt (Probelauf gegen den Stand vom 2026-08-01: 154 Dateien in 22 Commits,
+Dateibestand identisch, Tests und Frontend-Build grün). Deshalb trägt das
+Repository eine eigene `.gitignore`, und `PDFAPP_SOURCE_URL` zeigt in
+`.env.example` auf dieses Repository — die Angabe erfüllt eine Lizenzbedingung
+(siehe KONZEPT.md, Abschnitt Lizenzlage) und muss bei einem Umzug des
+Repositorys mitgezogen werden. Die früheren Arbeitsschritte (Split-Befehle,
+Branchname, Aufräumen im alten Repository) sind in der Git-Historie dieser Datei
+nachzulesen.
 
 ### B4. Bilder bauen lassen (eingerichtet am 2026-08-05)
 
