@@ -1,21 +1,26 @@
 # Betrieb der PDF-Editor-App
 
-Handbuch für den Weg von der Entwicklung bis zum laufenden Dienst: erst auf der
-NUC, dann als eigenes Repository, dann auf dem Hetzner-Server. Danach die
-Pflichten, die ein Dauerbetrieb mit sich bringt.
+Handbuch für den Weg von der Entwicklung bis zum laufenden Dienst: erst im
+lokalen Betrieb auf einem Arbeitsrechner, dann als eigenes Repository, dann im
+Server-Betrieb. Danach die Pflichten, die ein Dauerbetrieb mit sich bringt.
+
+**Pfade und Namen sind Beispiele.** `/opt/pdf-editor` (Anwendung),
+`/etc/pdf-editor/env` (Env-Datei mit Geheimnissen), `<server>` (SSH-Ziel) und
+`<betriebskonto>` (Benutzerkonto, unter dem der Dienst betrieben wird) an die
+eigene Umgebung anpassen.
 
 **Stand: 2026-08-27** · Eigenständiges Repository, Branch `main`.
 
 > **Was hier nicht steht, ist genauso wichtig:** Die Befehle in diesem Dokument
-> sind aus `docker-compose.yaml`, `.env.example` und dem vorhandenen
-> Hetzner-Runbook abgeleitet und teilweise in einer Linux-Umgebung erprobt. Auf
-> Ihrer NUC und dem Hetzner-Host sind sie **nicht** gelaufen. Rechnen Sie beim
+> sind aus `docker-compose.yaml`, `.env.example` und einem vorhandenen
+> Server-Runbook abgeleitet und teilweise in einer Linux-Umgebung erprobt. Auf
+> Ihrem Arbeitsrechner und Ihrem Server sind sie **nicht** gelaufen. Rechnen Sie beim
 > ersten Durchgang mit Abweichungen; die wahrscheinlichsten stehen jeweils
 > unter „Wenn es klemmt".
 
 ---
 
-## Teil A — Auf der NUC zum Laufen bringen
+## Teil A — Lokaler Betrieb
 
 ### A1. Verzeichnis und Quellcode
 
@@ -46,8 +51,8 @@ chmod 600 .env
 grep PDFAPP_ADMIN_PASSWORD .env      # einmalig notieren
 ```
 
-`COMPOSE_PROJECT_NAME=pdfapp` trennt den Stack vom laufenden audit_designer.
-Ohne die Angabe leitet Compose den Namen aus dem Verzeichnis ab — und
+`COMPOSE_PROJECT_NAME=pdfapp` trennt den Stack von anderen Compose-Projekten
+auf demselben Rechner. Ohne die Angabe leitet Compose den Namen aus dem Verzeichnis ab — und
 gleichnamige Volumes zweier Projekte sind eine unangenehme Fehlerquelle.
 
 Die `.env` ist per `.gitignore` ausgeschlossen und darf nie in einen Commit
@@ -61,12 +66,11 @@ docker compose up -d --build
 ```
 
 Der erste Build dauert 10–20 Minuten: LibreOffice, Ghostscript und Tesseract
-wandern ins Backend-Image. Die Ports des audit_designer-Stacks (8003, 3002,
-5433, 6381, 5555, 8889, 8010) werden nicht berührt; die App lauscht auf
-`127.0.0.1:8080`.
+wandern ins Backend-Image. Andere Stacks auf dem Rechner werden nicht berührt;
+die App lauscht auf `127.0.0.1:8080`.
 
 Der Vite-Entwicklungsserver (`npm run dev`) wird dafür nicht benötigt und kann
-auf der NUC ausgeschaltet bleiben. Das Frontend wird beim Image-Bau einmalig
+im lokalen Betrieb ausgeschaltet bleiben. Das Frontend wird beim Image-Bau einmalig
 erzeugt und danach ausschließlich als statische Dateien durch nginx
 ausgeliefert. Nach dem ersten Build läuft der vorhandene Stack auch ohne
 Internetzugang; nur neue Builds oder das Herunterladen neuer Images benötigen
@@ -262,30 +266,29 @@ Zwei Folgen, die man beim Umschalten auf „öffentlich" bedenken sollte:
   Anschrift verlangt und ein Postfach dafür nicht genügt. Bewusst hinnehmen
   oder vorher eine andere Lösung wählen.
 
-**Zwischenweg:** Der Betrieb auf dem Hetzner-Server **ohne** öffentlichen
+**Zwischenweg:** Der Server-Betrieb **ohne** öffentlichen
 Tunnel — nur über Tailscale erreichbar — macht die beiden offenen Punkte
 gegenstandslos, weil der Dienst nicht öffentlich ist. Der Schritt zur
 Öffentlichkeit ist danach nur noch der Tunnel.
 
 ---
 
-## Teil C — Auf den Hetzner-Server bringen
+## Teil C — Server-Betrieb
 
-Der Host betreibt bereits `checklist.flowaudit.de` aus `/opt/checklist`. Die
-PDF-App kommt **daneben**, mit eigenem Verzeichnis, eigener Env-Datei und
-eigenem Tunnel. Der vorhandene Stack wird dabei nicht angefasst.
+Laufen auf dem Server bereits andere Anwendungen, kommt die PDF-App
+**daneben**, mit eigenem Verzeichnis, eigener Env-Datei und eigenem Tunnel.
+Vorhandene Stacks werden dabei nicht angefasst.
 
 ### C1. Ablage
 
 ```bash
-ssh hetzner
+ssh <server>
 sudo mkdir -p /opt/pdf-editor /etc/pdf-editor
-sudo chown deploy:deploy /opt/pdf-editor
+sudo chown <betriebskonto>:<betriebskonto> /opt/pdf-editor
 git clone https://github.com/janpow77/pdf-editor.git /opt/pdf-editor
 ```
 
-Env-Datei nach dem Muster des vorhandenen Stacks — `root:root`, `0600`, also
-außerhalb des Repositorys:
+Env-Datei außerhalb des Repositorys, `root:root`, `0600`:
 
 ```bash
 sudo tee /etc/pdf-editor/env >/dev/null <<EOF
@@ -315,7 +318,7 @@ Zwei Schalter, die man nur bewusst setzt:
 
 ### C2. Cloudflare-Tunnel
 
-**Den bestehenden Tunnel von audit_designer nicht verändern.** Im
+**Bestehende Tunnel anderer Anwendungen nicht verändern.** Im
 Cloudflare-Dashboard einen eigenen Tunnel anlegen, Hostname
 `pdf.flowaudit.de` → `http://frontend:80`, Token in die Env-Datei.
 
@@ -334,7 +337,7 @@ GHCR-Zugriff stattdessen `up -d --build` — dann baut der Server selbst
 Im Produktivbetrieb erreicht der Tunnel den Frontend-Container über das
 Compose-Netz. Die Portfreigabe `127.0.0.1:8080` wird dafür **nicht** gebraucht
 — wer sie weglässt, verkleinert die Angriffsfläche um einen offenen Port und
-umgeht zugleich eine mögliche Kollision mit dem vorhandenen Stack.
+umgeht zugleich eine mögliche Kollision mit anderen Stacks auf dem Server.
 
 ### C4. Abnahme
 
@@ -360,7 +363,7 @@ ist der Kern des Nutzungsversprechens und hier die angenehme Folge: Der
 Sicherungsumfang ist winzig.
 
 ```bash
-# In den Crontab von deploy, täglich
+# Täglich, z. B. per Crontab des Betriebskontos
 docker exec pdfapp-db-1 pg_dump -U pdfapp pdfapp \
   | gzip > /opt/pdf-editor/backups/pdfapp_$(date +%F).sql.gz
 find /opt/pdf-editor/backups -name 'pdfapp_*.sql.gz' -mtime +14 -delete
@@ -430,8 +433,7 @@ Zurück auf den aktuellen Stand: `PDFAPP_IMAGE_TAG` wieder entfernen (oder auf
 `latest`), dann erneut `pull` und `up -d`. Rückfallebene ohne GHCR:
 `git checkout <letzter-guter-stand>` und `up -d --build` wie früher.
 
-Bei Datenbankänderungen gilt die Reihenfolge aus dem vorhandenen
-Hetzner-Runbook: erst sichern, dann die neue Anwendungsversion, danach die
+Bei Datenbankänderungen gilt diese Reihenfolge: erst sichern, dann die neue Anwendungsversion, danach die
 Migration — und Migrationen rückwärtskompatibel schreiben.
 
 ### D5. Zuständigkeit
@@ -469,14 +471,13 @@ bekannt, gemindert, aber nicht beseitigt:
 ## Kurzreferenz
 
 ```bash
-# NUC
-cd /opt/pdf-editor/pdf-editor-app
+# Lokaler Betrieb (im Klon des Repositorys)
 docker compose up -d --build
 docker compose logs -f backend
 docker compose down                      # ohne -v, sonst sind die Konten weg
 
-# Hetzner (Deployment: Bilder kommen fertig aus GHCR, Teil B4)
-ssh hetzner
+# Server-Betrieb (Deployment: Bilder kommen fertig aus GHCR, Teil B4)
+ssh <server>
 cd /opt/pdf-editor
 git pull
 docker compose --env-file /etc/pdf-editor/env --profile prod pull

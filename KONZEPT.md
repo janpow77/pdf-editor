@@ -681,7 +681,7 @@ Analyse — betreffen den **visuellen Editor**, nicht die in Phase 1 übernommen
 ## 8. Deployment
 
 - **Stack**: `docker-compose.yaml` mit `backend` (python:3.12-slim + tesseract + LibreOffice, non-root, Healthcheck `/api/health`), `frontend` (Node-Build → nginx) und `cloudflared` (nur compose-Profil `prod`).
-- **Hetzner**: Ablage nach dem Muster von `docs/HETZNER_DEPLOY.md` — `/opt/pdf-editor/compose.yaml`, Secrets in `/etc/pdf-editor/env` (0600). Eigener Cloudflare-Tunnel bzw. zusätzliches Hostname-Mapping `pdf.flowaudit.de → http://frontend:80`.
+- **Server-Betrieb**: Ablage z. B. unter `/opt/pdf-editor/compose.yaml`, Secrets in `/etc/pdf-editor/env` (0600). Eigener Cloudflare-Tunnel bzw. zusätzliches Hostname-Mapping `pdf.flowaudit.de → http://frontend:80`.
 - **Später** (nach Repo-Extraktion): GitHub-Actions-Build nach ghcr (`…-pdf-backend`/`…-pdf-frontend`), Deploy per `docker compose pull && up -d`, Rollback über Image-Tag wie im Hauptprojekt.
 
 ## 8a. Entscheidungsvorlage: Anmeldung mit der Windows-Kennung (offen)
@@ -730,7 +730,7 @@ Identitätsanbieter. Die Datenschutzerklärung müsste den Abschnitt
 
 ### Empfehlung
 
-- **Aktuelles Deployment** (Hetzner + Cloudflare, öffentlich erreichbar):
+- **Aktuelles Deployment** (Cloud-Server + Cloudflare, öffentlich erreichbar):
   Weg 2 (Entra ID). Weg 1 scheidet technisch aus.
 - **Falls die App später im Hausnetz betrieben wird**: Weg 1 im Proxy plus
   Weg 3 in der Anwendung — dann ist wirklich keine Eingabe mehr nötig.
@@ -807,8 +807,8 @@ Abnahme = alle P0-Kriterien erfüllt. Automatisierte Kriterien sind in
 
 ## 9a. Betrieb und Extraktion
 
-Inbetriebnahme auf der NUC, Überführung in ein eigenes Repository,
-Hetzner-Deployment sowie Sicherung, Aktualisierungsfristen, Verfügbarkeit und
+Lokale Inbetriebnahme, Überführung in ein eigenes Repository,
+Server-Betrieb sowie Sicherung, Aktualisierungsfristen, Verfügbarkeit und
 Zuständigkeiten stehen in @BETRIEB.md.
 
 Zwei Punkte daraus gehören auch hierher, weil sie Entscheidungen sind und keine

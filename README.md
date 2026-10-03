@@ -1,6 +1,7 @@
 # PDF-Editor-App
 
 [![Images bauen](https://github.com/janpow77/pdf-editor/actions/workflows/image.yaml/badge.svg)](https://github.com/janpow77/pdf-editor/actions/workflows/image.yaml)
+[![Lizenz: AGPL-3.0-or-later](https://img.shields.io/badge/Lizenz-AGPL--3.0--or--later-blue)](LICENSE)
 
 **Web-App mit PDF-, Word- und Excel-Werkzeugen: kostenlos, ohne Registrierungszwang, ohne
 Datenspeicherung. Alle Dateien werden ausschließlich im Arbeitsspeicher des Servers verarbeitet
@@ -169,8 +170,15 @@ audit_designer und als eigenständiges Repository lauffähig.
 
 ## Lizenz
 
-<!-- TODO: Im Repository liegt keine LICENSE-Datei. Lizenz festlegen und hier eintragen. -->
-Eine Lizenzdatei fehlt bisher. PyMuPDF und Ghostscript stehen unter der AGPL-3.0; Betreiber
-einer öffentlichen Instanz müssen den Quelltext erreichbar machen (`PDFAPP_SOURCE_URL`, Details
-in [KONZEPT.md](./KONZEPT.md), Abschnitt „Lizenzlage und Quelltextpflicht“). Die Lizenzseite der
-App (`/api/licenses`) listet alle Komponenten mit ihren Lizenzen.
+Die Anwendung steht unter der [GNU Affero General Public License, Version 3 oder später](LICENSE)
+(`AGPL-3.0-or-later`), Copyright (c) 2026 Jan Riener.
+
+Grund für diese Wahl sind die Abhängigkeiten: PyMuPDF und Ghostscript stehen selbst unter der
+AGPL-3.0. Die AGPL verlangt, dass alle, die den Dienst über das Netz nutzen, den vollständigen
+Quelltext erhalten können (§ 13). Die App erfüllt das selbst: Die Lizenzseite (`/lizenzen`, Daten
+aus `/api/licenses`) listet alle Komponenten mit ihren Lizenzen und verlinkt den Quelltext unter der
+in `PDFAPP_SOURCE_URL` hinterlegten Adresse; die öffentliche Instanz pdf.flowaudit.de verweist auf
+<https://github.com/janpow77/pdf-editor>. Fehlt der Wert, weist die Lizenzseite den Betreiber
+sichtbar darauf hin. Wer eine geänderte Fassung öffentlich betreibt, muss `PDFAPP_SOURCE_URL` auf den
+eigenen, geänderten Quelltext setzen (Details in [KONZEPT.md](./KONZEPT.md), Abschnitt „Lizenzlage
+und Quelltextpflicht“).
