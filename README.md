@@ -1,30 +1,66 @@
 # PDF-Editor-App
 
-Eigenständige, öffentlich nutzbare Web-App mit PDF-, Word- und Excel-Werkzeugen —
-**kostenlos, ohne Registrierungszwang, ohne Datenspeicherung**. Alle Datei-Verarbeitungen
-laufen vollständig im Arbeitsspeicher des Servers; Nutzerdateien werden nie persistiert.
+[![Images bauen](https://github.com/janpow77/pdf-editor/actions/workflows/image.yaml/badge.svg)](https://github.com/janpow77/pdf-editor/actions/workflows/image.yaml)
 
-Optional gibt es **Benutzerkonten** (offene Registrierung): angemeldete Nutzer bekommen
-höhere Limits (100 MB/Datei statt 50) und gespeicherte Werkzeug-Einstellungen. Der erste
-Admin wird per Env-Variablen (`PDFAPP_ADMIN_EMAIL`/`PDFAPP_ADMIN_PASSWORD`) beim Start
-angelegt; Admin-Bereich unter `/admin`. Konten liegen in PostgreSQL — ohne erreichbare
-Datenbank läuft die App automatisch im rein anonymen Modus weiter.
+**Web-App mit PDF-, Word- und Excel-Werkzeugen: kostenlos, ohne Registrierungszwang, ohne
+Datenspeicherung. Alle Dateien werden ausschließlich im Arbeitsspeicher des Servers verarbeitet
+und nie persistiert.**
 
-Im Admin-Bereich lässt sich außerdem pro Werkzeug festlegen, ob es **nur angemeldeten
-Nutzern** offensteht (Auslieferungszustand: nichts beschränkt). Beschränkte Werkzeuge
-erscheinen für anonyme Besucher ausgegraut mit Hinweis auf die Anmeldung und werden
-serverseitig mit HTTP 403 abgewiesen — nicht nur in der Oberfläche versteckt.
+## Auf einen Blick
 
-Konzept, Phasenplan, Soll-Kriterien und Datenschutz-Details: [KONZEPT.md](./KONZEPT.md)
+- **47 Werkzeuge** für PDF sowie Word und Excel: Text bearbeiten, Anmerkungen, Zusammenführen,
+  Teilen, Seiten ordnen, OCR, Schwärzen, Formular-Designer, PDF/A, digitale Signatur,
+  PDF → Word/Excel, Office → PDF, Word-Vergleich u. a. (Katalog: `backend/app/tool_catalog.py`).
+- **Ohne Konto nutzbar.** Optionale Benutzerkonten (offene Registrierung) bringen höhere Limits
+  (100 MB statt 50 MB pro Datei) und gespeicherte Werkzeug-Einstellungen.
+- **Läuft auch ohne Datenbank:** Ist PostgreSQL nicht erreichbar, arbeitet die App automatisch
+  im rein anonymen Modus weiter.
+- **Werkzeug-Freigabe im Admin-Bereich** (`/admin`): Einzelne Werkzeuge lassen sich auf
+  angemeldete Nutzer beschränken. Anonyme Besucher sehen sie ausgegraut, der Server weist sie
+  mit HTTP 403 ab.
+- **Optionale KI-Funktionen nur über eigene Infrastruktur** (OpenAI-kompatibler Endpunkt), keine
+  Cloud. Ohne Konfiguration sind sie abgeschaltet.
+- **Sichtbare Degradation:** Fehlen OCR- oder Office-Komponenten, zeigt `/api/health` das über
+  Feature-Flags an.
 
-## Quickstart (lokal)
+## Architektur
+
+```mermaid
+flowchart LR
+    B[Browser] --> N["frontend<br/>nginx + Vue 3<br/>:8080"]
+    N -- "/api" --> A["backend<br/>FastAPI :8000"]
+    A --> T["Tesseract, LibreOffice,<br/>Ghostscript, PyMuPDF"]
+    A -. optional .-> D[("PostgreSQL 16<br/>nur Konten")]
+    A -. optional .-> L["LLM-Endpunkt<br/>(OpenAI-kompatibel)"]
+    A -. optional .-> S[SMTP]
+    C["cloudflared<br/>(Profil prod)"] -.-> N
+```
+
+## Schnellstart
+
+**Docker (Gesamtstack)**, Voraussetzung: Docker mit Compose-Plugin.
+
+```bash
+cp .env.example .env
+# In .env mindestens PDFAPP_SECRET_KEY und PDFAPP_DB_PASSWORD setzen,
+# z. B. jeweils mit: openssl rand -hex 32
+docker compose up --build
+# → http://localhost:8080 (nginx: Frontend + Proxy /api → Backend)
+```
+
+Ohne `PDFAPP_SECRET_KEY` und `PDFAPP_DB_PASSWORD` bricht `docker compose` ab.
+
+<details>
+<summary><b>Lokale Entwicklung ohne Docker</b></summary>
+
+Voraussetzungen: Python 3.12 (wie im Backend-Image), Node.js mit npm.
 
 ```bash
 # Backend
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-pytest tests/                       # Smoke-Tests
+pytest tests/                       # Tests
 uvicorn app.main:app --port 8000    # API auf :8000, Docs unter /docs
 
 # Frontend (zweites Terminal)
@@ -33,22 +69,17 @@ npm install
 npm run dev                         # http://localhost:3010 (Proxy /api → :8000)
 ```
 
-Für OCR und Office→PDF müssen lokal `tesseract-ocr` (Sprachpakete `-deu`, `-eng`,
-optional `-fra/-ita/-spa/-nld/-pol`) und `libreoffice-writer`/`-calc`/`-impress`
-installiert sein — ohne sie degradieren die betroffenen Werkzeuge sichtbar
-(Feature-Flags in `/api/health`).
+Für OCR und Office → PDF müssen lokal `tesseract-ocr` (Sprachpakete `-deu`, `-eng`,
+optional `-fra/-ita/-spa/-nld/-pol`) und `libreoffice-writer`/`-calc`/`-impress` installiert
+sein. Ohne sie degradieren die betroffenen Werkzeuge sichtbar (Feature-Flags in `/api/health`).
 
-## Docker (Gesamtstack)
+</details>
 
-```bash
-docker compose up --build
-# → http://localhost:8080 (nginx: Frontend + Proxy /api → Backend)
-```
+<details>
+<summary><b>Konfiguration (Umgebungsvariablen)</b></summary>
 
-## Konfiguration
-
-Alle Einstellungen über Umgebungsvariablen mit Präfix `PDFAPP_` — siehe
-[.env.example](./.env.example). Wichtig:
+Alle Einstellungen laufen über Umgebungsvariablen mit Präfix `PDFAPP_`, vollständig in
+[.env.example](./.env.example) und `backend/app/config.py`. Die wichtigsten:
 
 | Variable | Default | Zweck |
 |---|---|---|
@@ -63,13 +94,20 @@ Alle Einstellungen über Umgebungsvariablen mit Präfix `PDFAPP_` — siehe
 | `PDFAPP_RATE_LIMIT_AUTHED` | `60/minute;2000/day` | Rate-Limit pro Nutzer (angemeldet) |
 | `PDFAPP_RATE_LIMIT_MAIL` | `5/hour` | Rate-Limit Mailversand |
 | `PDFAPP_SMTP_HOST` | *(leer)* | leer = Mailversand deaktiviert (503) |
-| `PDFAPP_LLM_URL` | *(leer)* | OpenAI-kompatibler Endpoint der EIGENEN Infrastruktur (z.B. ai-router) — leer = KI-Funktionen deaktiviert, keine Cloud |
+| `PDFAPP_LLM_URL` | *(leer)* | OpenAI-kompatibler Endpunkt der eigenen Infrastruktur; leer = KI-Funktionen deaktiviert, keine Cloud |
 | `PDFAPP_LLM_MODEL` | `qwen3.5:35b` | Modellname für die KI-Funktionen |
 
-## Datenbank-Migrationen (Alembic)
+Weitere Schalter (SMTP-Zugang, `PDFAPP_PUBLIC_BASE_URL`, `PDFAPP_HSTS_SECONDS`,
+`PDFAPP_SOURCE_URL`, Turnstile, `PDFAPP_TRUST_CF_HEADER`, `PDFAPP_IMAGE_TAG`) sind in
+[.env.example](./.env.example) kommentiert.
 
-Frische Datenbanken initialisiert der Backend-Start selbst (`create_all` +
-Admin-Seed). Für Schema-Änderungen an bestehenden Datenbanken:
+</details>
+
+<details>
+<summary><b>Datenbank-Migrationen (Alembic)</b></summary>
+
+Frische Datenbanken initialisiert der Backend-Start selbst (`create_all` + Admin-Seed). Für
+Schema-Änderungen an bestehenden Datenbanken:
 
 ```bash
 cd backend
@@ -77,36 +115,57 @@ alembic upgrade head        # nutzt PDFAPP_DATABASE_URL aus der Umgebung
 alembic revision -m "..."   # neue Migration anlegen
 ```
 
-Die Initial-Migration `0001` ist idempotent und läuft auch auf per
-`create_all` erzeugten Beständen sauber durch (zieht fehlende Spalten nach).
+Die Initial-Migration `0001` ist idempotent und läuft auch auf per `create_all` erzeugten
+Beständen sauber durch (zieht fehlende Spalten nach).
 
-## Betrieb
+</details>
 
-Vollständiges Handbuch für NUC-Inbetriebnahme, Extraktion in ein eigenes
-Repository, Hetzner-Deployment und den laufenden Betrieb: **[BETRIEB.md](BETRIEB.md)**.
+<details>
+<summary><b>Betrieb und Deployment</b></summary>
 
-## Deployment Hetzner + Cloudflare-Tunnel (`pdf.flowaudit.de`)
+Die öffentliche Instanz läuft unter `pdf.flowaudit.de` hinter einem Cloudflare-Tunnel. Das
+Compose-Profil `prod` startet zusätzlich `cloudflared`; das Token kommt als `TUNNEL_TOKEN` in die
+Env-Datei:
 
-Analog zum Muster in `docs/HETZNER_DEPLOY.md` des audit_designer-Repos:
+```bash
+docker compose --profile prod pull
+docker compose --profile prod up -d
+curl -s https://pdf.flowaudit.de/api/health   # → "status": "ok"
+```
 
-1. **Ablage auf dem Host**: `compose.yaml` nach `/opt/pdf-editor/`, Env-Datei nach
-   `/etc/pdf-editor/env` (root:root, 0600).
-2. **Cloudflare-Tunnel**: im Cloudflare-Dashboard einen (eigenen) Tunnel anlegen und
-   das Hostname-Mapping `pdf.flowaudit.de → http://frontend:80` konfigurieren;
-   `TUNNEL_TOKEN` in die Env-Datei.
-3. **Start**: `cd /opt/pdf-editor && docker compose --env-file /etc/pdf-editor/env --profile prod pull && docker compose --env-file /etc/pdf-editor/env --profile prod up -d`
-4. **Verifikation**: `curl -s https://pdf.flowaudit.de/api/health` → `"status": "ok"`.
+GitHub Actions baut bei jedem Push auf `main` (und bei Tags `v*`) die Container-Images und legt
+sie als `ghcr.io/janpow77/pdf-editor-{backend,frontend}` ab
+([.github/workflows/image.yaml](./.github/workflows/image.yaml)), jeweils mit Tag `latest` und
+Commit-SHA. Über `PDFAPP_IMAGE_TAG=<commit-sha>` lässt sich ein früherer Stand pinnen. Ohne
+GHCR-Zugriff bleibt `--profile prod up -d --build` als Rückfallebene.
 
-GitHub Actions baut bei jedem Push auf `main` die Container-Images und legt sie
-als `ghcr.io/janpow77/pdf-editor-{backend,frontend}` ab
-(`.github/workflows/image.yaml`, Details in BETRIEB.md Teil B4). Der Server
-zieht fertige Bilder statt selbst zu bauen; `up -d --build` bleibt als
-Rückfallebene ohne GHCR-Zugriff erhalten.
+Ablage auf dem Server, Tunnel-Einrichtung, Sicherung, Aktualisierung und Rückfall beschreibt
+[BETRIEB.md](./BETRIEB.md).
 
-## Herkunft des Codes
+</details>
+
+<details>
+<summary><b>Herkunft des Codes</b></summary>
 
 Backend-Services und Tool-Komponenten sind Kopien aus dem audit_designer-Repo
-(`backend/app/services/pdf_{tools,editor}_service.py`,
-`frontend/src/components/vpai/pdf-tools/`), entkoppelt von Auth, Stores und
-Feature-Flags. Die App ist bewusst import-frei gegenüber audit_designer und kann
-als Ganzes in ein eigenes Repository verschoben werden.
+(`backend/app/services/pdf_{tools,editor}_service.py`, `frontend/src/components/vpai/pdf-tools/`),
+entkoppelt von Auth, Stores und Feature-Flags. Die App ist bewusst import-frei gegenüber
+audit_designer und als eigenständiges Repository lauffähig.
+
+</details>
+
+## Dokumentation
+
+- [KONZEPT.md](./KONZEPT.md): Ziel, Funktionsumfang, Architektur, Datenschutz, Härtung,
+  Soll-Kriterien und Roadmap
+- [MODULKATALOG_2026.md](./MODULKATALOG_2026.md): Abdeckungsanalyse gegen ein 18-Modul-Zielbild
+- [FRONTEND_REFACTORING.md](./FRONTEND_REFACTORING.md): Aufbau der Oberfläche
+- [BETRIEB.md](./BETRIEB.md): Inbetriebnahme, Deployment und laufender Betrieb
+
+## Lizenz
+
+<!-- TODO: Im Repository liegt keine LICENSE-Datei. Lizenz festlegen und hier eintragen. -->
+Eine Lizenzdatei fehlt bisher. PyMuPDF und Ghostscript stehen unter der AGPL-3.0; Betreiber
+einer öffentlichen Instanz müssen den Quelltext erreichbar machen (`PDFAPP_SOURCE_URL`, Details
+in [KONZEPT.md](./KONZEPT.md), Abschnitt „Lizenzlage und Quelltextpflicht“). Die Lizenzseite der
+App (`/api/licenses`) listet alle Komponenten mit ihren Lizenzen.
