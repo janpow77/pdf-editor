@@ -11,16 +11,12 @@ import csv
 import io
 import logging
 import re
-import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 from app.services.pdf_tools_service import PdfToolResult
-
-logger = logging.getLogger(__name__)
 
 # Fremdbibliotheken ausschließlich über app/pdf_backend.py — dort stehen
 # Import, Verfügbarkeitserkennung und Lizenzregister an einer Stelle.
@@ -36,6 +32,8 @@ from app.pdf_backend import (
     open_pdf,
     pyhanko_signers as _pyhanko_signers,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _hex_to_rgb(hex_color: str) -> tuple[float, float, float]:
@@ -164,77 +162,12 @@ def select_font_file(font_name: str, text: str) -> str | None:
 
 
 # ── Musterbasierte Schwärzung ─────────────────────────────────
-# Bewusst konservativ formuliert: lieber ein Treffer weniger als eine falsche
-# Schwärzung. Die Vorschau zeigt jede Fundstelle vor dem unumkehrbaren Schritt.
+# Suche, Plan, Anwendung und Nachprüfung liegen in app.services.redaction.
+from app.services import redaction as _redaction  # noqa: E402
 
-
-@dataclass(frozen=True)
-class RedactionPattern:
-    label: str
-    regex: str
-    hint: str
-    #: KI-basiert (spaCy-NER) statt Regex — kein fester Ausdruck, dafür
-    #: unsicherer als die übrigen Muster. Wird in find_pattern_matches
-    #: getrennt behandelt statt kompiliert.
-    ai: bool = False
-
-
-NER_PATTERN_ID = "ki_namen"
-
-REDACTION_PATTERNS: dict[str, RedactionPattern] = {
-    "iban": RedactionPattern(
-        "IBAN",
-        r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4})+(?:\s?[A-Z0-9]{1,3})?\b",
-        "Kontonummern, auch in Vierergruppen geschrieben",
-    ),
-    "email": RedactionPattern(
-        "E-Mail-Adresse",
-        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
-        "Adressen in Anschreiben und Verteilern",
-    ),
-    "telefon": RedactionPattern(
-        "Telefonnummer",
-        r"(?:\+49|0)\s?(?:\d{2,5}[\s/-]?){1,3}\d{2,8}",
-        "deutsche Rufnummern mit Vorwahl",
-    ),
-    "steuer_id": RedactionPattern(
-        "Steuer-Identifikationsnummer",
-        r"\b\d{11}\b",
-        "11-stellige Steuer-ID — prüfen, sonst werden lange Zahlen mitgeschwärzt",
-    ),
-    "ust_id": RedactionPattern(
-        "Umsatzsteuer-Identifikationsnummer",
-        r"\bDE\s?\d{9}\b",
-        "USt-IdNr. der Begünstigten",
-    ),
-    "kreditkarte": RedactionPattern(
-        "Kreditkartennummer",
-        r"\b(?:\d{4}[\s-]?){3}\d{4}\b",
-        "16-stellige Kartennummern",
-    ),
-    "geburtsdatum": RedactionPattern(
-        "Datum (TT.MM.JJJJ)",
-        r"\b(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:19|20)\d{2}\b",
-        "z.B. Geburtsdaten — trifft alle Datumsangaben dieses Formats",
-    ),
-    "ip_adresse": RedactionPattern(
-        "IP-Adresse",
-        r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
-        "IPv4-Adressen aus Protokollauszügen",
-    ),
-    "aktenzeichen": RedactionPattern(
-        "Aktenzeichen",
-        r"\b[A-Z]{1,4}[-/ ]?\d{1,6}[-/]\d{2,4}\b",
-        "Muster wie AZ-1234/26 — vor dem Schwärzen prüfen",
-    ),
-    NER_PATTERN_ID: RedactionPattern(
-        "Personennamen (KI-Erkennung)",
-        "",
-        "spaCy-NER statt Regex — erkennt Namen im Fließtext, ist aber "
-        "unsicherer als die übrigen Muster: Vorschau vor dem Schwärzen prüfen",
-        ai=True,
-    ),
-}
+RedactionPattern = _redaction.PatternSpec
+NER_PATTERN_ID = _redaction.NER_PATTERN_ID
+REDACTION_PATTERNS = _redaction.PATTERNS
 
 
 # ── Formular-Designer: Feldtypen ──────────────────────────────
@@ -487,47 +420,23 @@ class PdfExtrasService:
 
     # ── Musterbasierte Schwärzung ─────────────────────────────
 
-    def _line_groups(self, page) -> list[tuple[str, list[tuple[int, int]], list]]:
-        """Zeilen einer Seite als (Text, Zeichen-Spannen je Wort, Wort-Rechtecke).
-
-        Regex-Treffer werden über die Zeichen-Spannen auf Wörter und damit auf
-        Rechtecke zurückgeführt — so werden auch Muster gefunden, die über
-        Leerzeichen laufen (z.B. eine IBAN in Vierergruppen).
-        """
-        lines: dict[tuple[int, int], list] = {}
-        for word in page.get_text("words"):
-            lines.setdefault((word[5], word[6]), []).append(word)
-        result = []
-        for key in sorted(lines):
-            words = sorted(lines[key], key=lambda w: w[7])
-            text_parts: list[str] = []
-            spans: list[tuple[int, int]] = []
-            pos = 0
-            for w in words:
-                token = w[4]
-                spans.append((pos, pos + len(token)))
-                text_parts.append(token)
-                pos += len(token) + 1  # Trennzeichen
-            result.append((" ".join(text_parts), spans, words))
-        return result
-
     def ner_available(self) -> bool:
         """Ist die optionale KI-Namenserkennung (spaCy) einsatzbereit?"""
         return SPACY_AVAILABLE and load_de_ner_model() is not None
 
-    @staticmethod
-    def _span_rect(spans: list[tuple[int, int]], words: list, start: int, end: int):
-        """Wort-Rechtecke, die einen Zeichenbereich der Zeile überdecken, zu
-        einem Fundstellen-Rechteck vereinigen — None, wenn keins trifft."""
-        hit_rects = [
-            fitz.Rect(w[:4]) for (s, e), w in zip(spans, words) if s < end and e > start
-        ]
-        if not hit_rects:
-            return None
-        box = hit_rects[0]
-        for r in hit_rects[1:]:
-            box |= r
-        return box
+    def ner_function(self):
+        """NER-Funktion für app.services.redaction oder None."""
+        nlp = load_de_ner_model() if SPACY_AVAILABLE else None
+        return _redaction.spacy_ner(nlp) if nlp is not None else None
+
+    def redaction_plan(self, file_content: bytes, criteria) -> dict:
+        """Vorschau: alle Fundstellen mit Kennung, Rechteck und Auswahlstatus."""
+        return _redaction.build_plan(file_content, criteria, self.ner_function()).to_dict()
+
+    def redaction_apply(self, file_content: bytes, selection) -> tuple[bytes, dict]:
+        """Genau die bestätigte Auswahl schwärzen; wirft bei Restbefund."""
+        out, report = _redaction.apply_plan(file_content, selection, self.ner_function())
+        return out, report.to_dict()
 
     def find_pattern_matches(
         self,
@@ -537,76 +446,22 @@ class PdfExtrasService:
         case_sensitive: bool = False,
         whole_word: bool = True,
     ) -> tuple[list[dict], dict[str, int]] | None:
-        """Alle Fundstellen mit Seite, Text und Rechteck — Basis für Vorschau
-        und Schwärzung. None, wenn PyMuPDF fehlt."""
+        """Fundstellen im Seitentext (Seite, Text, Rechteck in PDF-Koordinaten).
+
+        Ältere Schnittstelle; die Oberfläche nutzt redaction_plan. None, wenn
+        PyMuPDF fehlt.
+        """
         if not PYMUPDF_AVAILABLE:
             return None
-        compiled: list[tuple[str, re.Pattern]] = []
-        flags = 0 if case_sensitive else re.IGNORECASE
-        for key in patterns:
-            spec = REDACTION_PATTERNS.get(key)
-            if spec and not spec.ai:
-                compiled.append((key, re.compile(spec.regex, flags)))
-        for term in terms or []:
-            term = term.strip()
-            if not term:
-                continue
-            escaped = re.escape(term)
-            if whole_word:
-                escaped = rf"(?<!\w){escaped}(?!\w)"
-            compiled.append((f"begriff:{term}", re.compile(escaped, flags)))
-        use_ner = NER_PATTERN_ID in patterns
-
-        findings: list[dict] = []
+        criteria = _redaction.Criteria.from_input(patterns, terms or [], case_sensitive, whole_word)
+        plan = _redaction.build_plan(file_content, criteria, self.ner_function())
+        findings = []
         counts: dict[str, int] = {}
-        doc = fitz.open(stream=file_content, filetype="pdf")
-        try:
-            line_records: list[tuple[int, str, list[tuple[int, int]], list]] = []
-            for pno in range(doc.page_count):
-                for line_text, spans, words in self._line_groups(doc[pno]):
-                    line_records.append((pno, line_text, spans, words))
-        finally:
-            doc.close()
-
-        for pno, line_text, spans, words in line_records:
-            for key, rx in compiled:
-                for match in rx.finditer(line_text):
-                    box = self._span_rect(spans, words, *match.span())
-                    if box is None:
-                        continue
-                    findings.append(
-                        {
-                            "pattern": key,
-                            "page": pno + 1,
-                            "text": match.group(0),
-                            "rect": [round(v, 2) for v in box],
-                        }
-                    )
-                    counts[key] = counts.get(key, 0) + 1
-
-        if use_ner:
-            nlp = load_de_ner_model()
-            if nlp is not None:
-                texts = [lr[1] for lr in line_records]
-                for (pno, line_text, spans, words), ner_doc in zip(
-                    line_records, nlp.pipe(texts)
-                ):
-                    for ent in ner_doc.ents:
-                        if ent.label_ != "PER":
-                            continue
-                        box = self._span_rect(spans, words, ent.start_char, ent.end_char)
-                        if box is None:
-                            continue
-                        findings.append(
-                            {
-                                "pattern": NER_PATTERN_ID,
-                                "page": pno + 1,
-                                "text": ent.text,
-                                "rect": [round(v, 2) for v in box],
-                            }
-                        )
-                        counts[NER_PATTERN_ID] = counts.get(NER_PATTERN_ID, 0) + 1
-        findings.sort(key=lambda f: f["page"])
+        for c in plan.text_candidates:
+            findings.append(
+                {"pattern": c.source, "page": c.page, "text": c.text, "rect": c.union_rect()}
+            )
+            counts[c.source] = counts.get(c.source, 0) + 1
         return findings, counts
 
     def redact_patterns(
@@ -617,35 +472,35 @@ class PdfExtrasService:
         case_sensitive: bool = False,
         whole_word: bool = True,
     ) -> PdfToolResult:
-        """Fundstellen der gewählten Muster/Begriffe unwiderruflich entfernen."""
-        found = self.find_pattern_matches(
-            file_content, patterns, terms, case_sensitive, whole_word
-        )
-        if found is None:
+        """Alle Fundstellen schwärzen, auch in versteckten Ablagen (ohne Vorschau).
+
+        Programmschnittstelle für Batch und ältere Aufrufer; die Oberfläche
+        verlangt stattdessen redaction_plan + redaction_apply.
+        """
+        if not PYMUPDF_AVAILABLE:
             return _fail("PyMuPDF nicht verfügbar")
-        findings, counts = found
-        if not findings:
-            return _fail("Keine Fundstellen für die gewählten Muster")
         try:
-            doc = fitz.open(stream=file_content, filetype="pdf")
-            by_page: dict[int, list] = {}
-            for f in findings:
-                by_page.setdefault(f["page"], []).append(fitz.Rect(*f["rect"]))
-            for pno, rects in by_page.items():
-                page = doc[pno - 1]
-                for rect in rects:
-                    page.add_redact_annot(rect, fill=(0, 0, 0))
-                page.apply_redactions()
-            out = doc.tobytes(garbage=3, deflate=True)
-            doc.close()
-            return PdfToolResult(
-                success=True,
-                output_format="pdf",
-                file_content=out,
-                metadata={"redactions": len(findings), "by_pattern": counts},
-            )
+            criteria = _redaction.Criteria.from_input(patterns, terms or [], case_sensitive, whole_word)
+            out, report, plan = _redaction.redact_all(file_content, criteria, self.ner_function())
+        except _redaction.RedactionError as e:
+            return _fail(str(e))
+        except _redaction.RedactionVerificationError as e:
+            return _fail(str(e))
         except Exception as e:
             return _fail(f"Schwärzung fehlgeschlagen: {e}")
+        if not plan.candidates:
+            return _fail("Keine Fundstellen für die gewählten Muster")
+        return PdfToolResult(
+            success=True,
+            output_format="pdf",
+            file_content=out,
+            metadata={
+                "redactions": report.redactions,
+                "hidden_removed": report.hidden_removed,
+                "by_pattern": report.by_source,
+                "pages_without_text": [p.page for p in plan.pages if p.image_only],
+            },
+        )
 
     # ── Formulardaten als CSV ─────────────────────────────────
 
@@ -1010,32 +865,24 @@ class PdfExtrasService:
     def redact_search(
         self, file_content: bytes, term: str, match_case: bool = False
     ) -> PdfToolResult:
+        """Einen Begriff überall schwärzen (Teilwortsuche, ohne Vorschau)."""
         if not PYMUPDF_AVAILABLE:
             return _fail("PyMuPDF nicht verfügbar")
         if not term.strip():
             return _fail("Suchbegriff erforderlich")
         try:
-            doc = fitz.open(stream=file_content, filetype="pdf")
-            count = 0
-            flags = 0 if match_case else fitz.TEXT_DEHYPHENATE
-            for i in range(doc.page_count):
-                page = doc[i]
-                hits = page.search_for(term, flags=flags)
-                for rect in hits:
-                    page.add_redact_annot(rect, fill=(0, 0, 0))
-                    count += 1
-                if hits:
-                    page.apply_redactions()
-            out = doc.tobytes(garbage=3, deflate=True)
-            doc.close()
-            return PdfToolResult(
-                success=True,
-                output_format="pdf",
-                file_content=out,
-                metadata={"redactions": count},
-            )
+            criteria = _redaction.Criteria.from_input([], [term], match_case, whole_word=False)
+            out, report, _plan = _redaction.redact_all(file_content, criteria)
+        except (_redaction.RedactionError, _redaction.RedactionVerificationError) as e:
+            return _fail(str(e))
         except Exception as e:
             return _fail(f"Schwärzung fehlgeschlagen: {e}")
+        return PdfToolResult(
+            success=True,
+            output_format="pdf",
+            file_content=out,
+            metadata={"redactions": report.redactions, "hidden_removed": report.hidden_removed},
+        )
 
     # ── Bild-Signatur / Stempelbild ───────────────────────────
 
@@ -1410,7 +1257,7 @@ class PdfExtrasService:
                             t.strip()
                             for t in str(params.get("terms", "")).splitlines()
                             if t.strip()
-                        ][:200]
+                        ]
                         if NER_PATTERN_ID in pattern_list and not self.ner_available():
                             errors.append(
                                 f"{filename}: KI-Namenserkennung nicht verfügbar (spaCy-Modell fehlt)"

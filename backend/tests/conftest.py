@@ -27,3 +27,16 @@ _test_engine = create_engine(
     poolclass=StaticPool,
 )
 app_db.set_engine(_test_engine)
+
+
+import pytest  # noqa: E402
+
+from app.config import settings  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _legacy_redaction(monkeypatch):
+    """Die alten Schwärzungs-Endpunkte (ohne Vorschau) sind im Betrieb
+    abgeschaltet; ihre Tests laufen mit eingeschaltetem Schalter.
+    test_redaction_audit prüft die Abschaltung (HTTP 410) gesondert."""
+    monkeypatch.setattr(settings, "redact_without_preview", True)
