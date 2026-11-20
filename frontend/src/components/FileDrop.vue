@@ -8,7 +8,7 @@
         @drag-active="isDragging = $event"
         @drop="onDroppedFiles"
       >
-        <input ref="input" type="file" :accept="accept" class="hidden" @change="onSelect" />
+        <input ref="input" type="file" :accept="accept" :multiple="multipleHandler" class="hidden" @change="onSelect" />
 
         <div v-if="!modelValue">
           <div class="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-primary-50 text-2xl text-primary-700 shadow-sm dark:bg-primary-500/15 dark:text-primary-300" aria-hidden="true">⇧</div>
@@ -125,9 +125,13 @@ async function acceptFile(file: File): Promise<void> {
 
 function onSelect(event: Event): void {
   const element = event.target as HTMLInputElement
-  const file = element.files?.[0]
+  const files = Array.from(element.files ?? [])
   element.value = ''
-  if (file) void acceptFile(file)
+  if (files.length > 1 && props.multipleHandler) {
+    emit('multiple', files)
+    return
+  }
+  if (files[0]) void acceptFile(files[0])
 }
 
 function onDroppedFiles(files: File[]): void {

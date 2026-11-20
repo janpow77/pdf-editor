@@ -1,70 +1,38 @@
 <template>
   <div class="space-y-5">
-    <ToolHeader title="Schwärzen" description="Sensible Textinhalte unwiderruflich aus dem PDF entfernen." @back="$emit('back')" />
+    <ToolHeader title="Schwärzen" description="Sensible Inhalte unwiderruflich aus dem PDF entfernen — erst prüfen, dann schwärzen." @back="$emit('back')" />
 
-    <UiAlert tone="warning">
-      Echte Schwärzung entfernt Fundstellen aus dem Dokumentinhalt – sie können anschließend weder kopiert noch durchsucht werden. Der Vorgang ist nicht umkehrbar.
-    </UiAlert>
+    <ol class="flex flex-wrap gap-2 text-xs font-semibold" aria-label="Arbeitsschritte">
+      <li v-for="(label, index) in stepLabels" :key="label" class="rounded-full px-3 py-1" :class="index === stepIndex ? 'bg-primary-600 text-white' : index < stepIndex ? 'bg-primary-100 text-primary-800 dark:bg-primary-500/20 dark:text-primary-200' : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300'" :aria-current="index === stepIndex ? 'step' : undefined">
+        {{ index + 1 }}. {{ label }}
+      </li>
+    </ol>
 
-    <FileDrop v-model="file" multiple-handler @multiple="handleMultipleFiles" />
-    <UiAlert v-if="redirecting" tone="info" live>Mehrere Dateien erkannt — leite zur Batch-Verarbeitung weiter …</UiAlert>
+    <!-- Dateien -->
+    <section class="space-y-2" aria-label="Dateien">
+      <FileDrop v-if="step === 'criteria'" v-model="incoming" multiple-handler :max-bytes="remainingBytes" label="PDF (auch mehrere)" @multiple="addFiles" />
+      <ul v-if="docs.length" class="space-y-1 text-sm">
+        <li v-for="(doc, index) in docs" :key="doc.key" class="flex flex-wrap items-center gap-2 rounded-xl bg-gray-100/70 px-3 py-2 dark:bg-white/5">
+          <span class="min-w-0 flex-1 break-all font-medium">{{ doc.file.name }}</span>
+          <span v-if="doc.plan" class="text-xs tabular-nums opacity-75">{{ countSelected(doc) }} / {{ doc.plan.total }} ausgewählt<template v-if="doc.areas.length"> · {{ doc.areas.length }} Bereich(e)</template></span>
+          <span v-if="doc.reviewed" class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-200">geprüft</span>
+          <span v-if="doc.error" class="text-xs text-red-700 dark:text-red-300">{{ doc.error }}</span>
+          <UiButton v-if="step === 'review' && doc.plan && index !== active" size="sm" variant="secondary" @click="active = index">Ansehen</UiButton>
+          <UiButton size="sm" variant="ghost" :aria-label="`${doc.file.name} entfernen`" :disabled="busy" @click="removeDoc(index)">Entfernen</UiButton>
+        </li>
+      </ul>
+    </section>
 
-    <div v-if="file" class="flex flex-wrap gap-2" aria-label="Schwärzungsmethode">
-      <UiButton
-        v-for="modeOption in modes"
-        :key="modeOption.value"
-        size="sm"
-        :variant="mode === modeOption.value ? 'primary' : 'secondary'"
-        :aria-pressed="mode === modeOption.value"
-        @click="selectMode(modeOption.value)"
-      >{{ modeOption.label }}</UiButton>
-    </div>
-
-    <details class="rounded-2xl bg-gray-100/70 p-3 text-sm dark:bg-white/5" open>
-      <summary class="cursor-pointer font-semibold">Wie erkennt die Schwärzung Fundstellen? Ist das KI oder Fuzzy-Logik?</summary>
-      <p class="mt-3 text-gray-600 dark:text-gray-300">Kurz gesagt sind <strong class="text-gray-950 dark:text-white">zwei von drei Methoden reine, deterministische Textsuche — keine Fuzzy-Logik, keine unscharfe Ähnlichkeitssuche.</strong> Nur die optionale Namenserkennung nutzt ein KI-Modell, klar als solche gekennzeichnet.</p>
-      <dl class="mt-3 space-y-3">
-        <div>
-          <dt class="font-semibold">Einzelner Begriff / Begriffsliste</dt>
-          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Exakte Textsuche im PDF-Inhalt — findet nur, was Zeichen für Zeichen übereinstimmt (optional ohne Groß-/Kleinschreibung, optional nur ganze Wörter). Eine Ähnlichkeitssuche findet nicht statt, ein Tippfehler oder eine abweichende Schreibweise wird deshalb nicht gefunden.</dd>
-        </div>
-        <div>
-          <dt class="font-semibold">Muster (Regex)</dt>
-          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Feste, reguläre Ausdrücke pro Format — z.&nbsp;B. IBAN, E-Mail-Adresse oder Datum. Die Suche ist deterministisch, dieselbe Eingabe liefert immer denselben Treffer, ganz ohne KI und ohne Fuzzy-Logik. Erkannt werden nur Formate, keine Bedeutung — ein Datum wird als Datum erkannt, unabhängig davon, ob es ein Geburtsdatum ist.</dd>
-        </div>
-        <div>
-          <dt class="font-semibold">Personennamen (KI-Erkennung)</dt>
-          <dd class="mt-0.5 text-gray-600 dark:text-gray-300">Die einzige KI-gestützte Methode. Ein spaCy-Modell (<code>de_core_news_sm</code>) liest den Fließtext und schätzt, welche Wortfolgen Personennamen sind — läuft vollständig auf unserem Server, ohne Cloud-Aufruf, kein Sprachmodell und keine generative KI, sondern ein kleines, spezialisiertes Erkennungsmodell (NER). Anders als bei den Regex-Mustern ist das eine Schätzung. Namen können übersehen werden, und einzelne andere Wörter können fälschlich als Name erkannt werden. Deshalb vor dem Schwärzen immer die Vorschau prüfen.</dd>
-        </div>
-      </dl>
-      <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-        Einzelheiten zu Funktionsweise und rechtlicher Einordnung (KI-Verordnung) stehen in der
-        <RouterLink to="/datenschutz" class="font-semibold text-primary-600 underline hover:no-underline dark:text-primary-400">Datenschutzerklärung</RouterLink>.
-      </p>
-    </details>
-
-    <UiPanel v-if="file && mode === 'term'" class="space-y-4">
-      <UiField label="Zu schwärzender Text" for-id="redact-term" hint="Zum Beispiel Name, Aktenzeichen oder Anschrift.">
-        <input id="redact-term" v-model="term" type="text" class="ui-control w-full" />
-      </UiField>
-      <label class="ui-choice"><input v-model="matchCase" type="checkbox" class="rounded" /> Groß- und Kleinschreibung beachten</label>
-    </UiPanel>
-
-    <UiPanel v-if="file && mode === 'patterns'" class="space-y-5">
+    <!-- Suchkriterien -->
+    <UiPanel v-if="docs.length && step === 'criteria'" class="space-y-5">
       <fieldset>
-        <div class="mb-2 flex items-center justify-between gap-2">
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
           <legend class="ui-label">Muster</legend>
           <UiButton size="sm" variant="secondary" @click="selectStandardPatterns">Standardmuster auswählen</UiButton>
         </div>
         <div class="grid gap-2 sm:grid-cols-2">
           <label v-for="pattern in patterns" :key="pattern.id" class="ui-choice !items-start" :class="{ 'opacity-50': pattern.ai && !nerAvailable }">
-            <input
-              type="checkbox"
-              class="mt-1 rounded"
-              :disabled="pattern.ai && !nerAvailable"
-              :checked="selectedPatterns.has(pattern.id)"
-              @change="togglePattern(pattern.id)"
-            />
+            <input type="checkbox" class="mt-1 rounded" :disabled="pattern.ai && !nerAvailable" :checked="selectedPatterns.has(pattern.id)" @change="togglePattern(pattern.id)" />
             <span>
               {{ pattern.label }}
               <span v-if="pattern.ai" class="ml-1 rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">KI</span>
@@ -74,66 +42,110 @@
         </div>
       </fieldset>
 
-      <UiField label="Begriffe oder Namen" for-id="redact-terms" hint="Ein Begriff pro Zeile.">
-        <textarea id="redact-terms" v-model="terms" rows="5" class="ui-control w-full font-mono" placeholder="Erika Musterfrau&#10;Musterhausen&#10;Projekt Alpha"></textarea>
+      <UiField label="Begriffe oder Namen" for-id="redact-terms" :hint="`Ein Begriff pro Zeile, höchstens ${MAX_TERMS}. Findet auch Treffer über Zeilenumbrüche und Silbentrennung hinweg.`">
+        <textarea id="redact-terms" v-model="terms" rows="4" class="ui-control w-full font-mono" placeholder="Erika Musterfrau&#10;Musterhausen&#10;Projekt Alpha"></textarea>
       </UiField>
+      <p v-if="termCount > MAX_TERMS" class="text-sm text-red-700 dark:text-red-300">{{ termCount }} Begriffe — bitte auf {{ MAX_TERMS }} kürzen.</p>
 
       <div class="flex flex-wrap gap-2">
         <label class="ui-choice"><input v-model="matchCase" type="checkbox" class="rounded" /> Groß- und Kleinschreibung beachten</label>
         <label class="ui-choice"><input v-model="wholeWord" type="checkbox" class="rounded" /> Nur ganze Wörter</label>
+        <label class="ui-choice" title="Entfernt Metadaten, XMP, Dateianhänge, JavaScript und Vorschaubilder">
+          <input v-model="sanitize" type="checkbox" class="rounded" /> Dokument bereinigen (Metadaten, Anhänge, Skripte)
+        </label>
       </div>
+
+      <details class="rounded-2xl bg-gray-100/70 p-3 text-sm dark:bg-white/5">
+        <summary class="cursor-pointer font-semibold">Wie wird gesucht?</summary>
+        <ul class="mt-2 list-disc space-y-1 pl-5 text-gray-600 dark:text-gray-300">
+          <li><strong>Begriffe und Muster</strong> sind feste Textsuche ohne KI und ohne Fuzzy-Logik. IBAN, Steuer-ID und Kartennummer zählen nur mit gültiger Prüfziffer, Datumsangaben nur als echtes Kalenderdatum.</li>
+          <li><strong>Personennamen (KI)</strong> schätzt ein kleines spaCy-Modell auf unserem Server. Namen können fehlen oder falsch erkannt sein.</li>
+          <li>Gesucht wird auch in <strong>Metadaten, Lesezeichen, Kommentaren, Links, Formularfeldern und Anhängen</strong>. Gescannte Seiten ohne Textebene werden gemeldet.</li>
+          <li>Nach dem Schwärzen wird die Datei erneut durchsucht. Ist eine ausgewählte Fundstelle noch lesbar, wird <strong>keine Datei ausgeliefert</strong>.</li>
+        </ul>
+        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          Einzelheiten und rechtliche Einordnung (KI-Verordnung):
+          <RouterLink to="/datenschutz" class="font-semibold text-primary-600 underline hover:no-underline dark:text-primary-400">Datenschutzerklärung</RouterLink>.
+        </p>
+      </details>
+
+      <UiButton variant="primary" :loading="busy && step === 'criteria'" :disabled="!hasCriteria || busy || termCount > MAX_TERMS" @click="searchAll">
+        {{ busy && step === 'criteria' ? `Suche … ${progress}` : docs.length > 1 ? `Fundstellen in ${docs.length} Dateien suchen` : 'Fundstellen suchen' }}
+      </UiButton>
+      <UiButton v-if="plansReady && !busy" variant="secondary" class="ml-2" @click="step = 'review'">Zurück zur Prüfung</UiButton>
+      <p v-if="plansReady && !busy" class="text-xs opacity-70">Ihre Auswahl bleibt erhalten, solange Sie Kriterien und Dateien nicht ändern. Eine neue Suche setzt sie zurück.</p>
+      <p v-if="!hasCriteria" class="text-xs opacity-70">Mindestens ein Muster oder einen Begriff angeben. Eigene Bereiche können Sie danach in der Seitenansicht ergänzen.</p>
     </UiPanel>
 
     <UiAlert v-if="patternLoadError" tone="warning">{{ patternLoadError }}</UiAlert>
 
-    <UiPanel v-if="preview" :tone="preview.total ? 'warning' : 'default'" class="space-y-3">
-      <h3 class="font-semibold">{{ preview.total }} Fundstelle(n)</h3>
-      <p v-if="!preview.total" class="text-sm opacity-75">Nichts gefunden. Passe Muster oder Begriffe an.</p>
-      <template v-else>
-        <ul class="max-h-64 divide-y divide-gray-200 overflow-y-auto text-sm dark:divide-gray-700">
-          <li v-for="(finding, index) in preview.findings" :key="`${finding.pattern}-${finding.page}-${index}`" class="flex justify-between gap-3 py-2">
-            <span class="truncate font-mono">{{ finding.text }}</span>
-            <span class="shrink-0 text-xs opacity-70">{{ patternLabel(finding.pattern) }} · S. {{ finding.page }}</span>
-          </li>
-        </ul>
-        <p v-if="preview.truncated" class="text-xs opacity-70">Nur die ersten 500 Fundstellen werden aufgelistet – geschwärzt werden alle.</p>
-      </template>
-    </UiPanel>
+    <!-- Prüfung -->
+    <p v-if="step === 'review'" class="rounded-2xl bg-gray-100/70 px-3 py-2 text-sm dark:bg-white/5">
+      <span class="font-semibold">Gesucht nach:</span> {{ criteriaSummary }}
+      <button type="button" class="ml-2 font-semibold text-primary-700 underline hover:no-underline dark:text-primary-300" :disabled="busy" @click="backToCriteria">ändern</button>
+    </p>
+    <template v-if="step === 'review' && activeDoc && activeDoc.plan && activeDoc.blob">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h3 class="text-base font-semibold">
+          Prüfen: {{ activeDoc.file.name }}
+          <span v-if="docs.length > 1" class="font-normal opacity-70">({{ active + 1 }} von {{ docs.length }})</span>
+        </h3>
+        <div v-if="docs.length > 1" class="flex gap-1.5">
+          <UiButton size="sm" variant="secondary" :disabled="active === 0" @click="active -= 1">← Vorherige Datei</UiButton>
+          <UiButton size="sm" variant="secondary" :disabled="active === docs.length - 1" @click="active += 1">Nächste Datei →</UiButton>
+        </div>
+      </div>
 
-    <UiAlert v-if="done" tone="success" live>{{ redactions }} Stelle(n) geschwärzt und Datei heruntergeladen.</UiAlert>
+      <RedactReview v-model:selected="activeDoc.selected" v-model:areas="activeDoc.areas" :source="activeDoc.blob" :plan="activeDoc.plan" />
 
-    <label v-if="file && canRedact" class="ui-choice !rounded-2xl">
-      <input v-model="confirmed" type="checkbox" class="rounded" /> Ich habe die Suchkriterien beziehungsweise Fundstellen geprüft und bestätige die unwiderrufliche Schwärzung.
-    </label>
+      <label class="ui-choice !rounded-2xl">
+        <input v-model="activeDoc.reviewed" type="checkbox" class="rounded" />
+        Ich habe die Fundstellen in „{{ activeDoc.file.name }}“ geprüft.
+      </label>
+    </template>
 
-    <div v-if="file" class="flex flex-wrap gap-2">
-      <UiButton v-if="mode === 'patterns'" :loading="loading" :disabled="!hasSelection" @click="runPreview">
-        {{ loading ? 'Suche…' : 'Fundstellen anzeigen' }}
-      </UiButton>
-      <UiButton variant="danger" size="lg" :loading="loading" :disabled="!canRedact || !confirmed" @click="apply">
-        {{ loading ? 'Schwärze…' : 'Unwiderruflich schwärzen' }}
-      </UiButton>
-    </div>
+    <template v-if="step === 'review'">
+      <UiAlert v-if="unreviewed.length" tone="info">
+        Noch nicht als geprüft markiert: {{ unreviewed.map((d) => d.file.name).join(', ') }}.
+      </UiAlert>
+      <UiAlert v-if="allReviewed && nothingToDo" tone="warning">Nichts ausgewählt — es gibt nichts zu schwärzen.</UiAlert>
 
-    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
+      <label v-if="allReviewed && !nothingToDo" class="ui-choice !rounded-2xl">
+        <input v-model="confirmed" type="checkbox" class="rounded" />
+        Ich bestätige die unwiderrufliche Schwärzung der ausgewählten Fundstellen und Bereiche<template v-if="docs.length > 1"> in allen {{ docs.length }} Dateien</template>.
+      </label>
+
+      <div class="flex flex-wrap gap-2">
+        <UiButton variant="danger" size="lg" :loading="busy" :disabled="!allReviewed || nothingToDo || !confirmed || busy" @click="applyAll">
+          {{ busy ? 'Schwärze …' : 'Unwiderruflich schwärzen' }}
+        </UiButton>
+        <UiButton variant="ghost" :disabled="busy" @click="backToCriteria">Suchkriterien ändern</UiButton>
+      </div>
+    </template>
+
+    <UiAlert v-if="result" tone="success" live>{{ result }}</UiAlert>
+    <UiAlert v-if="error" tone="danger" live>{{ error }}</UiAlert>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import FileDrop from '@/components/FileDrop.vue'
+import RedactReview from '@/components/tools/RedactReview.vue'
 import ToolHeader from '@/components/ui/ToolHeader.vue'
 import UiAlert from '@/components/ui/UiAlert.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
-import { useToolRun } from '@/composables/useToolRun'
-import { apiGetJson, apiPost } from '@/lib/api'
-import { setPendingBatchHandoff } from '@/lib/handoff'
+import { useNotifications } from '@/composables/useNotifications'
+import { apiGetJson, apiPost, downloadBlob } from '@/lib/api'
+import { currentFileLimit, currentTotalLimit, formatFileSize, validatePdfFile, validateTotalFileSize } from '@/lib/fileValidation'
+import { takePendingBatchHandoff } from '@/lib/handoff'
+import { selectionPayload, type RedactionArea, type RedactionPlan } from '@/lib/redaction'
 import type { ToolId } from '@/lib/toolCatalog'
 
-const emit = defineEmits<{ (event: 'back'): void; (event: 'switch-tool', id: ToolId): void }>()
+defineEmits<{ (event: 'back'): void; (event: 'switch-tool', id: ToolId): void }>()
 
 interface PatternInfo {
   id: string
@@ -141,76 +153,168 @@ interface PatternInfo {
   hint: string
   ai: boolean
 }
-interface Finding {
-  pattern: string
-  page: number
-  text: string
-}
-interface Preview {
-  total: number
-  by_pattern: Record<string, number>
-  findings: Finding[]
-  truncated: boolean
+
+interface DocState {
+  key: string
+  file: File
+  blob: Blob | null
+  plan: RedactionPlan | null
+  selected: Set<string>
+  areas: RedactionArea[]
+  reviewed: boolean
+  error: string
 }
 
-type RedactMode = 'term' | 'patterns'
+const MAX_TERMS = 200
+const MAX_FILES = 50
+const stepLabels = ['Suchkriterien', 'Fundstellen prüfen', 'Schwärzen']
 
-const { loading, error, done, run } = useToolRun()
-const file = ref<File | null>(null)
-const mode = ref<RedactMode>('term')
-const term = ref('')
+const notifications = useNotifications()
+const incoming = ref<File | null>(null)
+const docs = ref<DocState[]>([])
+// Platz bis zur Gesamtgrenze: FileDrop lehnt größere Dateien dann selbst ab,
+// statt erst „Datei geladen“ zu melden.
+const remainingBytes = computed(() =>
+  docs.value.length ? Math.max(0, currentTotalLimit() - docs.value.reduce((sum, d) => sum + d.file.size, 0)) : undefined,
+)
+const active = ref(0)
+const step = ref<'criteria' | 'review'>('criteria')
+const patterns = ref<PatternInfo[]>([])
+const selectedPatterns = ref<Set<string>>(new Set())
 const terms = ref('')
 const matchCase = ref(false)
 const wholeWord = ref(true)
-const redactions = ref(0)
-const patterns = ref<PatternInfo[]>([])
-const selectedPatterns = ref<Set<string>>(new Set())
-const preview = ref<Preview | null>(null)
+const sanitize = ref(true)
 const confirmed = ref(false)
+const busy = ref(false)
+const progress = ref('')
+const error = ref<string | null>(null)
+const result = ref('')
 const patternLoadError = ref('')
 const nerAvailable = ref(false)
-const redirecting = ref(false)
+let generation = 0
+let controller: AbortController | null = null
+let docCounter = 0
 
-const modes: { value: RedactMode; label: string }[] = [
-  { value: 'term', label: 'Einzelner Begriff' },
-  { value: 'patterns', label: 'Muster und Namensliste' },
-]
-
-const hasSelection = computed(() => selectedPatterns.value.size > 0 || terms.value.trim().length > 0)
-const canRedact = computed(() => mode.value === 'term' ? term.value.trim().length > 0 : hasSelection.value)
-
-watch(file, () => {
-  preview.value = null
-  done.value = false
-  redactions.value = 0
-  confirmed.value = false
-  error.value = null
+const termList = computed(() => [...new Set(terms.value.split('\n').map((t) => t.trim()).filter(Boolean))])
+const termCount = computed(() => termList.value.length)
+const hasCriteria = computed(() => selectedPatterns.value.size > 0 || termCount.value > 0)
+const activeDoc = computed(() => docs.value[active.value] ?? null)
+const unreviewed = computed(() => docs.value.filter((d) => d.plan && !d.reviewed))
+const allReviewed = computed(() => docs.value.length > 0 && docs.value.every((d) => d.plan && d.reviewed))
+const nothingToDo = computed(() => docs.value.every((d) => countSelected(d) === 0 && d.areas.length === 0))
+const criteriaSummary = computed(() => {
+  const parts = patterns.value.filter((p) => selectedPatterns.value.has(p.id)).map((p) => p.label)
+  if (termCount.value) parts.push(`${termCount.value} Begriff(e)`)
+  const options = [matchCase.value ? 'Groß-/Kleinschreibung beachtet' : '', wholeWord.value ? 'ganze Wörter' : 'auch Wortteile', sanitize.value ? 'mit Bereinigung' : 'ohne Bereinigung'].filter(Boolean)
+  return `${parts.join(', ')} (${options.join(', ')})`
 })
+const plansReady = computed(() => docs.value.length > 0 && docs.value.every((d) => d.plan))
+const stepIndex = computed(() => (step.value === 'criteria' ? 0 : allReviewed.value ? 2 : 1))
 
-watch([term, terms, matchCase, wholeWord], () => {
-  preview.value = null
-  confirmed.value = false
-})
-
-/** Mehrere abgelegte Dateien: Schwärzen kann nur eine Datei auf einmal —
- *  die Batch-Verarbeitung übernimmt sie stattdessen samt Operation "redact". */
-function handleMultipleFiles(files: File[]): void {
-  redirecting.value = true
-  setPendingBatchHandoff(files)
-  emit('switch-tool', 'batch')
+function countSelected(doc: DocState): number {
+  if (!doc.plan) return 0
+  return doc.plan.candidates.reduce((n, c) => n + (doc.selected.has(c.id) ? 1 : 0), 0)
 }
 
-function selectMode(nextMode: RedactMode): void {
-  mode.value = nextMode
-  preview.value = null
-  done.value = false
+/** Jede Änderung an Dateien oder Kriterien macht vorhandene Pläne ungültig. */
+function invalidate(): void {
+  generation += 1
+  controller?.abort()
+  controller = null
+  busy.value = false
+  step.value = 'criteria'
   confirmed.value = false
+  result.value = ''
+  error.value = null
+  for (const doc of docs.value) {
+    doc.plan = null
+    doc.selected = new Set()
+    doc.areas = []
+    doc.reviewed = false
+    doc.error = ''
+  }
+}
+
+watch([selectedPatterns, terms, matchCase, wholeWord], invalidate)
+watch(sanitize, () => {
+  confirmed.value = false
+})
+watch(active, () => {
+  confirmed.value = false
+})
+// Jede Änderung an Auswahl oder Bereichen verlangt eine neue Bestätigung.
+// RedactReview ersetzt Set und Liste bei jeder Änderung, das genügt als Signal.
+watch(
+  () => docs.value.map((d) => [d.selected, d.areas, d.reviewed]),
+  () => {
+    confirmed.value = false
+  },
+)
+
+watch(incoming, (file) => {
+  if (!file) return
+  incoming.value = null
+  const total = validateTotalFileSize([...docs.value.map((d) => d.file), file])
+  if (!total.valid) {
+    notifications.error('Datei nicht angenommen', total.message ?? 'Gesamtgröße zu hoch')
+    return
+  }
+  pushDocs([file])
+})
+
+function pushDocs(files: File[]): void {
+  const room = MAX_FILES - docs.value.length
+  if (files.length > room) notifications.warning('Zu viele Dateien', `Höchstens ${MAX_FILES} Dateien je Durchgang.`)
+  const accepted = files.slice(0, Math.max(0, room))
+  // Nur wenn wirklich eine Datei dazukommt, verfallen die bisherigen Pläne.
+  if (!accepted.length) return
+  invalidate()
+  for (const file of accepted) {
+    docCounter += 1
+    docs.value.push({ key: `${docCounter}-${file.name}`, file, blob: file, plan: null, selected: new Set(), areas: [], reviewed: false, error: '' })
+  }
+}
+
+async function addFiles(files: File[]): Promise<void> {
+  const limit = currentFileLimit()
+  const accepted: File[] = []
+  for (const file of files) {
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      notifications.error('Datei nicht angenommen', `${file.name} ist keine PDF-Datei.`)
+      continue
+    }
+    if (file.size > limit) {
+      notifications.error('Datei nicht angenommen', `${file.name} ist ${formatFileSize(file.size)} groß. Zulässig sind maximal ${formatFileSize(limit)}.`)
+      continue
+    }
+    const check = await validatePdfFile(file)
+    if (!check.valid) {
+      notifications.error('Datei nicht angenommen', `${file.name}: ${check.message ?? 'ungültige PDF-Datei'}`)
+      continue
+    }
+    accepted.push(file)
+  }
+  if (!accepted.length) return
+  const total = validateTotalFileSize([...docs.value.map((d) => d.file), ...accepted])
+  if (!total.valid) {
+    notifications.error('Dateien nicht angenommen', total.message ?? 'Gesamtgröße zu hoch')
+    return
+  }
+  pushDocs(accepted)
+}
+
+function removeDoc(index: number): void {
+  docs.value.splice(index, 1)
+  // Die angezeigte Datei bleibt dieselbe, wenn eine Datei davor entfernt wird.
+  if (index < active.value) active.value -= 1
+  if (active.value >= docs.value.length) active.value = Math.max(0, docs.value.length - 1)
+  confirmed.value = false
+  if (!docs.value.length) invalidate()
 }
 
 function selectStandardPatterns(): void {
   selectedPatterns.value = new Set(patterns.value.filter((p) => !p.ai).map((p) => p.id))
-  preview.value = null
-  confirmed.value = false
 }
 
 function togglePattern(id: string): void {
@@ -218,65 +322,119 @@ function togglePattern(id: string): void {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   selectedPatterns.value = next
-  preview.value = null
+}
+
+/** Zurück zu den Kriterien. Auswahl und Bereiche bleiben, bis sich Kriterien oder Dateien ändern. */
+function backToCriteria(): void {
   confirmed.value = false
+  step.value = 'criteria'
 }
 
-function patternLabel(id: string): string {
-  if (id.startsWith('begriff:')) return `Begriff „${id.slice(8)}“`
-  return patterns.value.find((pattern) => pattern.id === id)?.label ?? id
+function message(caught: unknown, fallback: string): string {
+  return caught instanceof Error ? caught.message : fallback
 }
 
-function patternFormData(currentFile: File): FormData {
-  const fd = new FormData()
-  fd.append('file', currentFile)
-  fd.append('patterns', JSON.stringify([...selectedPatterns.value]))
-  fd.append('terms', terms.value)
-  fd.append('case_sensitive', String(matchCase.value))
-  fd.append('whole_word', String(wholeWord.value))
-  return fd
-}
-
-async function runPreview(): Promise<void> {
-  if (!file.value || !hasSelection.value) return
-  loading.value = true
-  error.value = null
-  preview.value = null
-  done.value = false
-  confirmed.value = false
+async function searchAll(): Promise<void> {
+  if (!hasCriteria.value || busy.value) return
+  invalidate()
+  const currentGeneration = generation
+  const requestController = new AbortController()
+  controller = requestController
+  busy.value = true
+  let failed = 0
   try {
-    const fd = patternFormData(file.value)
-    fd.append('preview', 'true')
-    const response = await apiPost('/api/pdf-extras/redact-patterns', fd)
-    preview.value = await response.json() as Preview
-  } catch (caught: unknown) {
-    error.value = caught instanceof Error ? caught.message : 'Suche fehlgeschlagen.'
+    for (const [index, doc] of docs.value.entries()) {
+      progress.value = docs.value.length > 1 ? `${index + 1}/${docs.value.length}` : ''
+      const fd = new FormData()
+      fd.append('file', doc.file)
+      fd.append('patterns', JSON.stringify([...selectedPatterns.value]))
+      fd.append('terms', termList.value.join('\n'))
+      fd.append('case_sensitive', String(matchCase.value))
+      fd.append('whole_word', String(wholeWord.value))
+      try {
+        const response = await apiPost('/api/pdf-extras/redact/plan', fd, { signal: requestController.signal, notifyOnError: false, timeout: 600_000 })
+        const plan = (await response.json()) as RedactionPlan
+        if (currentGeneration !== generation) return
+        doc.plan = plan
+        doc.selected = new Set(plan.candidates.filter((c) => c.selected).map((c) => c.id))
+      } catch (caught: unknown) {
+        if (currentGeneration !== generation) return
+        failed += 1
+        doc.error = message(caught, 'Suche fehlgeschlagen')
+      }
+    }
+    if (failed) {
+      error.value = `${failed} Datei(en) konnten nicht durchsucht werden. Bitte entfernen oder ersetzen.`
+      return
+    }
+    active.value = 0
+    step.value = 'review'
   } finally {
-    loading.value = false
+    if (currentGeneration === generation) {
+      busy.value = false
+      progress.value = ''
+      if (controller === requestController) controller = null
+    }
   }
 }
 
-async function apply(): Promise<void> {
-  if (!file.value || !canRedact.value || !confirmed.value) return
-  const target = file.value.name.replace(/\.pdf$/i, '_geschwaerzt.pdf')
-  let response: Response | null
-  if (mode.value === 'term') {
-    const fd = new FormData()
-    fd.append('file', file.value)
-    fd.append('term', term.value)
-    fd.append('match_case', String(matchCase.value))
-    response = await run('/api/pdf-extras/redact', fd, target)
-  } else {
-    response = await run('/api/pdf-extras/redact-patterns', patternFormData(file.value), target)
-  }
-  if (response) {
-    redactions.value = Number(response.headers.get('X-Redactions') || 0)
-    preview.value = null
+function jsonPart(value: unknown): Blob {
+  return new Blob([JSON.stringify(value)], { type: 'application/json' })
+}
+
+function payloadOf(doc: DocState) {
+  return selectionPayload(doc.plan as RedactionPlan, doc.selected, doc.areas, sanitize.value)
+}
+
+async function applyAll(): Promise<void> {
+  if (!allReviewed.value || nothingToDo.value || !confirmed.value || busy.value) return
+  const currentGeneration = generation
+  const requestController = new AbortController()
+  controller = requestController
+  busy.value = true
+  error.value = null
+  result.value = ''
+  try {
+    let response: Response
+    if (docs.value.length === 1) {
+      const doc = docs.value[0]
+      const fd = new FormData()
+      fd.append('file', doc.file)
+      // Als Datei-Teil: Formularfelder sind serverseitig auf 1 MB begrenzt.
+      fd.append('plan_file', jsonPart(payloadOf(doc)), 'plan.json')
+      response = await apiPost('/api/pdf-extras/redact/apply', fd, { signal: requestController.signal, notifyOnError: false, timeout: 600_000 })
+      if (currentGeneration !== generation) return
+      await downloadBlob(response, doc.file.name.replace(/\.pdf$/i, '') + '_geschwaerzt.pdf')
+      const count = Number(response.headers.get('X-Redactions') || 0)
+      const areas = Number(response.headers.get('X-Redaction-Areas') || 0)
+      const hidden = Number(response.headers.get('X-Redaction-Hidden') || 0)
+      result.value = `${count} Fundstelle(n)${areas ? ` und ${areas} Bereich(e)` : ''} geschwärzt${hidden ? `, davon ${hidden} außerhalb des Seitentexts` : ''}. Nachprüfung bestanden, Datei heruntergeladen.`
+    } else {
+      const fd = new FormData()
+      for (const doc of docs.value) fd.append('files', doc.file)
+      fd.append('plans_file', jsonPart(docs.value.map(payloadOf)), 'plans.json')
+      response = await apiPost('/api/pdf-extras/redact/apply-batch', fd, { signal: requestController.signal, notifyOnError: false, timeout: 900_000 })
+      if (currentGeneration !== generation) return
+      await downloadBlob(response, 'geschwaerzt.zip')
+      result.value = `${docs.value.length} Dateien verarbeitet und nachgeprüft. ZIP mit Protokoll schwaerzungen.txt heruntergeladen.`
+    }
     confirmed.value = false
+  } catch (caught: unknown) {
+    if (currentGeneration !== generation || requestController.signal.aborted) return
+    error.value = message(caught, 'Schwärzung fehlgeschlagen')
+    if (/neu suchen|anderen Datei/i.test(error.value)) error.value += ' Die Fundstellen werden beim nächsten Suchen neu ermittelt.'
+    notifications.error('Schwärzung nicht ausgeliefert', error.value)
+  } finally {
+    if (currentGeneration === generation) {
+      busy.value = false
+      if (controller === requestController) controller = null
+    }
   }
 }
 
 onMounted(async () => {
+  const handoff = takePendingBatchHandoff()
+  if (handoff?.length) void addFiles(handoff)
   try {
     const body = await apiGetJson<{ patterns: PatternInfo[]; ner_available: boolean }>('/api/pdf-extras/redact/patterns')
     patterns.value = body.patterns
@@ -285,5 +443,10 @@ onMounted(async () => {
     patterns.value = []
     patternLoadError.value = 'Vordefinierte Muster konnten nicht geladen werden. Eigene Begriffe bleiben verfügbar.'
   }
+})
+
+onBeforeUnmount(() => {
+  generation += 1
+  controller?.abort()
 })
 </script>
