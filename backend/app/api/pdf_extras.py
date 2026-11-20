@@ -2,15 +2,29 @@
 
 import io
 import json
+import math
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import current_limits
+from app.config import settings
 from app.offload import run_cpu
+from app.services import redaction as redaction_engine
 from app.services.pdf_extras_service import NER_PATTERN_ID, REDACTION_PATTERNS, get_pdf_extras
 
 router = APIRouter(prefix="/pdf-extras", tags=["PDF Extras"])
+
+_PREVIEW_REQUIRED = (
+    "Schwärzen ohne Vorschau ist abgeschaltet. Bitte /redact/plan und "
+    "/redact/apply verwenden (Plan → Auswahl → Anwendung)."
+)
+
+
+def _require_legacy_redaction() -> None:
+    """Alte Endpunkte schwärzen ohne Vorschau — nur auf ausdrücklichen Wunsch."""
+    if not settings.redact_without_preview:
+        raise HTTPException(status_code=410, detail=_PREVIEW_REQUIRED)
 
 
 def _validate_pdf(file: UploadFile, content: bytes):
@@ -248,11 +262,12 @@ async def redact_by_search(
     term: str = Form(..., min_length=1, description="Zu schwärzender Text"),
     match_case: bool = Form(False),
 ):
+    _require_legacy_redaction()
     content = await file.read()
     _validate_pdf(file, content)
     result = await run_cpu(get_pdf_extras().redact_search, content, term, match_case=match_case)
     if not result.success:
-        raise HTTPException(status_code=500, detail=result.error)
+        raise HTTPException(status_code=_redaction_status(result.error), detail=result.error)
     return _pdf_response(
         result.file_content,
         f"{_name(file)}_geschwaerzt.pdf",
@@ -291,50 +306,263 @@ def redact_by_patterns(
     """
     content = file.file.read()
     _validate_pdf(file, content)
-    try:
-        pattern_list = json.loads(patterns)
-        assert isinstance(pattern_list, list)
-    except (json.JSONDecodeError, AssertionError):
-        raise HTTPException(status_code=400, detail="patterns muss eine JSON-Liste sein")
-    unknown = [p for p in pattern_list if p not in REDACTION_PATTERNS]
-    if unknown:
-        raise HTTPException(status_code=400, detail=f"Unbekannte Muster: {', '.join(unknown)}")
-    term_list = [t.strip() for t in terms.splitlines() if t.strip()][:200]
-    if not pattern_list and not term_list:
-        raise HTTPException(status_code=400, detail="Mindestens ein Muster oder Begriff nötig")
-
+    criteria = _criteria(patterns, terms, case_sensitive, whole_word)
     service = get_pdf_extras()
-    if NER_PATTERN_ID in pattern_list and not service.ner_available():
-        raise HTTPException(
-            status_code=503,
-            detail="KI-Namenserkennung nicht verfügbar (spaCy-Modell fehlt)",
-        )
     if preview:
-        found = service.find_pattern_matches(
-            content, pattern_list, term_list, case_sensitive, whole_word
-        )
-        if found is None:
-            raise HTTPException(status_code=503, detail="PyMuPDF nicht verfügbar")
-        findings, counts = found
+        plan = _plan_or_error(service, content, criteria)
+        findings = [
+            {
+                "pattern": c["source"],
+                "page": c["page"],
+                "text": c["text"],
+                "rect": c["pdf_rect"],
+                "location": c["location"],
+            }
+            for c in plan["candidates"]
+        ]
         return {
-            "total": len(findings),
-            "by_pattern": counts,
-            # Für die Sichtprüfung: Fundstellen mit Seite und Fundtext
-            "findings": findings[:500],
-            "truncated": len(findings) > 500,
+            "total": plan["total"],
+            "by_pattern": plan["by_source"],
+            "findings": findings,
+            "truncated": False,
+            "pages_without_text": plan["pages_without_text"],
         }
 
+    _require_legacy_redaction()
     result = service.redact_patterns(
-        content, pattern_list, term_list, case_sensitive, whole_word
+        content,
+        list(criteria.patterns),
+        list(criteria.terms),
+        criteria.case_sensitive,
+        criteria.whole_word,
     )
     if not result.success:
-        status = 422 if "Keine Fundstellen" in (result.error or "") else 500
-        raise HTTPException(status_code=status, detail=result.error)
+        raise HTTPException(status_code=_redaction_status(result.error), detail=result.error)
     meta = result.metadata or {}
     return _pdf_response(
         result.file_content,
         f"{_name(file)}_geschwaerzt.pdf",
         headers={"X-Redactions": str(meta.get("redactions", 0))},
+    )
+
+
+# ── Schwärzung mit Pflicht-Vorschau ───────────────────────────
+
+
+def _redaction_status(error: str | None) -> int:
+    text = error or ""
+    if "Keine Fundstellen" in text or "Nachprüfung" in text:
+        return 422
+    if "nicht verfügbar" in text:
+        return 503
+    if any(k in text for k in ("keine lesbare PDF", "passwortgeschützt", "keine Seiten", "Höchstens", "Unbekannte Muster", "Begriffe dürfen")):
+        return 400
+    return 500
+
+
+def _criteria(patterns: str, terms: str, case_sensitive: bool, whole_word: bool):
+    try:
+        pattern_list = json.loads(patterns)
+        assert isinstance(pattern_list, list) and all(isinstance(p, str) for p in pattern_list)
+    except (json.JSONDecodeError, AssertionError):
+        raise HTTPException(status_code=400, detail="patterns muss eine JSON-Liste sein")
+    try:
+        criteria = redaction_engine.Criteria.from_input(
+            pattern_list, terms.splitlines(), case_sensitive, whole_word
+        )
+    except redaction_engine.RedactionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not criteria.patterns and not criteria.terms:
+        raise HTTPException(status_code=400, detail="Mindestens ein Muster oder Begriff nötig")
+    if NER_PATTERN_ID in criteria.patterns and not get_pdf_extras().ner_available():
+        raise HTTPException(
+            status_code=503, detail="KI-Namenserkennung nicht verfügbar (spaCy-Modell fehlt)"
+        )
+    return criteria
+
+
+def _plan_or_error(service, content: bytes, criteria) -> dict:
+    try:
+        return service.redaction_plan(content, criteria)
+    except redaction_engine.RedactionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# Die Oberfläche schickt nur Kennungen und Bereiche; 45 000 Kennungen sind
+# unter 1 MB. 8 MB lassen Luft, ohne den Speicher je Anfrage aufzublähen.
+_MAX_PLAN_BYTES = 8 * 1024 * 1024
+
+
+def _reject_constant(value: str):
+    raise ValueError(f"{value} ist nicht erlaubt")
+
+
+def _finite_float(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("Zahl außerhalb des Wertebereichs")
+    return number
+
+
+def _json_field(text: str | None, upload: UploadFile | None, name: str):
+    """JSON aus einem Formularfeld oder — für große Pläne — aus einem
+    Datei-Teil lesen. Starlette begrenzt reine Formularfelder auf 1 MB."""
+    if upload is not None:
+        raw = upload.file.read(_MAX_PLAN_BYTES + 1)
+        if len(raw) > _MAX_PLAN_BYTES:
+            raise HTTPException(status_code=400, detail=f"{name} ist zu groß")
+        text = raw.decode("utf-8", errors="replace")
+    if text is None:
+        raise HTTPException(status_code=400, detail=f"{name} fehlt")
+    try:
+        return json.loads(text, parse_constant=_reject_constant, parse_float=_finite_float)
+    except (ValueError, RecursionError):  # JSONDecodeError ist ein ValueError
+        raise HTTPException(status_code=400, detail=f"{name} muss gültiges JSON sein")
+
+
+def _selection(payload):
+    try:
+        return redaction_engine.Selection.from_dict(payload)
+    except redaction_engine.RedactionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def _apply_or_error(service, content: bytes, selection) -> tuple[bytes, dict]:
+    try:
+        return service.redaction_apply(content, selection)
+    except redaction_engine.RedactionStaleError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except redaction_engine.RedactionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except redaction_engine.RedactionVerificationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/redact/plan")
+def redaction_plan(
+    file: UploadFile = File(...),
+    patterns: str = Form("[]", description='JSON-Liste, z.B. ["iban","email"]'),
+    terms: str = Form("", description="Begriffe/Namen, einer pro Zeile"),
+    case_sensitive: bool = Form(False),
+    whole_word: bool = Form(True),
+):
+    """Schritt 1: Fundstellen suchen, nichts verändern.
+
+    Liefert jede Fundstelle mit fester Kennung, Rechteck (0…1, Anzeige),
+    Fundtext und Fundort — auch in Metadaten, Lesezeichen, Kommentaren,
+    Links, Formularfeldern und Anhängen. Die Datei wird nicht gespeichert.
+    """
+    content = file.file.read()
+    _validate_pdf(file, content)
+    criteria = _criteria(patterns, terms, case_sensitive, whole_word)
+    return _plan_or_error(get_pdf_extras(), content, criteria)
+
+
+@router.post("/redact/apply")
+def redaction_apply(
+    file: UploadFile = File(...),
+    plan: str | None = Form(
+        None,
+        description=(
+            'JSON: {"sha256", "criteria", "selected": [Kennungen], '
+            '"areas": [{"page", "rect": [x0,y0,x1,y1]}], "sanitize": true}'
+        ),
+    ),
+    plan_file: UploadFile | None = File(None, description="Wie plan, als Datei-Teil (große Pläne)"),
+):
+    """Schritt 2: genau die bestätigte Auswahl schwärzen.
+
+    Die Datei muss dieselbe sein wie bei der Vorschau (SHA-256). Ist nach
+    dem Schwärzen noch eine ausgewählte Fundstelle lesbar, wird keine
+    Datei ausgeliefert (HTTP 422).
+    """
+    content = file.file.read()
+    _validate_pdf(file, content)
+    selection = _selection(_json_field(plan, plan_file, "plan"))
+    out, report = _apply_or_error(get_pdf_extras(), content, selection)
+    return _pdf_response(
+        out,
+        f"{_name(file)}_geschwaerzt.pdf",
+        headers={
+            "X-Redactions": str(report["redactions"]),
+            "X-Redaction-Areas": str(report["areas"]),
+            "X-Redaction-Hidden": str(report["hidden_removed"]),
+            "X-Redaction-Verified": "true",
+        },
+    )
+
+
+@router.post("/redact/apply-batch")
+def redaction_apply_batch(
+    files: list[UploadFile] = File(...),
+    plans: str | None = Form(None, description="JSON-Liste mit je einem Plan pro Datei, gleiche Reihenfolge"),
+    plans_file: UploadFile | None = File(None, description="Wie plans, als Datei-Teil (große Pläne)"),
+):
+    """Mehrere geprüfte Dateien schwärzen — Ergebnis als ZIP mit Protokoll.
+
+    Jede Datei braucht ihren eigenen bestätigten Plan. Schlägt eine Datei
+    fehl, wird keine Datei ausgeliefert: Teilweise geschwärzte Stapel sind
+    leicht zu übersehen.
+    """
+    import zipfile
+
+    if not files or len(files) > 50:
+        raise HTTPException(status_code=400, detail="1 bis 50 Dateien")
+    plan_list = _json_field(plans, plans_file, "plans")
+    if not isinstance(plan_list, list):
+        raise HTTPException(status_code=400, detail="plans muss eine JSON-Liste sein")
+    if len(plan_list) != len(files):
+        raise HTTPException(status_code=400, detail="Je Datei genau ein Plan")
+    limits = current_limits()
+    service = get_pdf_extras()
+    total = 0
+    log: list[str] = []
+    buf = io.BytesIO()
+    names: set[str] = set()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f, raw_plan in zip(files, plan_list):
+            content = f.file.read()
+            total += len(content)
+            if total > limits.max_total:
+                raise HTTPException(
+                    status_code=400, detail=f"Gesamtgröße überschreitet {limits.max_total_mb} MB"
+                )
+            _validate_pdf(f, content)
+            try:
+                selection = redaction_engine.Selection.from_dict(raw_plan)
+            except redaction_engine.RedactionError as e:
+                raise HTTPException(status_code=400, detail=f"{f.filename}: {e}")
+            nothing = not selection.selected and not selection.areas
+            if nothing and not selection.sanitize:
+                out, entry, suffix = content, "nichts ausgewählt, unverändert übernommen", ""
+            else:
+                # Auch ohne Auswahl wird bereinigt (Metadaten, Anhänge …) und nachgeprüft.
+                try:
+                    out, report = _apply_or_error(service, content, selection)
+                except HTTPException as e:
+                    raise HTTPException(status_code=e.status_code, detail=f"{f.filename}: {e.detail}")
+                suffix = "_bereinigt" if nothing else "_geschwaerzt"
+                entry = (
+                    "nichts ausgewählt, nur bereinigt"
+                    if nothing
+                    else f"{report['redactions']} Fundstelle(n), {report['areas']} Bereich(e), "
+                    f"{report['hidden_removed']} versteckte Inhalte entfernt, {report['deselected']} abgewählt"
+                )
+                if report["sanitized"]:
+                    entry += f"; bereinigt: {', '.join(report['sanitized'])}"
+            stem = _safe_name(_name(f)) + suffix
+            name, n = f"{stem}.pdf", 1
+            while name in names:
+                name = f"{stem}_{n}.pdf"
+                n += 1
+            names.add(name)
+            zf.writestr(name, out)
+            log.append(f"{_safe_name(f.filename or name)} → {name}: {entry}")
+        zf.writestr("schwaerzungen.txt", "\n".join(log) + "\n")
+    return StreamingResponse(
+        io.BytesIO(buf.getvalue()),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="geschwaerzt.zip"'},
     )
 
 
@@ -478,6 +706,13 @@ def batch_apply(
         raise HTTPException(status_code=400, detail="params muss ein JSON-Objekt sein")
 
     if operation == "redact":
+        _require_legacy_redaction()
+        batch_terms = [t for t in str(params_dict.get("terms", "")).splitlines() if t.strip()]
+        if len(batch_terms) > redaction_engine.MAX_TERMS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Höchstens {redaction_engine.MAX_TERMS} Begriffe je Durchgang",
+            )
         batch_patterns = params_dict.get("patterns") or []
         unknown = [p for p in batch_patterns if p not in REDACTION_PATTERNS]
         if unknown:

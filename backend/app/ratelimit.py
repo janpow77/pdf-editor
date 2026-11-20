@@ -20,6 +20,8 @@ prüfen dagegen immer gegen die Datenbank.
 """
 
 import json
+import math
+import time
 
 from limits import parse_many
 from limits.storage import MemoryStorage
@@ -110,6 +112,14 @@ class RateTierMiddleware:
                 break
 
         if blocked is not None:
+            # Retry-After: Sekunden, bis das gleitende Fenster wieder Platz hat.
+            # Die Oberfläche wartet damit bei Serienanfragen (Schwärzen-Plan je
+            # Datei), statt die übrigen Dateien als fehlgeschlagen zu melden.
+            try:
+                reset = _checker.get_window_stats(blocked, key).reset_time
+                retry_after = max(1, math.ceil(reset - time.time()))
+            except Exception:
+                retry_after = 60
             body = json.dumps(
                 {
                     "detail": (
@@ -125,6 +135,7 @@ class RateTierMiddleware:
                     "headers": [
                         (b"content-type", b"application/json"),
                         (b"content-length", str(len(body)).encode()),
+                        (b"retry-after", str(retry_after).encode()),
                     ],
                 }
             )

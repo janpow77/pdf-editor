@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     # die Lizenzseite weist ohne diesen Wert sichtbar darauf hin.
     source_url: str = ""
 
+    # Schwärzen ohne Vorschau über die alten Endpunkte /redact,
+    # /redact-patterns (ohne preview) und /batch mit operation=redact.
+    # Standard: aus — die Oberfläche nutzt nur noch Plan → Auswahl → Anwendung.
+    # Abgeschaltet antworten die Endpunkte mit HTTP 410.
+    redact_without_preview: bool = False
+
     # Cloudflare Turnstile (optional): beide Keys gesetzt = Registrierung und
     # Mailversand verlangen ein gültiges Turnstile-Token
     turnstile_site_key: str = ""

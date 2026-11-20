@@ -8,7 +8,7 @@
         @drag-active="isDragging = $event"
         @drop="onDroppedFiles"
       >
-        <input ref="input" type="file" :accept="accept" class="hidden" @change="onSelect" />
+        <input ref="input" type="file" :accept="accept" :multiple="multipleHandler" class="hidden" @change="onSelect" />
 
         <div v-if="!modelValue">
           <div class="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-primary-50 text-2xl text-primary-700 shadow-sm dark:bg-primary-500/15 dark:text-primary-300" aria-hidden="true">⇧</div>
@@ -46,11 +46,15 @@ const props = withDefaults(
     label?: string
     /** Optionales werkzeugspezifisches Limit, z. B. 10 MB für Wasserzeichenbilder. */
     maxBytes?: number
+    /** Ergänzt die Meldung, wenn maxBytes die engere Grenze ist (z. B. Restplatz). */
+    maxBytesNote?: string
+    /** Gesetzt, wenn gerade keine Datei angenommen wird (z. B. Liste voll). */
+    rejectReason?: string
     /** Übergibt mehrere abgelegte Dateien per 'multiple'-Event an den Aufrufer,
      *  statt der Standardmeldung "nur eine Datei möglich". */
     multipleHandler?: boolean
   }>(),
-  { accept: '.pdf', label: 'PDF', maxBytes: undefined, multipleHandler: false },
+  { accept: '.pdf', label: 'PDF', maxBytes: undefined, maxBytesNote: undefined, rejectReason: undefined, multipleHandler: false },
 )
 const emit = defineEmits<{
   (event: 'update:modelValue', file: File | null): void
@@ -97,13 +101,17 @@ async function acceptFile(file: File): Promise<void> {
   const generation = ++validationGeneration
   validationError.value = ''
 
-  const effectiveLimit = Math.min(currentFileLimit(), props.maxBytes ?? Number.POSITIVE_INFINITY)
+  const fileLimit = currentFileLimit()
+  const effectiveLimit = Math.min(fileLimit, props.maxBytes ?? Number.POSITIVE_INFINITY)
+  const note = props.maxBytesNote && effectiveLimit < fileLimit ? ` (${props.maxBytesNote})` : ''
   let nextError = ''
 
-  if (!matches(file)) {
+  if (props.rejectReason) {
+    nextError = props.rejectReason
+  } else if (!matches(file)) {
     nextError = `Dieser Dateityp wird nicht unterstützt. Zulässig: ${props.accept}.`
   } else if (file.size > effectiveLimit) {
-    nextError = `${file.name} ist ${formatFileSize(file.size)} groß. Zulässig sind maximal ${formatFileSize(effectiveLimit)}.`
+    nextError = `${file.name} ist ${formatFileSize(file.size)} groß. Zulässig sind maximal ${formatFileSize(effectiveLimit)}${note}.`
   } else if (acceptsPdf()) {
     const result = await validatePdfFile(file)
     if (!result.valid) nextError = result.message ?? 'Die PDF-Datei ist ungültig.'
@@ -125,9 +133,13 @@ async function acceptFile(file: File): Promise<void> {
 
 function onSelect(event: Event): void {
   const element = event.target as HTMLInputElement
-  const file = element.files?.[0]
+  const files = Array.from(element.files ?? [])
   element.value = ''
-  if (file) void acceptFile(file)
+  if (files.length > 1 && props.multipleHandler) {
+    emit('multiple', files)
+    return
+  }
+  if (files[0]) void acceptFile(files[0])
 }
 
 function onDroppedFiles(files: File[]): void {
