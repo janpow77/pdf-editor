@@ -362,11 +362,24 @@ Die Ergebnis-PDFs wurden mit PyMuPDF nachgeprüft: Ausgewählte Texte fehlen, ab
 | E-4 | Eine Mehrfachauswahl über der Gesamtgröße wurde ganz abgelehnt. | behoben | Passende Dateien werden übernommen, nur die übrigen werden mit Namen abgelehnt. |
 | E-5 | Nach einem 422 blieben die alten Pläne stehen, die Meldung sprach aber von neuer Suche. | behoben | Pläne werden dann verworfen, die Ansicht springt zu den Suchkriterien. |
 
+### 11.3 KI-Namenserkennung in Tabellen (20.11.2026)
+
+An einer aus Excel erzeugten Anwesenheitsliste (erfundene Namen) fand die KI-Namenserkennung allein nur einen Teil der Namen.
+
+| Nr. | Befund | Stand | Lösung |
+|---|---|---|---|
+| T-1 | Im Seitentext zog spaCy Namen aus Nachbarzellen zu einem Treffer zusammen oder erkannte sie nicht. | behoben | Treffer werden an Zellgrenzen geteilt. Jeder kurze Zellinhalt (höchstens sechs Wörter) wird zusätzlich einzeln erkannt. |
+| T-2 | „Nachname, Vorname“ wurde oft nicht oder als Ort erkannt. | behoben | Die Listenform zählt, wenn die KI die Umstellung „Vorname Nachname“ als Person erkennt. |
+| T-3 | Allein stehende Nachnamen („Reiter“) wurden nie erkannt. | behoben | Jeder erkannte Namensbestandteil wird im ganzen Dokument wortgenau nachgesucht, ohne Wochentage, Monate und Titel. Ein Nachname, der nirgends in erkennbarer Form vorkommt, bleibt unerkannt. |
+| T-4 | Mit „Prof. Dr.“ davor erkannte spaCy keinen Namen. | behoben | Führende Titel werden vor der Einzelerkennung abgeschnitten; der Titel bleibt lesbar. |
+
+Zeilen eines Absatzes werden bewusst nicht einzeln erkannt: Ohne Satzzusammenhang meldete spaCy dort „Förderantrag“ als Namen. Ergebnis: Die Anwesenheitsliste wird vollständig erkannt, im Fließtext-Korpus bleibt die Trefferquote gleich und es gibt keine neuen Fehltreffer. 80 Seiten brauchen 1,4 s statt 0,8 s. Vier neue Tests decken T-1 bis T-4 ab, ein fünfter sichert, dass der zusätzliche Erkennungsdurchgang die CropBox wieder herstellt und Seitengröße und Koordinaten unverändert bleiben.
+
 Nicht geprüft wurden der angemeldete Zustand mit höheren Grenzen, ein echter 422 des Servers (nur simuliert, die Fälle sind im Backend getestet), die Übergabe aus der Werkbank und das Zeichnen per Touch.
 
 Die zwölf neuen Tests zu H-N1 und M-N1 bis M-N6 (ohne M-N7, dessen Korrektur in der Schnittstelle liegt) schlagen auf dem Stand vor der zweiten Korrektur fehl, von den zehn Tests zu N3 sieben auf dem Stand davor; die übrigen drei sind Gegenproben.
 
-**Testlauf 20.11.2026:** 344 Backend-Tests bestanden, alle Schwärzungstests eingeschlossen. Zwei Tests sind übersprungen, weil `tabula` Java braucht und Java hier fehlt. Fünf Tests schlagen in dieser Umgebung fehl, keiner betrifft die Schwärzung:
+**Testlauf 20.11.2026:** 349 Backend-Tests bestanden, alle Schwärzungstests eingeschlossen. Zwei Tests sind übersprungen, weil `tabula` Java braucht und Java hier fehlt. Fünf Tests schlagen in dieser Umgebung fehl, keiner betrifft die Schwärzung:
 
 - vier in `test_form_advanced` (Formularberechnung), schon vor diesen Änderungen rot;
 - `test_scan_optimize`, weil Tesseract hier nicht installiert ist.

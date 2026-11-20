@@ -971,6 +971,166 @@ def _cleanup_info(doc: Any) -> dict[str, Any]:
 
 NerFn = Callable[[list[str]], list[list[tuple[int, int]]]]
 
+# Namensbestandteil: großer Anfangsbuchstabe, auch mit Bindestrich („Meyer-Lüdenscheidt“).
+_NAME_PART = r"[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)*"
+_NAME_TOKEN = re.compile(_NAME_PART)
+# Titel vor einem Namen („Prof. Dr.“, „Dipl.-Ing.“). Mit Titel davor erkennt
+# die KI „Prof. Dr. Rainer Zufall“ nicht als Person, ohne Titel schon.
+_TITLES = re.compile(r"(?:(?:Prof|Dr|Dipl)\.(?:-[A-Za-zäöü]+\.)?\s*)+")
+# Listenform „Nachname, Vorname“ am Zeilenanfang, auch mit Titel davor.
+_LIST_NAME = re.compile(
+    rf"(?:{_TITLES.pattern})?(?P<last>{_NAME_PART}),[ \t]*(?P<first>{_NAME_PART})(?![\w-])"
+)
+# Wörter, die die KI gelegentlich als Namen meldet, die aber nie im ganzen
+# Dokument nachgesucht werden sollen.
+_NOT_NAMES = frozenset(
+    "Herr Frau Prof Dipl Montag Dienstag Mittwoch Donnerstag Freitag Samstag Sonntag "
+    "Januar Februar März April Mai Juni Juli August September Oktober November Dezember".split()
+)
+_NAME_EDGE = " \t,;:()[]/"
+# Abschnitte zwischen harten Grenzen bis zu dieser Wortzahl prüft die KI
+# zusätzlich für sich (Tabellenzellen, Listeneinträge). Ein Absatz ist ein
+# langer Abschnitt; Teile davon ohne Satzzusammenhang ergäben Fehltreffer
+# wie „Förderantrag“.
+_SHORT_SEGMENT_WORDS = 6
+
+
+def _hard_parts(text: str, start: int, end: int) -> list[tuple[int, int]]:
+    """Eine KI-Fundstelle an harten Grenzen (Zelle, Spalte, Absatz) teilen.
+
+    spaCy fasst in Tabellen Namen aus benachbarten Zellen zu einem zusammen
+    („Jan Reiter Stahl“). Über einen gewöhnlichen Zeilenumbruch im Fließtext
+    darf ein Name dagegen laufen.
+    """
+    parts: list[tuple[int, int]] = []
+    pos = start
+    while pos < end:
+        stop = text.find(_HARD, pos, end)
+        stop = end if stop < 0 else stop
+        a, b = pos, stop
+        while a < b and text[a] in _NAME_EDGE:
+            a += 1
+        while b > a and text[b - 1] in _NAME_EDGE:
+            b -= 1
+        if sum(ch.isalpha() for ch in text[a:b]) >= 2:
+            parts.append((a, b))
+        pos = stop + 1
+    return parts
+
+
+def _short_segments(text: str) -> list[tuple[int, int]]:
+    """Kurze Abschnitte zwischen harten Grenzen, ohne Leerraum am Rand."""
+    segments: list[tuple[int, int]] = []
+    pos = 0
+    while pos <= len(text):
+        stop = text.find(_HARD, pos)
+        stop = len(text) if stop < 0 else stop
+        a, b = pos, stop
+        while a < b and text[a].isspace():
+            a += 1
+        while b > a and text[b - 1].isspace():
+            b -= 1
+        if b > a and len(text[a:b].split()) <= _SHORT_SEGMENT_WORDS:
+            segments.append((a, b))
+        pos = stop + 1
+    return segments
+
+
+def _line_segments(pt: _PageText) -> list[tuple[int, int]]:
+    """Zeichenbereiche der einzelnen Textzeilen, ohne Leerraum am Rand."""
+    segments: list[tuple[int, int]] = []
+    i, n = 0, len(pt.lines)
+    while i < n:
+        line = pt.lines[i]
+        j = i
+        while j < n and pt.lines[j] == line:
+            j += 1
+        if line >= 0:
+            a, b = i, j
+            while a < b and pt.text[a].isspace():
+                a += 1
+            while b > a and pt.text[b - 1].isspace():
+                b -= 1
+            if b > a:
+                segments.append((a, b))
+        i = j
+    return segments
+
+
+def _ner_document(doc: Any, ner: NerFn) -> tuple[list[list[tuple[int, int]]], re.Pattern[str] | None]:
+    """KI-Namenserkennung über das ganze Dokument (erster Durchgang).
+
+    Je Seite werden drei Quellen zusammengeführt:
+    - der Seitentext im Zusammenhang (Namen über Zeilenumbrüche hinweg),
+      geteilt an harten Grenzen;
+    - jeder kurze Abschnitt für sich (Tabellenzellen, Listeneinträge),
+      ohne Titel am Anfang;
+    - die Listenform „Nachname, Vorname“, wenn die KI „Vorname Nachname“
+      als Person erkennt.
+
+    Rückgabe: Fundstellen je Seite und ein Ausdruck für alle dabei erkannten
+    Namensbestandteile. Damit sucht der zweite Durchgang jeden einmal
+    erkannten Namen auf allen Seiten nach, etwa einen allein stehenden
+    Nachnamen in einer Tabelle.
+    """
+    per_page: list[list[tuple[int, int]]] = []
+    tokens: set[str] = set()
+    batch: list[_PageText] = []
+
+    def flush() -> None:
+        jobs: list[str] = []
+        layout = []
+        for pt in batch:
+            full = len(jobs)
+            jobs.append(pt.text.replace(_HARD, "\n"))
+            lines: list[tuple[int, int]] = []
+            listed: list[tuple[int, int, int]] = []
+            for a, b in _short_segments(pt.text):
+                title = _TITLES.match(pt.text, a, b)
+                if title:
+                    a = title.end()
+                    if a >= b:
+                        continue
+                lines.append((a, len(jobs)))
+                jobs.append(pt.text[a:b])
+            for a, b in _line_segments(pt):
+                m = _LIST_NAME.match(pt.text, a, b)
+                if m and m.group("last") not in _NOT_NAMES and m.group("first") not in _NOT_NAMES:
+                    listed.append((m.start("last"), m.end("first"), len(jobs)))
+                    jobs.append(f"{m.group('first')} {m.group('last')}")
+            layout.append((pt, full, lines, listed))
+        results = list(ner(jobs)) if jobs else []
+        for pt, full, lines, listed in layout:
+            spans: set[tuple[int, int]] = set()
+            for s, e in results[full]:
+                spans.update(_hard_parts(pt.text, s, e))
+            for offset, k in lines:
+                for s, e in results[k]:
+                    spans.update(_hard_parts(pt.text, offset + s, offset + e))
+            for s, e, k in listed:
+                if any(a == 0 and b == len(jobs[k]) for a, b in results[k]):
+                    spans.add((s, e))
+            per_page.append(sorted(spans))
+            for s, e in spans:
+                tokens.update(
+                    t for t in _NAME_TOKEN.findall(pt.text[s:e]) if len(t) >= 3 and t not in _NOT_NAMES
+                )
+        batch.clear()
+
+    for page in doc:
+        original_crop = _expose_full_page(page)
+        batch.append(_page_text(page))
+        if original_crop is not None:
+            # build_plan berechnet Seitengröße und Koordinaten aus der CropBox.
+            page.set_cropbox(original_crop)
+        if len(batch) >= 16:
+            flush()
+    flush()
+    if not tokens:
+        return per_page, None
+    alternatives = "|".join(re.escape(t) for t in sorted(tokens, key=lambda t: (-len(t), t)))
+    return per_page, re.compile(rf"(?<![\w-])(?:{alternatives})(?![\w-])")
+
 
 def build_plan(data: bytes, criteria: Criteria, ner: NerFn | None = None) -> Plan:
     """Alle Fundstellen ermitteln — Grundlage für Vorschau und Anwendung."""
@@ -982,16 +1142,10 @@ def build_plan(data: bytes, criteria: Criteria, ner: NerFn | None = None) -> Pla
         _reveal_layers(doc)  # Text ausgeblendeter Ebenen mitsuchen; doc wird verworfen
         pages: list[PageInfo] = []
         candidates: list[Candidate] = []
-        use_ner = NER_PATTERN_ID in criteria.patterns
-        batch: list[tuple[int, _PageText, _ViewTransform]] = []
-
-        def flush() -> None:
-            spans_per_page: list[list[tuple[int, int]] | None] = [None] * len(batch)
-            if use_ner and ner is not None and batch:
-                spans_per_page = list(ner([pt.text.replace(_HARD, "\n") for _, pt, _ in batch]))
-            for (pno, pt, tr), spans in zip(batch, spans_per_page):
-                candidates.extend(_scan_page_text(pno, pt, rules, tr, spans))
-            batch.clear()
+        ner_pages: list[list[tuple[int, int]]] = []
+        ner_names: re.Pattern[str] | None = None
+        if NER_PATTERN_ID in criteria.patterns and ner is not None:
+            ner_pages, ner_names = _ner_document(doc, ner)
 
         for page in doc:
             transform = _ViewTransform(page)
@@ -1002,10 +1156,13 @@ def build_plan(data: bytes, criteria: Criteria, ner: NerFn | None = None) -> Pla
             if not info.has_text:
                 info.image_only = bool(page.get_images(full=False)) or bool(page.get_drawings()[:1])
             pages.append(info)
-            batch.append((page.number, pt, transform))
-            if len(batch) >= 16:
-                flush()
-        flush()
+            spans: list[tuple[int, int]] | None = None
+            if ner_pages:
+                found = set(ner_pages[page.number])
+                if ner_names is not None:
+                    found.update(m.span() for m in ner_names.finditer(pt.text))
+                spans = sorted(found)
+            candidates.extend(_scan_page_text(page.number, pt, rules, transform, spans))
         candidates.extend(_scan_hidden(doc, rules))
         cleanup = _cleanup_info(doc)
     finally:

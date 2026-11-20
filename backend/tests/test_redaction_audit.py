@@ -1257,3 +1257,110 @@ def test_a_n3_7_layer_state_restored_exactly():
 
         assert norm(after) == norm(before) and len(after) == 1
         assert norm([d.xref_get_key(d.pdf_catalog(), "OCProperties/D")[1]]) == norm([cat_before])
+
+
+# ── KI-Namen in Tabellen (Anwesenheitsliste, 20.11.2026) ───────
+
+_TABLE_ROWS = [
+    ["KW 45", "Montag, 02.11.", "Dienstag, 03.11.", "Mittwoch, 04.11."],
+    ["Z", "Atreides, Paul", "Atreides, Paul", "Atreides, Paul"],
+    ["Z 6", "Rabenstich (VG Z 9)", "Rabenstich, Romina", "Heide, Erika (NM)"],
+    ["", "Prof. Dr. Rainer Zufall, Z 6", "Gruber, Toni", "Rabenstich, Romina"],
+    ["", "Heide, Erika", "Heide, Erika", "Stahl, Armin (LÜKEX)"],
+    ["", "Gruber, Toni", "Reiter", "Reiter"],
+    ["Z 7", "Reiter, Jan", "", ""],
+]
+_TABLE_NAMES = "Atreides Paul Rabenstich Romina Heide Erika Rainer Zufall Gruber Toni Stahl Armin Reiter Jan".split()
+
+
+def _table_pdf() -> bytes:
+    """Zellen zeilenweise wie in einer aus Excel erzeugten PDF."""
+
+    def build(doc, page):
+        for r, row in enumerate(_TABLE_ROWS):
+            for c, cell in enumerate(row):
+                if cell:
+                    page.insert_text((30 + c * 140, 80 + r * 16), cell, fontsize=8)
+
+    return _pdf(build)
+
+
+@ner
+def test_ner_table_finds_every_name(client):
+    """Anwesenheitsliste: Namen als „Nachname, Vorname“, allein stehende
+    Nachnamen und Namen mit Zusätzen werden alle gefunden, Kopfzeile und
+    Zusätze bleiben stehen; Namen benachbarter Zellen werden nicht zu einem
+    zusammengezogen. Der allein stehende Nachname „Reiter“ wird über
+    „Reiter, Jan“ gefunden."""
+    plan = plan_of(client, _table_pdf(), ["ki_namen"])
+    texts = [c["text"] for c in plan["candidates"]]
+    covered = " ".join(texts)
+    assert [n for n in _TABLE_NAMES if n not in covered] == []
+    for kept in ("Montag", "Dienstag", "KW 45", "LÜKEX", "Prof", "Z 6"):
+        assert kept not in covered, kept
+    assert all(len(t.split()) <= 3 for t in texts), texts
+
+
+@ner
+def test_ner_no_false_positives_in_narrow_paragraph():
+    """Kurze Abschnitte prüft die KI einzeln, Zeilen eines Absatzes nicht:
+    Sonst meldete sie im schmalen Satzspiegel „Förderantrag“ als Namen."""
+    text, names = kc.ner_text()
+    parts = {p for n in names for p in n.split()}
+    for width in (480, 260, 160):
+        found = [f["text"] for f in findings(kc.wrapped_paragraph_pdf(text, width=width), ["ki_namen"])]
+        assert [t for t in found if not any(p in t for p in parts)] == [], width
+
+
+def test_ner_name_found_once_is_searched_everywhere():
+    """Ein einmal erkannter Name wird auf allen Seiten nachgesucht, auch wo
+    die KI ihn allein nicht erkennt (allein stehender Nachname)."""
+    from app.services import redaction as R
+
+    def fake_ner(texts):
+        # erkennt „Reiter“ nur im Satzzusammenhang
+        out = []
+        for t in texts:
+            out.append([(m.start(), m.end()) for m in __import__("re").finditer("Reiter", t)] if "sagte" in t else [])
+        return out
+
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), "Das sagte Reiter gestern.", fontsize=11)
+    page = doc.new_page()
+    page.insert_text((72, 72), "Reiter", fontsize=11)
+    page.insert_text((300, 72), "Reitergruppe", fontsize=11)
+    pdf = doc.tobytes()
+    crit = R.Criteria(patterns=("ki_namen",), terms=(), case_sensitive=False, whole_word=True)
+    plan = R.build_plan(pdf, crit, fake_ner)
+    by_page = {}
+    for c in plan.candidates:
+        by_page.setdefault(c.page, []).append(c.text)
+    assert by_page == {1: ["Reiter"], 2: ["Reiter"]}
+
+
+def test_ner_span_split_at_cell_borders():
+    from app.services import redaction as R
+
+    text = "Jan\x00Reiter\x00Stahl, Armin"
+    parts = [text[a:b] for a, b in R._hard_parts(text, 0, len(text))]
+    assert parts == ["Jan", "Reiter", "Stahl, Armin"]
+
+
+def test_ner_keeps_cropbox_for_page_geometry():
+    """Die KI-Erkennung legt die CropBox nur vorübergehend auf die MediaBox;
+    Seitengröße und Koordinaten des Plans bleiben dieselben wie ohne KI."""
+    from app.services import redaction as R
+
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((100, 200), "Das sagte Reiter gestern.", fontsize=11)
+    page.set_cropbox(fitz.Rect(50, 100, 545, 742))
+    pdf = doc.tobytes()
+
+    def fake_ner(texts):
+        return [[(m.start(), m.end()) for m in __import__("re").finditer("Reiter", t)] for t in texts]
+
+    with_ner = R.build_plan(pdf, R.Criteria(patterns=("ki_namen",), terms=(), case_sensitive=False, whole_word=True), fake_ner)
+    plain = R.build_plan(pdf, R.Criteria(patterns=(), terms=("Reiter",), case_sensitive=False, whole_word=True))
+    assert (with_ner.pages[0].width, with_ner.pages[0].height) == (plain.pages[0].width, plain.pages[0].height) == (495, 642)
+    assert [(c.rects, c.view_rects) for c in with_ner.candidates] == [(c.rects, c.view_rects) for c in plain.candidates]
