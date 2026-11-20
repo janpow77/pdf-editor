@@ -372,6 +372,8 @@ def source_label(source: str) -> str:
         return f"Begriff „{source[8:]}“"
     if source == MANUAL_SOURCE:
         return "Bereich"
+    if source == NER_PROPAGATED_ID:
+        return "Namen (im Dokument nachgesucht)"
     spec = PATTERNS.get(source)
     return spec.label if spec else source
 
@@ -811,7 +813,7 @@ def _scan_page_text(
     pt: _PageText,
     rules: list[_Rule],
     transform: _ViewTransform,
-    ner_spans: list[tuple[int, int]] | None,
+    ner_spans: list[tuple[int, int, str]] | None,
 ) -> list[Candidate]:
     found: list[Candidate] = []
     dehyph = _dehyphenated(pt)
@@ -852,8 +854,8 @@ def _scan_page_text(
                     continue
                 full = list(range(orig[0], orig[-1] + 1))
                 add(rule.source, orig[0], orig[-1] + 1, prio, full)
-    for s, e in ner_spans or []:
-        add(NER_PATTERN_ID, s, e, len(rules) + 1)
+    for s, e, source in ner_spans or []:
+        add(source, s, e, len(rules) + (1 if source == NER_PATTERN_ID else 2))
     return _resolve_overlaps(found)
 
 
@@ -970,7 +972,6 @@ def _cleanup_info(doc: Any) -> dict[str, Any]:
 
 
 NerFn = Callable[[list[str]], list[list[tuple[int, int]]]]
-
 # Namensbestandteil: großer Anfangsbuchstabe, auch mit Bindestrich („Meyer-Lüdenscheidt“).
 _NAME_PART = r"[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)*"
 _NAME_TOKEN = re.compile(_NAME_PART)
@@ -978,14 +979,19 @@ _NAME_TOKEN = re.compile(_NAME_PART)
 # die KI „Prof. Dr. Rainer Zufall“ nicht als Person, ohne Titel schon.
 _TITLES = re.compile(r"(?:(?:Prof|Dr|Dipl)\.(?:-[A-Za-zäöü]+\.)?\s*)+")
 # Listenform „Nachname, Vorname“ am Zeilenanfang, auch mit Titel davor.
-_LIST_NAME = re.compile(
-    rf"(?:{_TITLES.pattern})?(?P<last>{_NAME_PART}),[ \t]*(?P<first>{_NAME_PART})(?![\w-])"
-)
+_LIST_NAME = re.compile(rf"(?:{_TITLES.pattern})?(?P<last>{_NAME_PART}),[ \t]*(?P<first>{_NAME_PART})(?![\w-])")
 # Wörter, die die KI gelegentlich als Namen meldet, die aber nie im ganzen
 # Dokument nachgesucht werden sollen.
 _NOT_NAMES = frozenset(
-    "Herr Frau Prof Dipl Montag Dienstag Mittwoch Donnerstag Freitag Samstag Sonntag "
+    "Herr Herrn Frau Prof Dipl Montag Dienstag Mittwoch Donnerstag Freitag Samstag Sonntag "
     "Januar Februar März April Mai Juni Juli August September Oktober November Dezember".split()
+)
+# Monatskürzel: „Jan“ ist ein Vorname, „15. Jan. 2026“ aber ein Datum.
+_MONTH_ABBREVIATIONS = frozenset("Jan Feb Mär Apr Jun Jul Aug Sep Sept Okt Nov Dez".split())
+# Nach einem Artikel ist ein nachgesuchtes Wort ein Substantiv
+# („der Richter“, „ein Koch“), kein Name.
+_ARTICLE_BEFORE = re.compile(
+    r"(?:^|[^\w])(?:der|die|das|dem|den|des|ein|eine|einem|einen|einer|eines)\s+$", re.IGNORECASE
 )
 _NAME_EDGE = " \t,;:()[]/"
 # Abschnitte zwischen harten Grenzen bis zu dieser Wortzahl prüft die KI
@@ -993,6 +999,10 @@ _NAME_EDGE = " \t,;:()[]/"
 # langer Abschnitt; Teile davon ohne Satzzusammenhang ergäben Fehltreffer
 # wie „Förderantrag“.
 _SHORT_SEGMENT_WORDS = 6
+# Quelle der Fundstellen, die nicht die KI selbst gemeldet hat, sondern die
+# als bereits erkannter Name im Dokument nachgesucht wurden. Eigene Gruppe,
+# damit die Vorschau sie gesammelt abwählen kann.
+NER_PROPAGATED_ID = "ki_namen_nachgesucht"
 
 
 def _hard_parts(text: str, start: int, end: int) -> list[tuple[int, int]]:
@@ -1003,7 +1013,7 @@ def _hard_parts(text: str, start: int, end: int) -> list[tuple[int, int]]:
     darf ein Name dagegen laufen.
     """
     parts: list[tuple[int, int]] = []
-    pos = start
+    pos, end = max(0, start), min(end, len(text))
     while pos < end:
         stop = text.find(_HARD, pos, end)
         stop = end if stop < 0 else stop
@@ -1019,7 +1029,7 @@ def _hard_parts(text: str, start: int, end: int) -> list[tuple[int, int]]:
 
 
 def _short_segments(text: str) -> list[tuple[int, int]]:
-    """Kurze Abschnitte zwischen harten Grenzen, ohne Leerraum am Rand."""
+    """Kurze Abschnitte zwischen harten Grenzen, ohne Leerraum und Titel am Anfang."""
     segments: list[tuple[int, int]] = []
     pos = 0
     while pos <= len(text):
@@ -1030,6 +1040,9 @@ def _short_segments(text: str) -> list[tuple[int, int]]:
             a += 1
         while b > a and text[b - 1].isspace():
             b -= 1
+        title = _TITLES.match(text, a, b)
+        if title:
+            a = title.end()
         if b > a and len(text[a:b].split()) <= _SHORT_SEGMENT_WORDS:
             segments.append((a, b))
         pos = stop + 1
@@ -1057,79 +1070,104 @@ def _line_segments(pt: _PageText) -> list[tuple[int, int]]:
     return segments
 
 
-def _ner_document(doc: Any, ner: NerFn) -> tuple[list[list[tuple[int, int]]], re.Pattern[str] | None]:
-    """KI-Namenserkennung über das ganze Dokument (erster Durchgang).
+def _name_tokens(text: str) -> list[str]:
+    return [t for t in _NAME_TOKEN.findall(text) if len(t) >= 3 and t not in _NOT_NAMES]
+
+
+def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int, str]]]:
+    """KI-Namenserkennung über das ganze Dokument.
 
     Je Seite werden drei Quellen zusammengeführt:
     - der Seitentext im Zusammenhang (Namen über Zeilenumbrüche hinweg),
       geteilt an harten Grenzen;
     - jeder kurze Abschnitt für sich (Tabellenzellen, Listeneinträge),
-      ohne Titel am Anfang;
+      ohne Titel am Anfang; gleiche Abschnitte prüft die KI nur einmal;
     - die Listenform „Nachname, Vorname“, wenn die KI „Vorname Nachname“
       als Person erkennt.
 
-    Rückgabe: Fundstellen je Seite und ein Ausdruck für alle dabei erkannten
-    Namensbestandteile. Damit sucht der zweite Durchgang jeden einmal
-    erkannten Namen auf allen Seiten nach, etwa einen allein stehenden
-    Nachnamen in einer Tabelle.
+    Belegt ist ein Name, wenn die KI ihn aus mindestens zwei Bestandteilen
+    erkennt (im Seitentext auch über Zellgrenzen hinweg) oder die Listenform
+    bestätigt. Ein einzelnes Wort aus einem
+    kurzen Abschnitt zählt nur, wenn es Teil eines belegten Namens ist: Ohne
+    Zusammenhang hält die KI Tabellenköpfe wie „Förderquote“ für Personen.
+    Die Bestandteile belegter Namen werden auf allen Seiten nachgesucht
+    (Quelle ``NER_PROPAGATED_ID``), etwa ein allein stehender Nachname.
+
+    Rückgabe: je Seite (start, ende, quelle).
     """
-    per_page: list[list[tuple[int, int]]] = []
-    tokens: set[str] = set()
-    batch: list[_PageText] = []
+    jobs: list[str] = []
+    segment_job: dict[str, int] = {}
+    layout = []
+    for pt in pts:
+        full = len(jobs)
+        jobs.append(pt.text.replace(_HARD, "\n"))
+        segments: list[tuple[int, int]] = []
+        for a, b in _short_segments(pt.text):
+            segment = pt.text[a:b]
+            if segment not in segment_job:
+                segment_job[segment] = len(jobs)
+                jobs.append(segment)
+            segments.append((a, segment_job[segment]))
+        listed: list[tuple[int, int, int]] = []
+        for a, b in _line_segments(pt):
+            m = _LIST_NAME.match(pt.text, a, b)
+            if m and m.group("last") not in _NOT_NAMES and m.group("first") not in _NOT_NAMES:
+                listed.append((m.start("last"), m.end("first"), len(jobs)))
+                jobs.append(f"{m.group('first')} {m.group('last')}")
+        layout.append((full, segments, listed))
+    results = list(ner(jobs)) if jobs else []
 
-    def flush() -> None:
-        jobs: list[str] = []
-        layout = []
-        for pt in batch:
-            full = len(jobs)
-            jobs.append(pt.text.replace(_HARD, "\n"))
-            lines: list[tuple[int, int]] = []
-            listed: list[tuple[int, int, int]] = []
-            for a, b in _short_segments(pt.text):
-                title = _TITLES.match(pt.text, a, b)
-                if title:
-                    a = title.end()
-                    if a >= b:
-                        continue
-                lines.append((a, len(jobs)))
-                jobs.append(pt.text[a:b])
-            for a, b in _line_segments(pt):
-                m = _LIST_NAME.match(pt.text, a, b)
-                if m and m.group("last") not in _NOT_NAMES and m.group("first") not in _NOT_NAMES:
-                    listed.append((m.start("last"), m.end("first"), len(jobs)))
-                    jobs.append(f"{m.group('first')} {m.group('last')}")
-            layout.append((pt, full, lines, listed))
-        results = list(ner(jobs)) if jobs else []
-        for pt, full, lines, listed in layout:
-            spans: set[tuple[int, int]] = set()
-            for s, e in results[full]:
-                spans.update(_hard_parts(pt.text, s, e))
-            for offset, k in lines:
-                for s, e in results[k]:
-                    spans.update(_hard_parts(pt.text, offset + s, offset + e))
-            for s, e, k in listed:
-                if any(a == 0 and b == len(jobs[k]) for a, b in results[k]):
-                    spans.add((s, e))
-            per_page.append(sorted(spans))
-            for s, e in spans:
-                tokens.update(
-                    t for t in _NAME_TOKEN.findall(pt.text[s:e]) if len(t) >= 3 and t not in _NOT_NAMES
-                )
-        batch.clear()
+    strong: set[str] = set()
+    per_page: list[tuple[set[tuple[int, int]], set[tuple[int, int]]]] = []
+    for pt, (full, segments, listed) in zip(pts, layout):
+        direct: set[tuple[int, int]] = set()
+        single: set[tuple[int, int]] = set()
+        for s, e in results[full]:
+            direct.update(_hard_parts(pt.text, s, e))
+            # Im Zusammenhang erkannte Person aus mehreren Bestandteilen: Alle
+            # Teile gelten als belegt, auch wenn der Treffer über Zellgrenzen
+            # lief („Jan / Reiter / Stahl“) und deshalb geteilt wird.
+            tokens = _name_tokens(pt.text[max(0, s) : e])
+            if len(tokens) >= 2:
+                strong.update(tokens)
+        for offset, k in segments:
+            for s, e in results[k]:
+                for a, b in _hard_parts(pt.text, offset + s, offset + e):
+                    tokens = _name_tokens(pt.text[a:b])
+                    if len(tokens) >= 2:
+                        direct.add((a, b))
+                        strong.update(tokens)
+                    else:
+                        single.add((a, b))
+        for s, e, k in listed:
+            if any(a == 0 and b == len(jobs[k]) for a, b in results[k]):
+                direct.add((s, e))
+                strong.update(_name_tokens(pt.text[s:e]))
+        per_page.append((direct, single))
 
-    for page in doc:
-        original_crop = _expose_full_page(page)
-        batch.append(_page_text(page))
-        if original_crop is not None:
-            # build_plan berechnet Seitengröße und Koordinaten aus der CropBox.
-            page.set_cropbox(original_crop)
-        if len(batch) >= 16:
-            flush()
-    flush()
-    if not tokens:
-        return per_page, None
-    alternatives = "|".join(re.escape(t) for t in sorted(tokens, key=lambda t: (-len(t), t)))
-    return per_page, re.compile(rf"(?<![\w-])(?:{alternatives})(?![\w-])")
+    names = None
+    if strong:
+        alternatives = "|".join(re.escape(t) for t in sorted(strong, key=lambda t: (-len(t), t)))
+        names = re.compile(rf"(?<![\w-])(?:{alternatives})(?![\w-])")
+    out: list[list[tuple[int, int, str]]] = []
+    for pt, (direct, single) in zip(pts, per_page):
+        spans = {(a, b, NER_PATTERN_ID) for a, b in direct}
+        for a, b in single:
+            if all(t in strong for t in _name_tokens(pt.text[a:b])) and _name_tokens(pt.text[a:b]):
+                spans.add((a, b, NER_PATTERN_ID))
+        if names is not None:
+            taken = [(a, b) for a, b, _ in spans]
+            for m in names.finditer(pt.text):
+                a, b = m.span()
+                if any(a < y and b > x for x, y in taken):
+                    continue
+                if m.group() in _MONTH_ABBREVIATIONS and pt.text[b : b + 1] == ".":
+                    continue
+                if _ARTICLE_BEFORE.search(pt.text, max(0, a - 12), a):
+                    continue
+                spans.add((a, b, NER_PROPAGATED_ID))
+        out.append(sorted(spans))
+    return out
 
 
 def build_plan(data: bytes, criteria: Criteria, ner: NerFn | None = None) -> Plan:
@@ -1142,11 +1180,7 @@ def build_plan(data: bytes, criteria: Criteria, ner: NerFn | None = None) -> Pla
         _reveal_layers(doc)  # Text ausgeblendeter Ebenen mitsuchen; doc wird verworfen
         pages: list[PageInfo] = []
         candidates: list[Candidate] = []
-        ner_pages: list[list[tuple[int, int]]] = []
-        ner_names: re.Pattern[str] | None = None
-        if NER_PATTERN_ID in criteria.patterns and ner is not None:
-            ner_pages, ner_names = _ner_document(doc, ner)
-
+        texts: list[tuple[_PageText, _ViewTransform]] = []
         for page in doc:
             transform = _ViewTransform(page)
             info = PageInfo(page.number + 1, page.rect.width, page.rect.height, page.rotation, False, False)
@@ -1156,13 +1190,12 @@ def build_plan(data: bytes, criteria: Criteria, ner: NerFn | None = None) -> Pla
             if not info.has_text:
                 info.image_only = bool(page.get_images(full=False)) or bool(page.get_drawings()[:1])
             pages.append(info)
-            spans: list[tuple[int, int]] | None = None
-            if ner_pages:
-                found = set(ner_pages[page.number])
-                if ner_names is not None:
-                    found.update(m.span() for m in ner_names.finditer(pt.text))
-                spans = sorted(found)
-            candidates.extend(_scan_page_text(page.number, pt, rules, transform, spans))
+            texts.append((pt, transform))
+        ner_spans: list[list[tuple[int, int, str]]] | list[None] = [None] * len(texts)
+        if NER_PATTERN_ID in criteria.patterns and ner is not None:
+            ner_spans = _ner_document([pt for pt, _ in texts], ner)
+        for pno, ((pt, transform), spans) in enumerate(zip(texts, ner_spans)):
+            candidates.extend(_scan_page_text(pno, pt, rules, transform, spans))
         candidates.extend(_scan_hidden(doc, rules))
         cleanup = _cleanup_info(doc)
     finally:
@@ -1851,6 +1884,10 @@ def apply_plan(data: bytes, selection: Selection, ner: NerFn | None = None) -> t
         removed_annots = 0
         for pno in sorted(set(boxes) | set(area_boxes)):
             page = doc[pno]
+            # Den gespeicherten Wert sichern: Eine CropBox, die über die MediaBox
+            # hinausragt, ist zulässig, lässt sich mit set_cropbox aber nicht
+            # zurückschreiben.
+            saved_crop = [(page.xref, "CropBox", *doc.xref_get_key(page.xref, "CropBox"))]
             original_crop = _expose_full_page(page)
             rects = boxes.get(pno, []) + area_boxes.get(pno, [])
             # Formularfelder und Kommentare bringen eigene Darstellungen mit,
@@ -1868,7 +1905,7 @@ def apply_plan(data: bytes, selection: Selection, ner: NerFn | None = None) -> t
                 page.add_redact_annot(rect, fill=(0, 0, 0))
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
             if original_crop is not None:
-                page.set_cropbox(original_crop)
+                _restore_layers(doc, saved_crop)
 
         replaced = _scrub_strings(doc, all_keys, fully_selected)
         # XFA-Formulardaten sind eine zweite, unabhängige Kopie der Feldinhalte.

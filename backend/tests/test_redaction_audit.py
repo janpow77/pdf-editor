@@ -8,6 +8,7 @@ erfassten Vorbefunde. Neue bekannte Mängel als ``known("Vn", …)`` markieren
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import time
@@ -1295,7 +1296,7 @@ def test_ner_table_finds_every_name(client):
     plan = plan_of(client, _table_pdf(), ["ki_namen"])
     texts = [c["text"] for c in plan["candidates"]]
     covered = " ".join(texts)
-    assert [n for n in _TABLE_NAMES if n not in covered] == []
+    assert [n for n in _TABLE_NAMES if not re.search(rf"\b{n}\b", covered)] == []
     for kept in ("Montag", "Dienstag", "KW 45", "LÜKEX", "Prof", "Z 6"):
         assert kept not in covered, kept
     assert all(len(t.split()) <= 3 for t in texts), texts
@@ -1313,29 +1314,52 @@ def test_ner_no_false_positives_in_narrow_paragraph():
 
 
 def test_ner_name_found_once_is_searched_everywhere():
-    """Ein einmal erkannter Name wird auf allen Seiten nachgesucht, auch wo
-    die KI ihn allein nicht erkennt (allein stehender Nachname)."""
+    """Ein belegter Name (zwei Bestandteile) wird auf allen Seiten nachgesucht,
+    auch wo die KI ihn allein nicht erkennt; die Treffer bilden eine eigene,
+    gesammelt abwählbare Gruppe. Nicht nachgesucht wird nach einem Artikel,
+    in längeren Wörtern und beim Monatskürzel „Jan.“."""
+    import re
+
     from app.services import redaction as R
 
     def fake_ner(texts):
-        # erkennt „Reiter“ nur im Satzzusammenhang
-        out = []
-        for t in texts:
-            out.append([(m.start(), m.end()) for m in __import__("re").finditer("Reiter", t)] if "sagte" in t else [])
-        return out
+        # erkennt „Jan Reiter“ nur im Satzzusammenhang
+        return [[m.span() for m in re.finditer("Jan Reiter", t)] if "sagte" in t else [] for t in texts]
 
     doc = fitz.open()
-    doc.new_page().insert_text((72, 72), "Das sagte Reiter gestern.", fontsize=11)
+    doc.new_page().insert_text((72, 72), "Das sagte Jan Reiter gestern.", fontsize=11)
     page = doc.new_page()
-    page.insert_text((72, 72), "Reiter", fontsize=11)
-    page.insert_text((300, 72), "Reitergruppe", fontsize=11)
+    for y, line in enumerate(("Reiter", "Reitergruppe", "Der Reiter kam.", "am 15. Jan. 2026")):
+        page.insert_text((72, 72 + 20 * y), line, fontsize=11)
     pdf = doc.tobytes()
     crit = R.Criteria(patterns=("ki_namen",), terms=(), case_sensitive=False, whole_word=True)
     plan = R.build_plan(pdf, crit, fake_ner)
-    by_page = {}
-    for c in plan.candidates:
-        by_page.setdefault(c.page, []).append(c.text)
-    assert by_page == {1: ["Reiter"], 2: ["Reiter"]}
+    found = sorted((c.page, c.source, c.text) for c in plan.candidates)
+    assert found == [(1, "ki_namen", "Jan Reiter"), (2, R.NER_PROPAGATED_ID, "Reiter")]
+    assert R.source_label(R.NER_PROPAGATED_ID) == "Namen (im Dokument nachgesucht)"
+
+
+def test_ner_single_word_needs_corroboration():
+    """Ein einzelnes Wort aus einer Tabellenzelle zählt nur, wenn es Teil
+    eines belegten Namens ist; sonst wären Tabellenköpfe wie „Förderquote“
+    Namen und würden im ganzen Dokument nachgesucht."""
+    from app.services import redaction as R
+
+    def fake_ner(texts):
+        # meldet einzelne Zellinhalte als Person, wie spaCy ohne Zusammenhang,
+        # und bestätigt die Listenform „Erika Heide“
+        hits = {"Förderquote", "Kostenart", "Heide", "Erika Heide"}
+        return [[(0, len(t))] if t in hits else [] for t in texts]
+
+    def build(doc, page):
+        for x, cell in ((40, "Förderquote"), (200, "Kostenart"), (360, "Heide")):
+            page.insert_text((x, 80), cell, fontsize=9)
+        page.insert_text((40, 100), "Heide, Erika", fontsize=9)
+        page.insert_text((40, 140), "Die Förderquote beträgt 60 Prozent je Kostenart.", fontsize=9)
+
+    plan = R.build_plan(_pdf(build), R.Criteria(("ki_namen",), (), False, True), fake_ner)
+    texts = sorted(c.text for c in plan.candidates)
+    assert texts == ["Heide", "Heide, Erika"], texts
 
 
 def test_ner_span_split_at_cell_borders():
@@ -1364,3 +1388,58 @@ def test_ner_keeps_cropbox_for_page_geometry():
     plain = R.build_plan(pdf, R.Criteria(patterns=(), terms=("Reiter",), case_sensitive=False, whole_word=True))
     assert (with_ner.pages[0].width, with_ner.pages[0].height) == (plain.pages[0].width, plain.pages[0].height) == (495, 642)
     assert [(c.rects, c.view_rects) for c in with_ner.candidates] == [(c.rects, c.view_rects) for c in plain.candidates]
+
+
+@pytest.mark.parametrize("box", [(-20, -20, 700, 900), (300, -50, 700, 400)])
+@pytest.mark.parametrize("patterns", [(), ("ki_namen",)])
+def test_cropbox_beyond_mediabox_plan_and_apply(box, patterns):
+    """Eine CropBox darf über die MediaBox hinausragen. Vorschau und
+    Anwendung laufen dann durch, und die CropBox bleibt unverändert."""
+    from app.services import redaction as R
+
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((320, 100), "Das sagte Jan Reiter gestern.", fontsize=11)
+    doc.xref_set_key(page.xref, "CropBox", "[%d %d %d %d]" % box)
+    pdf = doc.tobytes()
+
+    def fake_ner(texts):
+        return [[m.span() for m in re.finditer("Jan Reiter", t)] for t in texts]
+
+    crit = R.Criteria(patterns, () if patterns else ("Jan Reiter",), False, True)
+    plan = R.build_plan(pdf, crit, fake_ner)
+    assert [c.text for c in plan.candidates] == ["Jan Reiter"]
+    sel = R.Selection(plan.sha256, crit, frozenset(c.id for c in plan.candidates), (), True)
+    out, _ = R.apply_plan(pdf, sel, fake_ner)
+    with fitz.open(stream=out) as res:
+        assert res.xref_get_key(res[0].xref, "CropBox") == ("array", "[%d %d %d %d]" % box)
+        assert "Reiter" not in res[0].get_text(clip=fitz.INFINITE_RECT())
+
+
+def test_short_segments_edges():
+    from app.services import redaction as R
+
+    assert R._short_segments("") == []
+    assert R._short_segments("\x00") == []
+    text = "Prof. Dr. Rainer Zufall\x00 \x00Heide, Erika\x00"
+    assert [text[a:b] for a, b in R._short_segments(text)] == ["Rainer Zufall", "Heide, Erika"]
+    assert R._short_segments("eins zwei drei vier fünf sechs sieben") == []
+    assert R._hard_parts("Jan", -5, 99) == [(0, 3)]
+
+
+@ner
+def test_ner_table_apply_roundtrip(client):
+    """Vorschau → alles auswählen → Anwenden mit echter KI auf der Tabelle:
+    gleiche Kandidaten, Nachprüfung ohne Befund, kein Name mehr lesbar."""
+    from app.services import redaction as R
+
+    pdf = _table_pdf()
+    ner_fn = get_pdf_extras().ner_function()
+    crit = R.Criteria(("ki_namen",), (), False, True)
+    plan = R.build_plan(pdf, crit, ner_fn)
+    sel = R.Selection(plan.sha256, crit, frozenset(c.id for c in plan.candidates), (), True)
+    out, _ = R.apply_plan(pdf, sel, ner_fn)
+    text = page_text(out)
+    assert [n for n in _TABLE_NAMES if re.search(rf"\b{n}\b", text)] == []
+    for kept in ("Montag", "KW 45", "LÜKEX", "Prof. Dr."):
+        assert kept in text

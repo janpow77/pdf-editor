@@ -370,16 +370,28 @@ An einer aus Excel erzeugten Anwesenheitsliste (erfundene Namen) fand die KI-Nam
 |---|---|---|---|
 | T-1 | Im Seitentext zog spaCy Namen aus Nachbarzellen zu einem Treffer zusammen oder erkannte sie nicht. | behoben | Treffer werden an Zellgrenzen geteilt. Jeder kurze Zellinhalt (höchstens sechs Wörter) wird zusätzlich einzeln erkannt. |
 | T-2 | „Nachname, Vorname“ wurde oft nicht oder als Ort erkannt. | behoben | Die Listenform zählt, wenn die KI die Umstellung „Vorname Nachname“ als Person erkennt. |
-| T-3 | Allein stehende Nachnamen („Reiter“) wurden nie erkannt. | behoben | Jeder erkannte Namensbestandteil wird im ganzen Dokument wortgenau nachgesucht, ohne Wochentage, Monate und Titel. Ein Nachname, der nirgends in erkennbarer Form vorkommt, bleibt unerkannt. |
+| T-3 | Allein stehende Nachnamen („Reiter“) wurden nie erkannt. | behoben | Die Bestandteile belegter Namen werden im ganzen Dokument wortgenau nachgesucht. Belegt ist ein Name, den die KI aus mindestens zwei Bestandteilen erkennt (im Seitentext auch über Zellgrenzen hinweg) oder den die Listenform bestätigt. Nicht nachgesucht werden Wochentage, Monate, Titel, Wörter nach einem Artikel („der Richter“) und Monatskürzel mit Punkt („15. Jan.“). Die nachgesuchten Treffer bilden in der Vorschau eine eigene Gruppe „Namen (im Dokument nachgesucht)“. Ein Nachname, der nirgends belegt ist, bleibt unerkannt. |
 | T-4 | Mit „Prof. Dr.“ davor erkannte spaCy keinen Namen. | behoben | Führende Titel werden vor der Einzelerkennung abgeschnitten; der Titel bleibt lesbar. |
 
-Zeilen eines Absatzes werden bewusst nicht einzeln erkannt: Ohne Satzzusammenhang meldete spaCy dort „Förderantrag“ als Namen. Ergebnis: Die Anwesenheitsliste wird vollständig erkannt, im Fließtext-Korpus bleibt die Trefferquote gleich und es gibt keine neuen Fehltreffer. 80 Seiten brauchen 1,4 s statt 0,8 s. Vier neue Tests decken T-1 bis T-4 ab, ein fünfter sichert, dass der zusätzliche Erkennungsdurchgang die CropBox wieder herstellt und Seitengröße und Koordinaten unverändert bleiben.
+Zeilen eines Absatzes werden bewusst nicht einzeln erkannt: Ohne Satzzusammenhang meldete spaCy dort „Förderantrag“ als Namen. Die Anwesenheitsliste wird vollständig erkannt, im Fließtext-Korpus bleibt die Trefferquote gleich.
+
+Die unabhängige Code-Prüfung desselben Tages ergab dazu:
+
+| Nr. | Befund | Stand | Lösung |
+|---|---|---|---|
+| T-5 | Ohne Zusammenhang hielt spaCy Tabellenköpfe („Kostenart“, „Förderquote“) für Personen, und die Nachsuche vervielfachte jeden solchen Fehltreffer im ganzen Dokument. Echte Namen wie „Richter“ wurden auch als Substantiv im Fließtext markiert, „Jan“ im Datum „15. Jan.“. | behoben, Rest offen | Einzelwörter aus kurzen Abschnitten zählen nur, wenn sie Teil eines belegten Namens sind. Nur belegte Namen werden nachgesucht, mit den Ausnahmen aus T-3. Offen bleibt: Ein belegter Name, der zugleich ein gewöhnliches Wort ist, wird ohne Artikel davor weiter markiert („500 Mark“, „Lange Zeit“). In der Vorschau lässt sich die Gruppe gesammelt abwählen; ohne Vorschau (Batch) wird geschwärzt. Bei Namen ist zu viel schwärzen das kleinere Übel. |
+| T-6 | Eine CropBox, die über die MediaBox hinausragt (zulässig), ließ die Vorschau mit KI und das Anwenden mit `ValueError` scheitern. | behoben | Der Seitentext wird für Suche und KI nur einmal ermittelt. Beim Anwenden wird der gespeicherte CropBox-Wert gesichert und unverändert zurückgeschrieben. |
+| T-7 | Bei Tabellen verdreifachte sich die Laufzeit (50 Seiten: 8,3 s statt 2,7 s). | verbessert | Gleiche Zellinhalte prüft die KI nur einmal: 5,0 s statt 2,7 s. Fließtext: 80 Seiten 1,4 s statt 0,8 s. |
+| T-8 | Spans der KI außerhalb des Textes ergaben `IndexError`. | behoben | Spans werden auf den Text begrenzt. |
+| T-9 | Lücken der Nachsuche: Großschreibung, Teile von Doppelnamen, Buchstaben außerhalb des deutschen Alphabets, Namen unter drei Buchstaben, Silbentrennung. | offen | Bewusst nicht erweitert: Jede Lockerung erhöht die Fehltreffer aus T-5. |
+
+Neue Tests decken T-1 bis T-8 ab, darunter ein Lauf Vorschau → Anwenden mit echter KI auf einer Tabelle.
 
 Nicht geprüft wurden der angemeldete Zustand mit höheren Grenzen, ein echter 422 des Servers (nur simuliert, die Fälle sind im Backend getestet), die Übergabe aus der Werkbank und das Zeichnen per Touch.
 
 Die zwölf neuen Tests zu H-N1 und M-N1 bis M-N6 (ohne M-N7, dessen Korrektur in der Schnittstelle liegt) schlagen auf dem Stand vor der zweiten Korrektur fehl, von den zehn Tests zu N3 sieben auf dem Stand davor; die übrigen drei sind Gegenproben.
 
-**Testlauf 20.11.2026:** 349 Backend-Tests bestanden, alle Schwärzungstests eingeschlossen. Zwei Tests sind übersprungen, weil `tabula` Java braucht und Java hier fehlt. Fünf Tests schlagen in dieser Umgebung fehl, keiner betrifft die Schwärzung:
+**Testlauf 20.11.2026:** 356 Backend-Tests bestanden, alle Schwärzungstests eingeschlossen. Zwei Tests sind übersprungen, weil `tabula` Java braucht und Java hier fehlt. Fünf Tests schlagen in dieser Umgebung fehl, keiner betrifft die Schwärzung:
 
 - vier in `test_form_advanced` (Formularberechnung), schon vor diesen Änderungen rot;
 - `test_scan_optimize`, weil Tesseract hier nicht installiert ist.
