@@ -10,7 +10,7 @@
 
     <!-- Dateien -->
     <section class="space-y-2" aria-label="Dateien">
-      <FileDrop v-if="step === 'criteria'" v-model="incoming" multiple-handler :max-bytes="remainingBytes" label="PDF (auch mehrere)" @multiple="addFiles" />
+      <FileDrop v-if="step === 'criteria'" v-model="incoming" multiple-handler :max-bytes="remainingBytes" :max-bytes-note="remainingNote" :reject-reason="fullReason" label="PDF (auch mehrere)" @multiple="addFiles" />
       <ul v-if="docs.length" class="space-y-1 text-sm">
         <li v-for="(doc, index) in docs" :key="doc.key" class="flex flex-wrap items-center gap-2 rounded-xl bg-gray-100/70 px-3 py-2 dark:bg-white/5">
           <span class="min-w-0 flex-1 break-all font-medium">{{ doc.file.name }}</span>
@@ -139,7 +139,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import { useNotifications } from '@/composables/useNotifications'
-import { apiGetJson, apiPost, downloadBlob } from '@/lib/api'
+import { ApiError, apiGetJson, apiPost, downloadBlob } from '@/lib/api'
 import { currentFileLimit, currentTotalLimit, formatFileSize, validatePdfFile, validateTotalFileSize } from '@/lib/fileValidation'
 import { takePendingBatchHandoff } from '@/lib/handoff'
 import { selectionPayload, type RedactionArea, type RedactionPlan } from '@/lib/redaction'
@@ -177,6 +177,8 @@ const docs = ref<DocState[]>([])
 const remainingBytes = computed(() =>
   docs.value.length ? Math.max(0, currentTotalLimit() - docs.value.reduce((sum, d) => sum + d.file.size, 0)) : undefined,
 )
+const remainingNote = computed(() => `noch frei bis zur Gesamtgröße von ${formatFileSize(currentTotalLimit())}`)
+const fullReason = computed(() => (docs.value.length >= MAX_FILES ? `Höchstens ${MAX_FILES} Dateien je Durchgang. Bitte zuerst eine Datei entfernen.` : undefined))
 const active = ref(0)
 const step = ref<'criteria' | 'review'>('criteria')
 const patterns = ref<PatternInfo[]>([])
@@ -296,12 +298,27 @@ async function addFiles(files: File[]): Promise<void> {
     accepted.push(file)
   }
   if (!accepted.length) return
-  const total = validateTotalFileSize([...docs.value.map((d) => d.file), ...accepted])
-  if (!total.valid) {
-    notifications.error('Dateien nicht angenommen', total.message ?? 'Gesamtgröße zu hoch')
-    return
+  // Dateien in der gewählten Reihenfolge übernehmen, solange die Gesamtgröße
+  // reicht; nur die übrigen ablehnen.
+  const totalLimit = currentTotalLimit()
+  let used = docs.value.reduce((sum, d) => sum + d.file.size, 0)
+  const fitting: File[] = []
+  const tooMuch: string[] = []
+  for (const file of accepted) {
+    if (used + file.size > totalLimit) {
+      tooMuch.push(file.name)
+      continue
+    }
+    used += file.size
+    fitting.push(file)
   }
-  pushDocs(accepted)
+  if (tooMuch.length) {
+    notifications.error(
+      tooMuch.length === 1 ? 'Datei nicht angenommen' : 'Dateien nicht angenommen',
+      `${tooMuch.join(', ')}: Die Gesamtgröße von ${formatFileSize(totalLimit)} wäre überschritten.`,
+    )
+  }
+  pushDocs(fitting)
 }
 
 function removeDoc(index: number): void {
@@ -334,37 +351,69 @@ function message(caught: unknown, fallback: string): string {
   return caught instanceof Error ? caught.message : fallback
 }
 
+/** Wartet abbrechbar; zeigt dabei die Restzeit im Fortschritt an. */
+async function waitFor(seconds: number, signal: AbortSignal, label: string): Promise<void> {
+  for (let left = seconds; left > 0; left -= 1) {
+    if (signal.aborted) throw new DOMException('Abgebrochen', 'AbortError')
+    progress.value = `${label} · Server-Limit erreicht, weiter in ${left} s`
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+  }
+}
+
+// Wartezeiten bis hierhin überbrückt die Suche selbst; längere (Tageslimit)
+// meldet sie als Fehler.
+const MAX_RATE_WAIT_S = 90
+const MAX_RATE_RETRIES = 5
+
+async function requestPlan(doc: DocState, signal: AbortSignal, label: string): Promise<RedactionPlan> {
+  for (let attempt = 0; ; attempt += 1) {
+    const fd = new FormData()
+    fd.append('file', doc.file)
+    fd.append('patterns', JSON.stringify([...selectedPatterns.value]))
+    fd.append('terms', termList.value.join('\n'))
+    fd.append('case_sensitive', String(matchCase.value))
+    fd.append('whole_word', String(wholeWord.value))
+    try {
+      const response = await apiPost('/api/pdf-extras/redact/plan', fd, { signal, notifyOnError: false, timeout: 600_000 })
+      return (await response.json()) as RedactionPlan
+    } catch (caught: unknown) {
+      const wait = caught instanceof ApiError && caught.status === 429 ? caught.retryAfter ?? 20 : null
+      if (wait === null || wait > MAX_RATE_WAIT_S || attempt >= MAX_RATE_RETRIES) throw caught
+      await waitFor(wait, signal, label)
+    }
+  }
+}
+
+/** Sucht Fundstellen für alle Dateien ohne gültigen Plan. Pläne verfallen bei
+ *  jeder Änderung an Dateien oder Kriterien; vorhandene bleiben daher gültig,
+ *  und ein erneutes Suchen holt nur die fehlenden nach. */
 async function searchAll(): Promise<void> {
   if (!hasCriteria.value || busy.value) return
-  invalidate()
   const currentGeneration = generation
   const requestController = new AbortController()
   controller = requestController
   busy.value = true
+  error.value = null
   let failed = 0
   try {
     for (const [index, doc] of docs.value.entries()) {
-      progress.value = docs.value.length > 1 ? `${index + 1}/${docs.value.length}` : ''
-      const fd = new FormData()
-      fd.append('file', doc.file)
-      fd.append('patterns', JSON.stringify([...selectedPatterns.value]))
-      fd.append('terms', termList.value.join('\n'))
-      fd.append('case_sensitive', String(matchCase.value))
-      fd.append('whole_word', String(wholeWord.value))
+      if (doc.plan) continue
+      const label = docs.value.length > 1 ? `${index + 1}/${docs.value.length}` : ''
+      progress.value = label
+      doc.error = ''
       try {
-        const response = await apiPost('/api/pdf-extras/redact/plan', fd, { signal: requestController.signal, notifyOnError: false, timeout: 600_000 })
-        const plan = (await response.json()) as RedactionPlan
+        const plan = await requestPlan(doc, requestController.signal, label)
         if (currentGeneration !== generation) return
         doc.plan = plan
         doc.selected = new Set(plan.candidates.filter((c) => c.selected).map((c) => c.id))
       } catch (caught: unknown) {
-        if (currentGeneration !== generation) return
+        if (currentGeneration !== generation || requestController.signal.aborted) return
         failed += 1
         doc.error = message(caught, 'Suche fehlgeschlagen')
       }
     }
     if (failed) {
-      error.value = `${failed} Datei(en) konnten nicht durchsucht werden. Bitte entfernen oder ersetzen.`
+      error.value = `${failed} Datei(en) konnten nicht durchsucht werden. Erneutes Suchen versucht es nur für diese Dateien; bleibt der Fehler, die Datei entfernen oder ersetzen.`
       return
     }
     active.value = 0
@@ -421,9 +470,14 @@ async function applyAll(): Promise<void> {
     confirmed.value = false
   } catch (caught: unknown) {
     if (currentGeneration !== generation || requestController.signal.aborted) return
-    error.value = message(caught, 'Schwärzung fehlgeschlagen')
-    if (/neu suchen|anderen Datei/i.test(error.value)) error.value += ' Die Fundstellen werden beim nächsten Suchen neu ermittelt.'
-    notifications.error('Schwärzung nicht ausgeliefert', error.value)
+    let text = message(caught, 'Schwärzung fehlgeschlagen')
+    if (/neu suchen|anderen Datei/i.test(text)) {
+      // Pläne verwerfen, damit das nächste Suchen alle Fundstellen neu ermittelt.
+      invalidate()
+      text += ' Die Fundstellen werden beim nächsten Suchen neu ermittelt.'
+    }
+    error.value = text
+    notifications.error('Schwärzung nicht ausgeliefert', text)
   } finally {
     if (currentGeneration === generation) {
       busy.value = false

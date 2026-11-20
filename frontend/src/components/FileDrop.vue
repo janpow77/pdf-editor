@@ -46,11 +46,15 @@ const props = withDefaults(
     label?: string
     /** Optionales werkzeugspezifisches Limit, z. B. 10 MB für Wasserzeichenbilder. */
     maxBytes?: number
+    /** Ergänzt die Meldung, wenn maxBytes die engere Grenze ist (z. B. Restplatz). */
+    maxBytesNote?: string
+    /** Gesetzt, wenn gerade keine Datei angenommen wird (z. B. Liste voll). */
+    rejectReason?: string
     /** Übergibt mehrere abgelegte Dateien per 'multiple'-Event an den Aufrufer,
      *  statt der Standardmeldung "nur eine Datei möglich". */
     multipleHandler?: boolean
   }>(),
-  { accept: '.pdf', label: 'PDF', maxBytes: undefined, multipleHandler: false },
+  { accept: '.pdf', label: 'PDF', maxBytes: undefined, maxBytesNote: undefined, rejectReason: undefined, multipleHandler: false },
 )
 const emit = defineEmits<{
   (event: 'update:modelValue', file: File | null): void
@@ -97,13 +101,17 @@ async function acceptFile(file: File): Promise<void> {
   const generation = ++validationGeneration
   validationError.value = ''
 
-  const effectiveLimit = Math.min(currentFileLimit(), props.maxBytes ?? Number.POSITIVE_INFINITY)
+  const fileLimit = currentFileLimit()
+  const effectiveLimit = Math.min(fileLimit, props.maxBytes ?? Number.POSITIVE_INFINITY)
+  const note = props.maxBytesNote && effectiveLimit < fileLimit ? ` (${props.maxBytesNote})` : ''
   let nextError = ''
 
-  if (!matches(file)) {
+  if (props.rejectReason) {
+    nextError = props.rejectReason
+  } else if (!matches(file)) {
     nextError = `Dieser Dateityp wird nicht unterstützt. Zulässig: ${props.accept}.`
   } else if (file.size > effectiveLimit) {
-    nextError = `${file.name} ist ${formatFileSize(file.size)} groß. Zulässig sind maximal ${formatFileSize(effectiveLimit)}.`
+    nextError = `${file.name} ist ${formatFileSize(file.size)} groß. Zulässig sind maximal ${formatFileSize(effectiveLimit)}${note}.`
   } else if (acceptsPdf()) {
     const result = await validatePdfFile(file)
     if (!result.valid) nextError = result.message ?? 'Die PDF-Datei ist ungültig.'

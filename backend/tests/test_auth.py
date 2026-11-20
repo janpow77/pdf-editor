@@ -229,3 +229,23 @@ def test_default_rate_limit_tiers(client, monkeypatch):
         for _ in range(5)
     ]
     assert all(c == 200 for c in authed), authed
+
+
+def test_rate_limit_sends_retry_after(client, monkeypatch):
+    """429 nennt im Retry-After, wann das Fenster wieder Platz hat. Die
+    Schwärzen-Oberfläche wartet damit bei vielen Dateien, statt sie als
+    fehlgeschlagen zu melden."""
+    from app import ratelimit
+
+    monkeypatch.setattr(settings, "rate_limit_default", "2/minute")
+    monkeypatch.setattr(ratelimit.limiter, "enabled", True)
+    monkeypatch.setattr(ratelimit, "_storage", ratelimit.MemoryStorage())
+    monkeypatch.setattr(
+        ratelimit, "_checker", ratelimit.MovingWindowRateLimiter(ratelimit._storage)
+    )
+
+    responses = [client.get("/api/pdf-tools/status") for _ in range(3)]
+    blocked = responses[-1]
+    assert blocked.status_code == 429
+    retry = int(blocked.headers["retry-after"])
+    assert 1 <= retry <= 60

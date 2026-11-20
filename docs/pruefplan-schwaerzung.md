@@ -341,12 +341,35 @@ Außerdem in der Oberfläche:
 - Wird eine Datei vor der angezeigten entfernt, bleibt die Ansicht auf derselben Datei.
 - Die Gesamtgröße aller Dateien wird vor der Suche geprüft, auch für Dateien, die aus einem anderen Werkzeug übergeben werden.
 
+### 11.2 Browserprüfung (20.11.2026)
+
+`@frontend-e2e` hat den Stand im Browser geprüft, mit Produktions-Build und laufendem Backend. Geprüft wurden:
+
+- der Einzelablauf mit Abwahl und eigenem Bereich;
+- der Batch mit Vorschau je Datei;
+- Ablehnungen wegen Dateityp, Dateigröße, Gesamtgröße und voller Liste;
+- ein simulierter 422;
+- die Konsole;
+- die Smartphone-Breite (390 px).
+
+Die Ergebnis-PDFs wurden mit PyMuPDF nachgeprüft: Ausgewählte Texte fehlen, abgewählte sind noch da. Es gab keine JS-Fehler. Gefunden wurden fünf Punkte, alle behoben und in einer zweiten Runde im Browser bestätigt:
+
+| Nr. | Befund | Stand | Korrektur |
+|---|---|---|---|
+| E-1 | Ab etwa 30 Dateien liefen die Plan-Anfragen in das Rate-Limit (30 je Minute). Die Meldung riet zum Entfernen, und ein erneutes Suchen verwarf auch die fertigen Pläne. | behoben | Der Server nennt bei 429 die Wartezeit (`Retry-After`). Die Suche wartet bis 90 s und wiederholt bis zu fünfmal je Datei, die Restzeit steht auf der Schaltfläche. Ein erneutes Suchen holt nur die fehlenden Pläne (`test_rate_limit_sends_retry_after`). |
+| E-2 | Bei voller Liste erschien zuerst „Datei geladen“, dann die Ablehnung. | behoben | Die Dateiauswahl lehnt bei voller Liste sofort ab. |
+| E-3 | Bei überschrittenem Restplatz klang die Meldung wie ein Dateilimit. | behoben | Die Meldung nennt den Restplatz bis zur Gesamtgröße. |
+| E-4 | Eine Mehrfachauswahl über der Gesamtgröße wurde ganz abgelehnt. | behoben | Passende Dateien werden übernommen, nur die übrigen werden mit Namen abgelehnt. |
+| E-5 | Nach einem 422 blieben die alten Pläne stehen, die Meldung sprach aber von neuer Suche. | behoben | Pläne werden dann verworfen, die Ansicht springt zu den Suchkriterien. |
+
+Nicht geprüft wurden der angemeldete Zustand mit höheren Grenzen, ein echter 422 des Servers (nur simuliert, die Fälle sind im Backend getestet), die Übergabe aus der Werkbank und das Zeichnen per Touch.
+
 Die zwölf neuen Tests zu H-N1 und M-N1 bis M-N6 (ohne M-N7, dessen Korrektur in der Schnittstelle liegt) schlagen auf dem Stand vor der zweiten Korrektur fehl, von den zehn Tests zu N3 sieben auf dem Stand davor; die übrigen drei sind Gegenproben.
 
-**Testlauf 20.11.2026:** 343 Backend-Tests bestanden, alle Schwärzungstests eingeschlossen. Fünf Tests schlagen in dieser Umgebung fehl, keiner betrifft die Schwärzung:
+**Testlauf 20.11.2026:** 344 Backend-Tests bestanden, alle Schwärzungstests eingeschlossen. Zwei Tests sind übersprungen, weil `tabula` Java braucht und Java hier fehlt. Fünf Tests schlagen in dieser Umgebung fehl, keiner betrifft die Schwärzung:
 
 - vier in `test_form_advanced` (Formularberechnung), schon vor diesen Änderungen rot;
-- `test_to_excel_preview_zeigt_tabelleninhalt`, weil `tabula` Java braucht und Java hier fehlt.
+- `test_scan_optimize`, weil Tesseract hier nicht installiert ist.
 
 `vue-tsc` und der Produktions-Build laufen ohne Fehler. Ein auditcore-runner-Prüfprofil hat das Repository nicht.
 
