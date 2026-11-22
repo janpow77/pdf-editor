@@ -1317,7 +1317,7 @@ def test_ner_name_found_once_is_searched_everywhere():
     """Ein belegter Name (zwei Bestandteile) wird auf allen Seiten nachgesucht,
     auch wo die KI ihn allein nicht erkennt; die Treffer bilden eine eigene,
     gesammelt abwählbare Gruppe. Nicht nachgesucht wird nach einem Artikel,
-    in längeren Wörtern und beim Monatskürzel „Jan.“."""
+    in längeren Wörtern und beim Monatskürzel im Datum („15. Jan.“)."""
     import re
 
     from app.services import redaction as R
@@ -1339,27 +1339,83 @@ def test_ner_name_found_once_is_searched_everywhere():
     assert R.source_label(R.NER_PROPAGATED_ID) == "Namen (im Dokument nachgesucht)"
 
 
-def test_ner_single_word_needs_corroboration():
-    """Ein einzelnes Wort aus einer Tabellenzelle zählt nur, wenn es Teil
-    eines belegten Namens ist; sonst wären Tabellenköpfe wie „Förderquote“
-    Namen und würden im ganzen Dokument nachgesucht."""
+def _fake_ner(*persons):
+    """KI-Attrappe: meldet die genannten Texte überall als Person."""
+
+    def run(texts):
+        return [sorted({m.span() for p in persons for m in re.finditer(re.escape(p), t)}) for t in texts]
+
+    return run
+
+
+def _plan_texts(pdf, ner_fn):
     from app.services import redaction as R
 
-    def fake_ner(texts):
-        # meldet einzelne Zellinhalte als Person, wie spaCy ohne Zusammenhang,
-        # und bestätigt die Listenform „Erika Heide“
-        hits = {"Förderquote", "Kostenart", "Heide", "Erika Heide"}
-        return [[(0, len(t))] if t in hits else [] for t in texts]
+    plan = R.build_plan(pdf, R.Criteria(("ki_namen",), (), False, True), ner_fn)
+    return sorted((c.page, c.source, c.text) for c in plan.candidates)
+
+
+def _lines_pdf(*pages) -> bytes:
+    doc = fitz.open()
+    for lines in pages:
+        page = doc.new_page()
+        for y, line in enumerate(lines):
+            page.insert_text((72, 72 + 16 * y), line, fontsize=9)
+    return doc.tobytes()
+
+
+def test_ner_false_positive_is_not_multiplied():
+    """Meldet die KI eine Zelle „Summe Netto“ als Person, wird „Summe“ nicht
+    im ganzen Dokument geschwärzt: Ein Wort, das viel öfter nachgesucht als
+    direkt erkannt würde, wird gar nicht nachgesucht."""
+    from app.services import redaction as R
+
+    prose = ["Die Summe der Ausgaben ist geprüft."] * 4
+    pdf = _lines_pdf(["Summe Netto"], *[prose] * 5)
+    found = _plan_texts(pdf, _fake_ner("Summe Netto"))
+    assert found == [(1, "ki_namen", "Summe Netto")]
+    # Ein echter Name mit wenigen weiteren Vorkommen wird nachgesucht.
+    pdf = _lines_pdf(["Jan Reiter"], ["Reiter", "Reiter"])
+    assert [t for t in _plan_texts(pdf, _fake_ner("Jan Reiter")) if t[1] == R.NER_PROPAGATED_ID] == [
+        (2, R.NER_PROPAGATED_ID, "Reiter"),
+        (2, R.NER_PROPAGATED_ID, "Reiter"),
+    ]
+
+
+def test_ner_keeps_initials_and_foreign_letters():
+    """Was die KI meldet, bleibt Fundstelle, auch mit Initiale oder
+    Buchstaben außerhalb des deutschen Alphabets; zwei solche Bestandteile
+    belegen den Namen für die Nachsuche."""
+    pdf = _lines_pdf(["i. A. Stahl", "Ömer Çelik", "Atreides"], ["Stahl", "Çelik"])
+    found = _plan_texts(pdf, _fake_ner("A. Stahl", "Ömer Çelik", "Atreides"))
+    assert [t for _p, _s, t in found] == ["A. Stahl", "Atreides", "Ömer Çelik", "Stahl", "Çelik"]
+
+
+def test_ner_propagation_exceptions():
+    """Nicht nachgesucht wird nach einem Artikel und beim Monatskürzel im
+    Datum; nachgesucht wird bei Namenszusätzen und „Jan.“ am Satzende."""
+    pdf = _lines_pdf(
+        ["Jan Heide"],
+        ["Der Heide blühte.", "am 15. Jan. 2026", "Jan. 2027", "Protokoll: Jan.", "Herr von der Heide"],
+    )
+    found = [t for t in _plan_texts(pdf, _fake_ner("Jan Heide")) if t[0] == 2]
+    assert [t for _p, _s, t in found] == ["Heide", "Jan"], found
+
+
+def test_ner_spans_beyond_segment_are_clamped():
+    """Eine fehlerhafte KI-Funktion mit zu langen oder negativen Spans darf
+    nicht in Nachbarzellen überlaufen und nicht abstürzen."""
+    from app.services import redaction as R
+
+    def bad_ner(texts):
+        return [[(-3, len(t) + 50)] if t == "Reiter" else [] for t in texts]
 
     def build(doc, page):
-        for x, cell in ((40, "Förderquote"), (200, "Kostenart"), (360, "Heide")):
-            page.insert_text((x, 80), cell, fontsize=9)
-        page.insert_text((40, 100), "Heide, Erika", fontsize=9)
-        page.insert_text((40, 140), "Die Förderquote beträgt 60 Prozent je Kostenart.", fontsize=9)
+        page.insert_text((40, 80), "Reiter", fontsize=9)
+        page.insert_text((300, 80), "Kostenstelle", fontsize=9)
 
-    plan = R.build_plan(_pdf(build), R.Criteria(("ki_namen",), (), False, True), fake_ner)
-    texts = sorted(c.text for c in plan.candidates)
-    assert texts == ["Heide", "Heide, Erika"], texts
+    plan = R.build_plan(_pdf(build), R.Criteria(("ki_namen",), (), False, True), bad_ner)
+    assert [c.text for c in plan.candidates] == ["Reiter"]
 
 
 def test_ner_span_split_at_cell_borders():

@@ -974,7 +974,6 @@ def _cleanup_info(doc: Any) -> dict[str, Any]:
 NerFn = Callable[[list[str]], list[list[tuple[int, int]]]]
 # Namensbestandteil: großer Anfangsbuchstabe, auch mit Bindestrich („Meyer-Lüdenscheidt“).
 _NAME_PART = r"[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)*"
-_NAME_TOKEN = re.compile(_NAME_PART)
 # Titel vor einem Namen („Prof. Dr.“, „Dipl.-Ing.“). Mit Titel davor erkennt
 # die KI „Prof. Dr. Rainer Zufall“ nicht als Person, ohne Titel schon.
 _TITLES = re.compile(r"(?:(?:Prof|Dr|Dipl)\.(?:-[A-Za-zäöü]+\.)?\s*)+")
@@ -993,6 +992,20 @@ _MONTH_ABBREVIATIONS = frozenset("Jan Feb Mär Apr Jun Jul Aug Sep Sept Okt Nov 
 _ARTICLE_BEFORE = re.compile(
     r"(?:^|[^\w])(?:der|die|das|dem|den|des|ein|eine|einem|einen|einer|eines)\s+$", re.IGNORECASE
 )
+# … außer als Teil eines Namenszusatzes („von der Heide“, „van den Berg“).
+_NAME_PREFIX_BEFORE = re.compile(r"(?:^|[^\w])(?:von|vom|van|zu|zur|ter|de)\s+\w+\s+$", re.IGNORECASE)
+# Monatskürzel im Datum: „15. Jan.“, „Jan. 2026“.
+_DAY_BEFORE = re.compile(r"\d{1,2}\.\s*$")
+_YEAR_AFTER = re.compile(r"\.\s*\d{2,4}(?!\d)")
+# Bestandteile eines KI-Treffers, auch Initialen („J.“) und Buchstaben
+# außerhalb des deutschen Alphabets („Çelik“).
+_SPAN_PART = re.compile(r"[^\W\d_]+")
+# Ein Wort wird höchstens so oft nachgesucht: max(Untergrenze, Faktor × direkt
+# erkannt). Sonst wird die Nachsuche für dieses Wort verworfen. Grund: Ein
+# einzelner Fehltreffer („Summe Netto“ als Person) würde sonst jedes „Summe“
+# im Dokument schwärzen; ein echter Name ist meist auch direkt mehrfach erkannt.
+_PROPAGATION_FLOOR = 10
+_PROPAGATION_FACTOR = 4
 _NAME_EDGE = " \t,;:()[]/"
 # Abschnitte zwischen harten Grenzen bis zu dieser Wortzahl prüft die KI
 # zusätzlich für sich (Tabellenzellen, Listeneinträge). Ein Absatz ist ein
@@ -1071,7 +1084,22 @@ def _line_segments(pt: _PageText) -> list[tuple[int, int]]:
 
 
 def _name_tokens(text: str) -> list[str]:
-    return [t for t in _NAME_TOKEN.findall(text) if len(t) >= 3 and t not in _NOT_NAMES]
+    """Wörter eines Namens, die im Dokument nachgesucht werden dürfen."""
+    return [
+        t
+        for t in re.findall(r"[^\W\d_]+(?:-[^\W\d_]+)*", text)
+        if len(t) >= 3 and t[0].isupper() and t[1:].replace("-", "").islower() and t not in _NOT_NAMES
+    ]
+
+
+def _is_name_noun(text: str, start: int, end: int) -> bool:
+    """Steht das nachgesuchte Wort hier als Substantiv oder Datum statt als Name?"""
+    before = text[max(0, start - 30) : start]
+    if _ARTICLE_BEFORE.search(before) and not _NAME_PREFIX_BEFORE.search(before):
+        return True
+    if text[start:end] in _MONTH_ABBREVIATIONS and text[end : end + 1] == ".":
+        return bool(_DAY_BEFORE.search(text[max(0, start - 6) : start]) or _YEAR_AFTER.match(text, end))
+    return False
 
 
 def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int, str]]]:
@@ -1085,13 +1113,16 @@ def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int,
     - die Listenform „Nachname, Vorname“, wenn die KI „Vorname Nachname“
       als Person erkennt.
 
-    Belegt ist ein Name, wenn die KI ihn aus mindestens zwei Bestandteilen
-    erkennt (im Seitentext auch über Zellgrenzen hinweg) oder die Listenform
-    bestätigt. Ein einzelnes Wort aus einem
-    kurzen Abschnitt zählt nur, wenn es Teil eines belegten Namens ist: Ohne
-    Zusammenhang hält die KI Tabellenköpfe wie „Förderquote“ für Personen.
-    Die Bestandteile belegter Namen werden auf allen Seiten nachgesucht
-    (Quelle ``NER_PROPAGATED_ID``), etwa ein allein stehender Nachname.
+    Alles, was die KI meldet, wird direkt übernommen: Ein übersehener Name
+    wiegt schwerer als ein Fehltreffer, den die Vorschau abwählen kann.
+
+    Nachgesucht werden die Bestandteile belegter Namen (Quelle
+    ``NER_PROPAGATED_ID``), etwa ein allein stehender Nachname. Belegt ist
+    ein Name, den die KI aus mindestens zwei Bestandteilen erkennt (im
+    Seitentext auch über Zellgrenzen hinweg) oder den die Listenform
+    bestätigt. Nicht nachgesucht wird, wo das Wort als Substantiv oder Datum
+    steht (``_is_name_noun``), und gar nicht, wenn ein Wort viel öfter
+    nachgesucht als direkt erkannt würde (Fehltreffer wie „Summe Netto“).
 
     Rückgabe: je Seite (start, ende, quelle).
     """
@@ -1118,56 +1149,53 @@ def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int,
     results = list(ner(jobs)) if jobs else []
 
     strong: set[str] = set()
-    per_page: list[tuple[set[tuple[int, int]], set[tuple[int, int]]]] = []
+    direct_pages: list[set[tuple[int, int]]] = []
     for pt, (full, segments, listed) in zip(pts, layout):
         direct: set[tuple[int, int]] = set()
-        single: set[tuple[int, int]] = set()
         for s, e in results[full]:
             direct.update(_hard_parts(pt.text, s, e))
-            # Im Zusammenhang erkannte Person aus mehreren Bestandteilen: Alle
+            # Person aus mehreren Bestandteilen, im Zusammenhang erkannt: Alle
             # Teile gelten als belegt, auch wenn der Treffer über Zellgrenzen
             # lief („Jan / Reiter / Stahl“) und deshalb geteilt wird.
-            tokens = _name_tokens(pt.text[max(0, s) : e])
-            if len(tokens) >= 2:
-                strong.update(tokens)
+            if len(_SPAN_PART.findall(pt.text[max(0, s) : e])) >= 2:
+                strong.update(_name_tokens(pt.text[max(0, s) : e]))
         for offset, k in segments:
+            length = len(jobs[k])
             for s, e in results[k]:
+                s, e = max(0, s), min(e, length)
                 for a, b in _hard_parts(pt.text, offset + s, offset + e):
-                    tokens = _name_tokens(pt.text[a:b])
-                    if len(tokens) >= 2:
-                        direct.add((a, b))
-                        strong.update(tokens)
-                    else:
-                        single.add((a, b))
+                    direct.add((a, b))
+                    if len(_SPAN_PART.findall(pt.text[a:b])) >= 2:
+                        strong.update(_name_tokens(pt.text[a:b]))
         for s, e, k in listed:
             if any(a == 0 and b == len(jobs[k]) for a, b in results[k]):
                 direct.add((s, e))
                 strong.update(_name_tokens(pt.text[s:e]))
-        per_page.append((direct, single))
+        direct_pages.append(direct)
 
-    names = None
-    if strong:
-        alternatives = "|".join(re.escape(t) for t in sorted(strong, key=lambda t: (-len(t), t)))
-        names = re.compile(rf"(?<![\w-])(?:{alternatives})(?![\w-])")
-    out: list[list[tuple[int, int, str]]] = []
-    for pt, (direct, single) in zip(pts, per_page):
-        spans = {(a, b, NER_PATTERN_ID) for a, b in direct}
-        for a, b in single:
-            if all(t in strong for t in _name_tokens(pt.text[a:b])) and _name_tokens(pt.text[a:b]):
-                spans.add((a, b, NER_PATTERN_ID))
-        if names is not None:
-            taken = [(a, b) for a, b, _ in spans]
-            for m in names.finditer(pt.text):
-                a, b = m.span()
-                if any(a < y and b > x for x, y in taken):
-                    continue
-                if m.group() in _MONTH_ABBREVIATIONS and pt.text[b : b + 1] == ".":
-                    continue
-                if _ARTICLE_BEFORE.search(pt.text, max(0, a - 12), a):
-                    continue
-                spans.add((a, b, NER_PROPAGATED_ID))
-        out.append(sorted(spans))
-    return out
+    out = [sorted((a, b, NER_PATTERN_ID) for a, b in direct) for direct in direct_pages]
+    if not strong:
+        return out
+    alternatives = "|".join(re.escape(t) for t in sorted(strong, key=lambda t: (-len(t), t)))
+    names = re.compile(rf"(?<![\w-])(?:{alternatives})(?![\w-])")
+    direct_count: dict[str, int] = {}
+    found: dict[str, list[tuple[int, int, int]]] = {}
+    for pno, (pt, direct) in enumerate(zip(pts, direct_pages)):
+        for a, b in direct:
+            for m in names.finditer(pt.text, a, b):
+                direct_count[m.group()] = direct_count.get(m.group(), 0) + 1
+        taken = sorted(direct)
+        for m in names.finditer(pt.text):
+            a, b = m.span()
+            if any(a < y and b > x for x, y in taken) or _is_name_noun(pt.text, a, b):
+                continue
+            found.setdefault(m.group(), []).append((pno, a, b))
+    for token, hits in found.items():
+        if len(hits) > max(_PROPAGATION_FLOOR, _PROPAGATION_FACTOR * direct_count.get(token, 0)):
+            continue
+        for pno, a, b in hits:
+            out[pno].append((a, b, NER_PROPAGATED_ID))
+    return [sorted(spans) for spans in out]
 
 
 def build_plan(data: bytes, criteria: Criteria, ner: NerFn | None = None) -> Plan:
@@ -1180,6 +1208,9 @@ def build_plan(data: bytes, criteria: Criteria, ner: NerFn | None = None) -> Pla
         _reveal_layers(doc)  # Text ausgeblendeter Ebenen mitsuchen; doc wird verworfen
         pages: list[PageInfo] = []
         candidates: list[Candidate] = []
+        # Mit KI braucht die Erkennung alle Seiten zugleich (Nachsuche über das
+        # ganze Dokument); ohne KI wird jede Seite sofort durchsucht.
+        use_ner = NER_PATTERN_ID in criteria.patterns and ner is not None
         texts: list[tuple[_PageText, _ViewTransform]] = []
         for page in doc:
             transform = _ViewTransform(page)
@@ -1190,12 +1221,14 @@ def build_plan(data: bytes, criteria: Criteria, ner: NerFn | None = None) -> Pla
             if not info.has_text:
                 info.image_only = bool(page.get_images(full=False)) or bool(page.get_drawings()[:1])
             pages.append(info)
-            texts.append((pt, transform))
-        ner_spans: list[list[tuple[int, int, str]]] | list[None] = [None] * len(texts)
-        if NER_PATTERN_ID in criteria.patterns and ner is not None:
+            if use_ner:
+                texts.append((pt, transform))
+            else:
+                candidates.extend(_scan_page_text(page.number, pt, rules, transform, None))
+        if use_ner and ner is not None:
             ner_spans = _ner_document([pt for pt, _ in texts], ner)
-        for pno, ((pt, transform), spans) in enumerate(zip(texts, ner_spans)):
-            candidates.extend(_scan_page_text(pno, pt, rules, transform, spans))
+            for pno, ((pt, transform), spans) in enumerate(zip(texts, ner_spans)):
+                candidates.extend(_scan_page_text(pno, pt, rules, transform, spans))
         candidates.extend(_scan_hidden(doc, rules))
         cleanup = _cleanup_info(doc)
     finally:

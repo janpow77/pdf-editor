@@ -370,7 +370,7 @@ An einer aus Excel erzeugten Anwesenheitsliste (erfundene Namen) fand die KI-Nam
 |---|---|---|---|
 | T-1 | Im Seitentext zog spaCy Namen aus Nachbarzellen zu einem Treffer zusammen oder erkannte sie nicht. | behoben | Treffer werden an Zellgrenzen geteilt. Jeder kurze Zellinhalt (höchstens sechs Wörter) wird zusätzlich einzeln erkannt. |
 | T-2 | „Nachname, Vorname“ wurde oft nicht oder als Ort erkannt. | behoben | Die Listenform zählt, wenn die KI die Umstellung „Vorname Nachname“ als Person erkennt. |
-| T-3 | Allein stehende Nachnamen („Reiter“) wurden nie erkannt. | behoben | Die Bestandteile belegter Namen werden im ganzen Dokument wortgenau nachgesucht. Belegt ist ein Name, den die KI aus mindestens zwei Bestandteilen erkennt (im Seitentext auch über Zellgrenzen hinweg) oder den die Listenform bestätigt. Nicht nachgesucht werden Wochentage, Monate, Titel, Wörter nach einem Artikel („der Richter“) und Monatskürzel mit Punkt („15. Jan.“). Die nachgesuchten Treffer bilden in der Vorschau eine eigene Gruppe „Namen (im Dokument nachgesucht)“. Ein Nachname, der nirgends belegt ist, bleibt unerkannt. |
+| T-3 | Allein stehende Nachnamen („Reiter“) wurden nie erkannt. | behoben | Die Bestandteile belegter Namen werden im ganzen Dokument wortgenau nachgesucht. Belegt ist ein Name, den die KI aus mindestens zwei Bestandteilen erkennt (im Seitentext auch über Zellgrenzen hinweg, Initialen zählen mit) oder den die Listenform bestätigt. Nicht nachgesucht wird nach einem Artikel („der Richter“, aber nicht „von der Heide“) und beim Monatskürzel im Datum („15. Jan.“). Die nachgesuchten Treffer bilden in der Vorschau eine eigene Gruppe „Namen (im Dokument nachgesucht)“. Ein Nachname, der nirgends belegt ist, bleibt unerkannt. |
 | T-4 | Mit „Prof. Dr.“ davor erkannte spaCy keinen Namen. | behoben | Führende Titel werden vor der Einzelerkennung abgeschnitten; der Titel bleibt lesbar. |
 
 Zeilen eines Absatzes werden bewusst nicht einzeln erkannt: Ohne Satzzusammenhang meldete spaCy dort „Förderantrag“ als Namen. Die Anwesenheitsliste wird vollständig erkannt, im Fließtext-Korpus bleibt die Trefferquote gleich.
@@ -379,19 +379,30 @@ Die unabhängige Code-Prüfung desselben Tages ergab dazu:
 
 | Nr. | Befund | Stand | Lösung |
 |---|---|---|---|
-| T-5 | Ohne Zusammenhang hielt spaCy Tabellenköpfe („Kostenart“, „Förderquote“) für Personen, und die Nachsuche vervielfachte jeden solchen Fehltreffer im ganzen Dokument. Echte Namen wie „Richter“ wurden auch als Substantiv im Fließtext markiert, „Jan“ im Datum „15. Jan.“. | behoben, Rest offen | Einzelwörter aus kurzen Abschnitten zählen nur, wenn sie Teil eines belegten Namens sind. Nur belegte Namen werden nachgesucht, mit den Ausnahmen aus T-3. Offen bleibt: Ein belegter Name, der zugleich ein gewöhnliches Wort ist, wird ohne Artikel davor weiter markiert („500 Mark“, „Lange Zeit“). In der Vorschau lässt sich die Gruppe gesammelt abwählen; ohne Vorschau (Batch) wird geschwärzt. Bei Namen ist zu viel schwärzen das kleinere Übel. |
+| T-5 | Die Nachsuche vervielfachte Fehltreffer: Tabellenköpfe („Förderquote“, „Summe Netto“), Substantive („der Richter“), „Jan“ im Datum. | behoben, Rest offen | Ein Wort wird nicht nachgesucht, wenn es mehr als max(10, 4 × direkt erkannt) Mal nachgesucht würde; ein Fehltreffer bleibt so auf seine Stelle begrenzt. Dazu die Ausnahmen aus T-3. Offen: Was die KI direkt meldet, bleibt Fundstelle, auch ein Fehltreffer („Telefon“, „Netto“ im Fließtext); das war schon vor der Tabellenerkennung so. Ein belegter Name, der zugleich ein gewöhnliches Wort ist, wird ohne Artikel weiter nachgesucht („500 Mark“), solange die Obergrenze nicht greift. In der Vorschau lässt sich die Gruppe gesammelt abwählen; ohne Vorschau (Batch) wird geschwärzt. |
 | T-6 | Eine CropBox, die über die MediaBox hinausragt (zulässig), ließ die Vorschau mit KI und das Anwenden mit `ValueError` scheitern. | behoben | Der Seitentext wird für Suche und KI nur einmal ermittelt. Beim Anwenden wird der gespeicherte CropBox-Wert gesichert und unverändert zurückgeschrieben. |
 | T-7 | Bei Tabellen verdreifachte sich die Laufzeit (50 Seiten: 8,3 s statt 2,7 s). | verbessert | Gleiche Zellinhalte prüft die KI nur einmal: 5,0 s statt 2,7 s. Fließtext: 80 Seiten 1,4 s statt 0,8 s. |
 | T-8 | Spans der KI außerhalb des Textes ergaben `IndexError`. | behoben | Spans werden auf den Text begrenzt. |
 | T-9 | Lücken der Nachsuche: Großschreibung, Teile von Doppelnamen, Buchstaben außerhalb des deutschen Alphabets, Namen unter drei Buchstaben, Silbentrennung. | offen | Bewusst nicht erweitert: Jede Lockerung erhöht die Fehltreffer aus T-5. |
 
-Neue Tests decken T-1 bis T-8 ab, darunter ein Lauf Vorschau → Anwenden mit echter KI auf einer Tabelle.
+Die Nachprüfung (fünfte Runde, 22.11.2026) ergab:
+
+| Nr. | Befund | Stand | Lösung |
+|---|---|---|---|
+| T-10 | Rückschritt: Die Belegregel aus T-5 verwarf KI-Treffer mit Initiale oder fremden Buchstaben („A. Stahl“, „Ömer Çelik“) und einzelne Zellnamen („Atreides“), die vorher geschwärzt wurden. | behoben | Alles, was die KI meldet, wird wieder direkt übernommen; ein übersehener Name wiegt schwerer als ein abwählbarer Fehltreffer. Gegen die Vervielfachung wirkt die Obergrenze aus T-5. Initialen und Buchstaben außerhalb des deutschen Alphabets zählen als Bestandteile. |
+| T-11 | Zwei Tabellenköpfe nebeneinander, eine Zweiwortzelle oder „Telefon, Telefax“ als Listenform belegten einen Fehltreffer und lösten massenhaft Nachsuche aus. | behoben | Obergrenze aus T-5; in den Belegen der Prüfung („Begünstigter“ 120×, „Summe“ 51×) entsteht kein Nachsuche-Treffer mehr. |
+| T-12 | „Jan.“ am Satzende und „von der Heide“ wurden nicht mehr nachgesucht. | behoben | Monatskürzel nur im Datum ausgenommen, Artikel nach „von“, „van“, „zu“, „ter“, „de“ nicht gewertet. |
+| T-13 | Spans der KI wurden auf die Seite statt auf die Zelle begrenzt. | behoben | Begrenzung auf den Abschnitt. |
+| T-14 | Die Vorschau hält alle Seitentexte zugleich (300 dichte Seiten: 185 MiB Python-Speicher statt 11 MiB). | teilweise | Ohne KI wird wieder seitenweise gesucht (2,5 MiB). Mit KI bleibt es dabei, weil die Nachsuche das ganze Dokument braucht; das Anwenden lag schon vorher in dieser Größenordnung. |
+| T-15 | Ein Name kann in der Vorschau in zwei Gruppen stehen (direkt und nachgesucht); die neue Quelle steht nicht in `GET /redact/patterns`. | offen | Bewusst so: Abwählen einer Gruppe schwärzt über die andere weiter (sicher). Die Quelle ist im Planformat beschrieben. |
+
+Neue Tests decken T-1 bis T-13 ab, darunter ein Lauf Vorschau → Anwenden mit echter KI auf einer Tabelle.
 
 Nicht geprüft wurden der angemeldete Zustand mit höheren Grenzen, ein echter 422 des Servers (nur simuliert, die Fälle sind im Backend getestet), die Übergabe aus der Werkbank und das Zeichnen per Touch.
 
 Die zwölf neuen Tests zu H-N1 und M-N1 bis M-N6 (ohne M-N7, dessen Korrektur in der Schnittstelle liegt) schlagen auf dem Stand vor der zweiten Korrektur fehl, von den zehn Tests zu N3 sieben auf dem Stand davor; die übrigen drei sind Gegenproben.
 
-**Testlauf 20.11.2026:** 356 Backend-Tests bestanden, alle Schwärzungstests eingeschlossen. Zwei Tests sind übersprungen, weil `tabula` Java braucht und Java hier fehlt. Fünf Tests schlagen in dieser Umgebung fehl, keiner betrifft die Schwärzung:
+**Testlauf 22.11.2026:** 359 Backend-Tests bestanden, alle Schwärzungstests eingeschlossen. Zwei Tests sind übersprungen, weil `tabula` Java braucht und Java hier fehlt. Fünf Tests schlagen in dieser Umgebung fehl, keiner betrifft die Schwärzung:
 
 - vier in `test_form_advanced` (Formularberechnung), schon vor diesen Änderungen rot;
 - `test_scan_optimize`, weil Tesseract hier nicht installiert ist.
