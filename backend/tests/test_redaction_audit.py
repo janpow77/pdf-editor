@@ -1364,22 +1364,115 @@ def _lines_pdf(*pages) -> bytes:
     return doc.tobytes()
 
 
-def test_ner_false_positive_is_not_multiplied():
-    """Meldet die KI eine Zelle „Summe Netto“ als Person, wird „Summe“ nicht
-    im ganzen Dokument geschwärzt: Ein Wort, das viel öfter nachgesucht als
-    direkt erkannt würde, wird gar nicht nachgesucht."""
+def _cell_ner(*persons):
+    """KI-Attrappe: meldet die Texte nur, wenn sie allein stehen (eine Zelle),
+    nicht im Seitentext und nicht im Mustersatz."""
+
+    def run(texts):
+        return [[(0, len(t))] if t in persons else [] for t in texts]
+
+    return run
+
+
+def _count(found, source, text):
+    return sum(1 for _p, s, t in found if s == source and t == text)
+
+
+def test_ner_cell_false_positive_is_not_multiplied():
+    """Meldet die KI eine Zelle „Summe Netto“ als Person und bestätigt sie im
+    Mustersatz nicht, wird „Summe“ nicht im ganzen Dokument geschwärzt –
+    auch nicht, wenn der Spaltenkopf auf jeder Seite wiederkehrt."""
     from app.services import redaction as R
 
-    prose = ["Die Summe der Ausgaben ist geprüft."] * 4
-    pdf = _lines_pdf(["Summe Netto"], *[prose] * 5)
-    found = _plan_texts(pdf, _fake_ner("Summe Netto"))
-    assert found == [(1, "ki_namen", "Summe Netto")]
-    # Ein echter Name mit wenigen weiteren Vorkommen wird nachgesucht.
-    pdf = _lines_pdf(["Jan Reiter"], ["Reiter", "Reiter"])
-    assert [t for t in _plan_texts(pdf, _fake_ner("Jan Reiter")) if t[1] == R.NER_PROPAGATED_ID] == [
-        (2, R.NER_PROPAGATED_ID, "Reiter"),
-        (2, R.NER_PROPAGATED_ID, "Reiter"),
+    pages = [["Summe Netto"]] * 6 + [["Summe und Belege stimmen."] * 3] * 6
+    found = _plan_texts(_lines_pdf(*pages), _cell_ner("Summe Netto"))
+    assert _count(found, "ki_namen", "Summe Netto") == 6
+    assert not [t for t in found if t[1] == R.NER_PROPAGATED_ID]
+
+
+def test_ner_cap_boundary():
+    """Grenze bei unbestätigtem Zellbeleg: bis max(10, 4 × direkt) wird
+    nachgesucht, darüber nur mit Anrede."""
+    from app.services import redaction as R
+
+    def pdf(n, addressed=0):
+        return _lines_pdf(["Jan Reiter"], ["Reiter kam."] * n + ["Herr Reiter kam."] * addressed)
+
+    assert _count(_plan_texts(pdf(10), _cell_ner("Jan Reiter")), R.NER_PROPAGATED_ID, "Reiter") == 10
+    assert _count(_plan_texts(pdf(11), _cell_ner("Jan Reiter")), R.NER_PROPAGATED_ID, "Reiter") == 0
+    assert _count(_plan_texts(pdf(11, 3), _cell_ner("Jan Reiter")), R.NER_PROPAGATED_ID, "Reiter") == 3
+
+
+def test_ner_frequent_name_from_sentence_or_list_has_no_cap():
+    """Ein Name aus dem Satzzusammenhang, der Listenform oder einer im
+    Mustersatz bestätigten Zelle wird ohne Grenze nachgesucht: spaCy erkennt
+    einen allein stehenden Nachnamen fast nie."""
+    from app.services import redaction as R
+
+    prose = [["Berger legte die Belege vor."] * 8 for _ in range(4)]
+    cases = [
+        (["Projektleiter ist Thomas Berger."], _fake_ner("Thomas Berger")),
+        (["Berger, Thomas"], _cell_ner("Thomas Berger")),
+        (["Thomas Berger"], _fake_ner("Thomas Berger")),  # Zelle, Mustersatz bestätigt
     ]
+    for head, ner_fn in cases:
+        found = _plan_texts(_lines_pdf(head, *prose), ner_fn)
+        assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 32, head
+
+
+def test_ner_cross_cell_header_is_capped():
+    """Zieht die KI zwei Spaltenköpfe über die Zellgrenze zu einer Person
+    zusammen, gilt die Grenze, auch wenn der Mustersatz das Paar bestätigt."""
+    from app.services import redaction as R
+
+    def build(doc, page):
+        page.insert_text((40, 60), "Telefon", fontsize=8)
+        page.insert_text((300, 60), "Begünstigter", fontsize=8)
+        for i in range(2):
+            q = doc.new_page()
+            for y in range(6):
+                q.insert_text((72, 72 + 16 * y), "Begünstigter ist die Stadt.", fontsize=9)
+
+    def ner_fn(texts):
+        out = []
+        for t in texts:
+            m = re.search(r"Telefon\s+Begünstigter", t)
+            out.append([m.span()] if m else [])
+        return out
+
+    found = _plan_texts(_pdf(build), ner_fn)
+    assert not [t for t in found if t[1] == R.NER_PROPAGATED_ID], found
+
+
+def test_ner_double_names_are_propagated():
+    from app.services import redaction as R
+
+    pdf = _lines_pdf(["Anna Meyer-Lüdenscheidt", "Hans-Peter Schulze"], ["Meyer-Lüdenscheidt", "Hans-Peter"])
+    found = [t for t in _plan_texts(pdf, _fake_ner("Anna Meyer-Lüdenscheidt", "Hans-Peter Schulze")) if t[0] == 2]
+    assert sorted(t for _p, _s, t in found) == ["Hans-Peter", "Meyer-Lüdenscheidt"]
+    assert {s for _p, s, _t in found} == {R.NER_PROPAGATED_ID}
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        lambda texts: [[(0, -1)] for _ in texts],
+        lambda texts: [[] for _ in texts[1:]],
+        lambda texts: [None for _ in texts],
+    ],
+)
+def test_ner_malformed_result(bad):
+    """Eine fehlerhafte KI-Funktion belegt nicht die ganze Seite und führt zu
+    einer klaren Fehlermeldung statt zu einem Absturz."""
+    from app.services import redaction as R
+
+    pdf = _lines_pdf(["Antrag der Stadt Ulm", "Kosten und Belege"], ["Kosten", "Belege"])
+    try:
+        found = _plan_texts(pdf, bad)
+    except R.RedactionError as exc:
+        assert "ungültiges Ergebnis" in str(exc)
+    else:
+        assert found == []
 
 
 def test_ner_keeps_initials_and_foreign_letters():
