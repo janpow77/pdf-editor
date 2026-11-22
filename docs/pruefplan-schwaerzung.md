@@ -379,7 +379,7 @@ Die unabhängige Code-Prüfung desselben Tages ergab dazu:
 
 | Nr. | Befund | Stand | Lösung |
 |---|---|---|---|
-| T-5 | Die Nachsuche vervielfachte Fehltreffer: Tabellenköpfe („Förderquote“, „Summe Netto“), Substantive („der Richter“), „Jan“ im Datum. | behoben, Rest offen | Nach Art des Belegs (siehe T-16): Namen aus dem Satzzusammenhang, der Listenform oder einer Zelle, die die KI im Mustersatz „Gestern habe ich … getroffen.“ als Person bestätigt, werden ohne Grenze nachgesucht. Für andere Zellbelege und Belege über Zellgrenzen hinweg gilt max(10, 4 × verschiedene direkte Fundstellentexte); darüber bleiben nur Stellen mit „Herr“, „Frau“, „Dr.“ oder „Prof.“ davor. Dazu die Ausnahmen aus T-3. Offen: Was die KI direkt meldet, bleibt Fundstelle, auch ein Fehltreffer („Telefon“, „Netto“ im Fließtext); das war schon vor der Tabellenerkennung so. Paare mit „Telefon“/„Telefax“ in einer Zelle besteht auch der Mustersatz. In der Vorschau lässt sich die Gruppe gesammelt abwählen; ohne Vorschau (Batch) wird geschwärzt. |
+| T-5 | Die Nachsuche vervielfachte Fehltreffer: Tabellenköpfe („Förderquote“, „Summe Netto“), Substantive („der Richter“), „Jan“ im Datum. | behoben, Rest offen | Nach Art des Belegs (siehe T-16, T-22): Ohne Grenze nachgesucht werden Namen aus einem Satz (ein kleingeschriebenes Wort in derselben Zelle oder Zeile), aus der Listenform und aus einer Zelle, die die KI im Mustersatz „Gestern habe ich … getroffen.“ als Person bestätigt. Für unbestätigte Zellbelege gilt max(10, 4 × verschiedene direkte Fundstellentexte), für Belege über Zellgrenzen hinweg dasselbe, mit Bestätigung im Mustersatz mindestens 50. Darüber bleiben nur Stellen mit Anrede oder Titel davor („Herr“, „Frau“, „Hr.“, „Fr.“, „Dr.“, „Dr. med.“, „Dr.-Ing.“, „Prof.“). „Telefon“, „Telefax“, „Fax“, „Tel“ und „Mobil“ gelten nie als Namensteil. Dazu die Ausnahmen aus T-3. Offen: Was die KI direkt meldet, bleibt Fundstelle, auch ein Fehltreffer („Telefon“, „Netto“ im Fließtext); das war schon vor der Tabellenerkennung so. Der Mustersatz bestätigt auch manche Paare aus Spaltenköpfen („Netto Brutto“, „Pos Menge“). In der Vorschau lässt sich die Gruppe gesammelt abwählen; ohne Vorschau (Batch) wird geschwärzt. |
 | T-6 | Eine CropBox, die über die MediaBox hinausragt (zulässig), ließ die Vorschau mit KI und das Anwenden mit `ValueError` scheitern. | behoben | Der Seitentext wird für Suche und KI nur einmal ermittelt. Beim Anwenden wird der gespeicherte CropBox-Wert gesichert und unverändert zurückgeschrieben. |
 | T-7 | Bei Tabellen verdreifachte sich die Laufzeit (50 Seiten: 8,3 s statt 2,7 s). | verbessert | Gleiche Zellinhalte prüft die KI nur einmal: 5,0 s statt 2,7 s. Fließtext: 80 Seiten 1,4 s statt 0,8 s. |
 | T-8 | Spans der KI außerhalb des Textes ergaben `IndexError`. | behoben | Spans werden auf den Text begrenzt. |
@@ -390,7 +390,7 @@ Die Nachprüfung (fünfte Runde, 22.11.2026) ergab:
 | Nr. | Befund | Stand | Lösung |
 |---|---|---|---|
 | T-10 | Rückschritt: Die Belegregel aus T-5 verwarf KI-Treffer mit Initiale oder fremden Buchstaben („A. Stahl“, „Ömer Çelik“) und einzelne Zellnamen („Atreides“), die vorher geschwärzt wurden. | behoben | Alles, was die KI meldet, wird wieder direkt übernommen; ein übersehener Name wiegt schwerer als ein abwählbarer Fehltreffer. Gegen die Vervielfachung wirkt die Obergrenze aus T-5. Initialen und Buchstaben außerhalb des deutschen Alphabets zählen als Bestandteile. |
-| T-11 | Zwei Tabellenköpfe nebeneinander, eine Zweiwortzelle oder „Telefon, Telefax“ als Listenform belegten einen Fehltreffer und lösten massenhaft Nachsuche aus. | behoben, Rest offen | Grenze aus T-5. In den Belegen („Begünstigter“ 120×, „Summe“ 51× und 120× bei wiederkehrendem Spaltenkopf) entsteht mit echter KI kein Nachsuche-Treffer mehr. Offen: „Telefon, Telefax“ als Listenform gilt als belegt. |
+| T-11 | Zwei Tabellenköpfe nebeneinander, eine Zweiwortzelle oder „Telefon, Telefax“ als Listenform belegten einen Fehltreffer und lösten massenhaft Nachsuche aus. | behoben | Grenze aus T-5. In den Belegen („Begünstigter“ 120×, „Summe“ 51× und 120× bei wiederkehrendem Spaltenkopf) entsteht mit echter KI kein Nachsuche-Treffer mehr. „Telefon, Telefax“ gilt seit T-23 nicht mehr als Listenform. |
 | T-12 | „Jan.“ am Satzende und „von der Heide“ wurden nicht mehr nachgesucht. | behoben | Monatskürzel nur im Datum ausgenommen, Artikel nach „von“, „van“, „zu“, „ter“, „de“ nicht gewertet. |
 | T-13 | Spans der KI wurden auf die Seite statt auf die Zelle begrenzt. | behoben | Begrenzung auf den Abschnitt. |
 | T-14 | Die Vorschau hält alle Seitentexte zugleich (300 dichte Seiten: 185 MiB Python-Speicher statt 11 MiB). | teilweise | Ohne KI wird wieder seitenweise gesucht (2,5 MiB). Mit KI bleibt es dabei, weil die Nachsuche das ganze Dokument braucht; das Anwenden lag schon vorher in dieser Größenordnung. |
@@ -405,15 +405,25 @@ Die Nachprüfung (sechste Runde, 22.11.2026) ergab:
 | T-18 | Doppelnamen („Meyer-Lüdenscheidt“, „Hans-Peter“) wurden nicht mehr nachgesucht. | behoben | Jeder Teil wird für sich auf Großschreibung geprüft. |
 | T-19 | Die Nachsuche wuchs mit Zahl der Namen × Textlänge (300 Seiten × 150 Namen: 33 s). | behoben | Wörter werden einmal erfasst und nachgeschlagen: 0,7 s. |
 | T-20 | Eine fehlerhafte KI-Funktion konnte die ganze Seite belegen oder einen Absturz (HTTP 500) auslösen. | behoben | Spans werden geklemmt; ein Ergebnis in falscher Form ergibt eine klare Fehlermeldung. |
-| T-21 | Die Grenze war nicht getestet. | behoben | Tests für Grenzwert 10/11, Anrede, häufige Namen, Mustersatz, Spaltenkopf über Zellgrenzen, Doppelnamen und fehlerhafte KI; Mutationsproben (Grenze, Mustersatz, Zellgrenzen-Regel aus) schlagen an. |
+| T-21 | Die Grenze war nicht getestet. | behoben | Tests für Grenzwert 10/11, Anrede, häufige Namen, Mustersatz, Spaltenkopf über Zellgrenzen, Doppelnamen und fehlerhafte KI. Fünf Mutationsproben blieben dabei unbemerkt; die Lücken schließt T-26. |
 
-Neue Tests decken T-1 bis T-21 ab, darunter ein Lauf Vorschau → Anwenden mit echter KI auf einer Tabelle.
+Die Nachprüfung (siebte Runde, 22.11.2026) ergab:
+
+| Nr. | Befund | Stand | Lösung |
+|---|---|---|---|
+| T-22 | Schwer: Eine Kopfzeile aus nahen Spalten („Ort Telefon Begünstigter Betrag“) liest MuPDF als eine Zeile. Die Nachbarwörter galten als Satzzusammenhang, ein Fehltreffer darin wurde ohne Grenze nachgesucht („Betrag“ und „Telefon“ je 120×, „Summe“ 121×). | behoben | Als Satz zählt nur ein kleingeschriebenes Wort in derselben Zelle oder Zeile; sonst entscheidet der Mustersatz. In denselben Belegen kein Nachsuche-Treffer mehr; „Berger“ aus einem Satz weiter 60 von 60. |
+| T-23 | „Telefon“, „Telefax“ bestanden Mustersatz und Listenform. | behoben | Kontaktwörter gelten nie als Namensteil und werden vor dem Mustersatz entfernt. |
+| T-24 | Ein Name aus getrennten Spalten (Vorname &#124; Nachname) blieb ab elf Nennungen ganz lesbar. | teilweise | Bestätigt der Mustersatz das Paar, gilt eine Grenze von mindestens 50. Eine Freigabe ohne Grenze lässt der Mustersatz nicht zu: In einer Belegliste bestätigte er „Kosimo Betrag“, „Betrag“ wäre 3.587× geschwärzt worden. Über 50 Nennungen bleibt ein solcher Name ohne Anrede lesbar. |
+| T-25 | Der Mustersatz lief auf jede Zelle (300 dichte Seiten: 34.728 zusätzliche KI-Texte, 16 s). | behoben | Er läuft nur noch für Wörter, die sonst an der Grenze scheitern: 51 Texte, Vorschau 44 s → 30 s. |
+| T-26 | Testlücken: Satzregel, Teilbestätigung im Mustersatz, Zellgrenzen-Regel, Titel und Faktor 4 waren nicht abgesichert. Eine fehlerhafte KI ergab HTTP 400, eine abstürzende HTTP 500. | behoben | Neue Tests dazu; von 26 Mutationsproben schlagen 25 an. Unbemerkt bleibt nur das Weglassen der Prüfung, ob ein direkter Treffer innerhalb eines Worts beginnt; das wirkt sich nur bei Teiltreffern in Bindestrichwörtern aus, die Überlappungsauflösung fängt es ab. Fehler der KI-Funktion ergeben jetzt HTTP 502 mit Meldung. Die Anrede erkennt auch „Hr.“, „Fr.“, „Dr. med.“, „Dr.-Ing.“. |
+
+Neue Tests decken T-1 bis T-26 ab, darunter ein Lauf Vorschau → Anwenden mit echter KI auf einer Tabelle.
 
 Nicht geprüft wurden der angemeldete Zustand mit höheren Grenzen, ein echter 422 des Servers (nur simuliert, die Fälle sind im Backend getestet), die Übergabe aus der Werkbank und das Zeichnen per Touch.
 
 Die zwölf neuen Tests zu H-N1 und M-N1 bis M-N6 (ohne M-N7, dessen Korrektur in der Schnittstelle liegt) schlagen auf dem Stand vor der zweiten Korrektur fehl, von den zehn Tests zu N3 sieben auf dem Stand davor; die übrigen drei sind Gegenproben.
 
-**Testlauf 22.11.2026:** 366 Backend-Tests bestanden, alle Schwärzungstests eingeschlossen. Zwei Tests sind übersprungen, weil `tabula` Java braucht und Java hier fehlt. Fünf Tests schlagen in dieser Umgebung fehl, keiner betrifft die Schwärzung:
+**Testlauf 22.11.2026:** 381 Backend-Tests bestanden, alle Schwärzungstests eingeschlossen. Zwei Tests sind übersprungen, weil `tabula` Java braucht und Java hier fehlt. Fünf Tests schlagen in dieser Umgebung fehl, keiner betrifft die Schwärzung:
 
 - vier in `test_form_advanced` (Formularberechnung), schon vor diesen Änderungen rot;
 - `test_scan_optimize`, weil Tesseract hier nicht installiert ist.

@@ -386,6 +386,8 @@ def _plan_or_error(service, content: bytes, criteria) -> dict:
         return service.redaction_plan(content, criteria)
     except redaction_engine.RedactionError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except redaction_engine.RedactionNerError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 # Die Oberfläche schickt nur Kennungen und Bereiche; 45 000 Kennungen sind
@@ -436,6 +438,8 @@ def _apply_or_error(service, content: bytes, selection) -> tuple[bytes, dict]:
         raise HTTPException(status_code=400, detail=str(e))
     except redaction_engine.RedactionVerificationError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except redaction_engine.RedactionNerError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.post("/redact/plan")

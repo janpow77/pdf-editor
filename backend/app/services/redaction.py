@@ -60,6 +60,10 @@ class RedactionStaleError(RedactionError):
     """Plan passt nicht zur Datei oder zu den Fundstellen (HTTP 409)."""
 
 
+class RedactionNerError(RuntimeError):
+    """Die KI-Namenserkennung lieferte ein ungültiges Ergebnis (HTTP 502)."""
+
+
 class RedactionVerificationError(RuntimeError):
     """Nach dem Schwärzen ist noch etwas lesbar — keine Ausgabe (HTTP 422)."""
 
@@ -982,9 +986,13 @@ _TITLES = re.compile(r"(?:(?:Prof|Dr|Dipl)\.(?:-[A-Za-zäöü]+\.)?\s*)+")
 _LIST_NAME = re.compile(rf"(?:{_TITLES.pattern})?(?P<last>{_NAME_PART}),[ \t]*(?P<first>{_NAME_PART})(?![\w-])")
 # Wörter, die die KI gelegentlich als Namen meldet, die aber nie im ganzen
 # Dokument nachgesucht werden sollen.
+# Kontaktangaben in Briefköpfen und Spaltenköpfen; spaCy hält „Telefon X“
+# oft für eine Person, auch im Mustersatz.
+_CONTACT_WORDS = frozenset("Telefon Telefax Fax Tel Mobil".split())
 _NOT_NAMES = frozenset(
     "Herr Herrn Frau Prof Dipl Montag Dienstag Mittwoch Donnerstag Freitag Samstag Sonntag "
     "Januar Februar März April Mai Juni Juli August September Oktober November Dezember".split()
+    + list(_CONTACT_WORDS)
 )
 # Monatskürzel: „Jan“ ist ein Vorname, „15. Jan. 2026“ aber ein Datum.
 _MONTH_ABBREVIATIONS = frozenset("Jan Feb Mär Apr Jun Jul Aug Sep Sept Okt Nov Dez".split())
@@ -1002,24 +1010,32 @@ _YEAR_AFTER = re.compile(r"\.\s*\d{2,4}(?!\d)")
 # außerhalb des deutschen Alphabets („Çelik“).
 _SPAN_PART = re.compile(r"[^\W\d_]+")
 # Nachsuche mit Grenze: Ein Wort, das über Zellgrenzen hinweg oder nur aus
-# einer Tabellenzelle belegt ist und das die KI dort nicht im Mustersatz
-# bestätigt, wird höchstens max(Untergrenze, Faktor × direkt erkannt) Mal
-# ohne Anrede nachgesucht, sonst gar nicht. „Direkt erkannt“ zählt
-# verschiedene Fundstellentexte, damit ein Spaltenkopf, der auf jeder Seite
-# wiederkehrt, die Grenze nicht hebt. Grund: Ein Fehltreffer („Summe Netto“
-# als Person, zwei Spaltenköpfe nebeneinander) würde sonst jedes „Summe“ im
-# Dokument schwärzen. Namen aus dem Satzzusammenhang, der Listenform oder
+# einer Zelle oder Kopfzeile belegt ist und das die KI dort nicht im
+# Mustersatz bestätigt, wird höchstens max(Untergrenze, Faktor × direkt
+# erkannt) Mal ohne Anrede nachgesucht, sonst gar nicht. „Direkt erkannt“
+# zählt verschiedene Fundstellentexte, damit ein Spaltenkopf, der auf jeder
+# Seite wiederkehrt, die Grenze nicht hebt. Grund: Ein Fehltreffer („Summe
+# Netto“ als Person, zwei Spaltenköpfe nebeneinander) würde sonst jedes
+# „Summe“ im Dokument schwärzen. Namen aus einem Satz, der Listenform oder
 # dem Mustersatz gelten ohne Grenze: spaCy erkennt einen allein stehenden
 # Nachnamen fast nie, ein häufig genannter Name wäre sonst überall lesbar.
 _PROPAGATION_FLOOR = 10
 _PROPAGATION_FACTOR = 4
-# Zellbelege bestätigt die KI in einem Mustersatz. Erprobt mit
-# de_core_news_sm: 19 von 20 echten Namen bestätigt, von 22 Paaren aus
-# Spaltenköpfen nur die mit „Telefon“/„Telefax“.
+# Belege über Zellgrenzen („Klaus / Wagner“ in getrennten Spalten), die der
+# Mustersatz bestätigt, bekommen eine höhere Untergrenze, aber keine
+# Freigabe: Der Mustersatz bestätigt dort auch „Kosimo / Betrag“, und
+# „Betrag“ stünde dann tausendfach in einer Belegliste.
+_PROPAGATION_FLOOR_CONFIRMED = 50
+# Zellbelege bestätigt die KI in einem Mustersatz, Kontaktwörter vorher
+# entfernt. Erprobt mit de_core_news_sm: 46 von 47 echten Namen bestätigt;
+# bestätigt werden aber auch manche Paare aus Spaltenköpfen („Netto
+# Brutto“). Belege über Zellgrenzen hinweg werden deshalb nicht bestätigt.
 _CONFIRM_FRAME = "Gestern habe ich {} getroffen."
 _CONFIRM_START = _CONFIRM_FRAME.index("{}")
 # Anrede oder Titel vor dem Wort: Die Fundstelle bleibt auch über der Grenze.
-_SALUTATION_BEFORE = re.compile(r"(?:(?:^|[^\w])(?:Herrn?|Frau)\s+|(?:Dr|Prof)\.\s*)$")
+_SALUTATION_BEFORE = re.compile(
+    r"(?:^|[^\w])(?:(?:Herrn?|Frau)\s+|(?:Hr|Fr|Dr|Prof)\.(?:\s*-?[A-Za-zäöü]+\.)*\s*)$"
+)
 _WORD_RUN = re.compile(r"[\w-]+")
 _NAME_EDGE = " \t,;:()[]/"
 # Abschnitte zwischen harten Grenzen bis zu dieser Wortzahl prüft die KI
@@ -1137,11 +1153,14 @@ def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int,
     ``NER_PROPAGATED_ID``), etwa ein allein stehender Nachname. Belegt ist
     ein Name, den die KI aus mindestens zwei Bestandteilen erkennt oder den
     die Listenform bestätigt. Nicht nachgesucht wird, wo das Wort als
-    Substantiv oder Datum steht (``_is_name_noun``). Kommt der Beleg nur aus
-    einer Zelle ohne weitere Wörter, muss die KI ihn im Mustersatz
-    ``_CONFIRM_FRAME`` als Person bestätigen; sonst, und bei Belegen über
-    Zellgrenzen hinweg, gilt die Obergrenze ``_PROPAGATION_FLOOR``/``_PROPAGATION_FACTOR``, und
-    darüber bleiben nur Fundstellen mit Anrede oder Titel davor.
+    Substantiv oder Datum steht (``_is_name_noun``). Steht der Beleg nicht
+    in einem Satz (``_has_context``), sondern in einer Zelle oder Kopfzeile,
+    muss die KI ihn im Mustersatz ``_CONFIRM_FRAME`` als Person bestätigen;
+    sonst gilt die Obergrenze ``_PROPAGATION_FLOOR``/``_PROPAGATION_FACTOR``.
+    Belege über Zellgrenzen hinweg bekommen auch mit Bestätigung nur die
+    höhere Untergrenze ``_PROPAGATION_FLOOR_CONFIRMED``. Über der Grenze
+    bleiben nur Fundstellen mit Anrede oder Titel davor. Der Mustersatz läuft
+    nur für Wörter, die sonst an der Grenze scheitern.
 
     Rückgabe: je Seite (start, ende, quelle).
     """
@@ -1168,13 +1187,15 @@ def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int,
     results = _ner_results(ner, jobs)
 
     sure: set[str] = set()  # ohne Grenze nachgesucht
-    weak: set[str] = set()  # nur mit Grenze nachgesucht
+    loose: set[str] = set()  # Grenze _PROPAGATION_FLOOR_CONFIRMED
     cell_spans: dict[str, set[str]] = {}  # Zellbeleg → Wörter, vor der Bestätigung
+    cross_spans: dict[str, set[str]] = {}  # Beleg über Zellgrenzen, ebenso
 
-    def from_cell(text: str) -> None:
+    def from_cell(text: str, into: dict[str, set[str]]) -> None:
         tokens = _name_tokens(text)
         if tokens:
-            cell_spans.setdefault(" ".join(text.replace(_HARD, " ").split()), set()).update(tokens)
+            words = [w for w in text.replace(_HARD, " ").split() if w.strip(".,;:") not in _CONTACT_WORDS]
+            into.setdefault(" ".join(words), set()).update(tokens)
 
     direct_pages: list[list[tuple[int, int]]] = []
     for pt, (full, segments, listed) in zip(pts, layout):
@@ -1190,12 +1211,11 @@ def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int,
                     if _has_context(pt.text, a, b):
                         sure.update(_name_tokens(pt.text[a:b]))
                     else:
-                        from_cell(pt.text[a:b])
-            # Über Zellgrenzen erkannt („Jan / Reiter / Stahl“): Die Teile
-            # gelten als belegt, immer mit Grenze. Der Mustersatz hilft hier
-            # nicht: Spaltenköpfe („Telefon / Begünstigter“) besteht er auch.
+                        from_cell(pt.text[a:b], cell_spans)
+            # Über Zellgrenzen erkannt („Klaus / Wagner“ in getrennten
+            # Spalten, „Jan / Reiter / Stahl“).
             if len(parts) > 1 and len(_SPAN_PART.findall(pt.text[s:e])) >= 2:
-                weak.update(_name_tokens(pt.text[s:e]))
+                from_cell(pt.text[s:e], cross_spans)
         for offset, k in segments:
             length = len(jobs[k])
             for s, e in results[k]:
@@ -1203,21 +1223,15 @@ def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int,
                 for a, b in _hard_parts(pt.text, offset + s, offset + e):
                     direct.add((a, b))
                     if len(_SPAN_PART.findall(pt.text[a:b])) >= 2:
-                        from_cell(pt.text[a:b])
+                        from_cell(pt.text[a:b], cell_spans)
         for s, e, k in listed:
             if any(a == 0 and b == len(jobs[k]) for a, b in results[k]):
                 direct.add((s, e))
                 sure.update(_name_tokens(pt.text[s:e]))
         direct_pages.append(sorted(direct))
 
-    probes = sorted(cell_spans)
-    for text, spans in zip(probes, _ner_results(ner, [_CONFIRM_FRAME.format(t) for t in probes])):
-        confirmed = any(a <= _CONFIRM_START and b >= _CONFIRM_START + len(text) for a, b in spans)
-        (sure if confirmed else weak).update(cell_spans[text])
-    weak -= sure
-
     out = [[(a, b, NER_PATTERN_ID) for a, b in direct] for direct in direct_pages]
-    strong = sure | weak
+    strong = sure | {t for spans in (cell_spans, cross_spans) for tokens in spans.values() for t in tokens}
     if not strong:
         return out
     direct_texts: dict[str, set[str]] = {}
@@ -1238,14 +1252,30 @@ def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int,
             if (i >= 0 and merged[i][1] > a) or (i + 1 < len(merged) and merged[i + 1][0] < b):
                 continue
             if not _is_name_noun(pt.text, a, b):
-                addressed = bool(_SALUTATION_BEFORE.search(pt.text[max(0, a - 20) : a]))
+                addressed = bool(_SALUTATION_BEFORE.search(pt.text[max(0, a - 30) : a]))
                 found.setdefault(word, []).append((pno, a, b, addressed))
+
+    def capped(word: str) -> bool:
+        floor = _PROPAGATION_FLOOR_CONFIRMED if word in loose else _PROPAGATION_FLOOR
+        limit = max(floor, _PROPAGATION_FACTOR * len(direct_texts.get(word, ())))
+        return word not in sure and len(found[word]) > limit
+
+    # Den Mustersatz braucht nur, wer sonst an der Grenze scheitert.
+    over = {w for w in found if capped(w) and not all(addressed for *_, addressed in found[w])}
+    probes = sorted(
+        (t, k)
+        for k, spans in enumerate((cell_spans, cross_spans))
+        for t, tokens in spans.items()
+        if tokens & over and len(_SPAN_PART.findall(t)) >= 2
+    )
+    frames = [_CONFIRM_FRAME.format(t) for t, _k in probes]
+    for (text, k), spans in zip(probes, _ner_results(ner, frames)):
+        if any(a <= _CONFIRM_START and b >= _CONFIRM_START + len(text) for a, b in spans):
+            (loose if k else sure).update((cross_spans if k else cell_spans)[text])
     for word, hits in found.items():
-        capped = word not in sure and len(hits) > max(
-            _PROPAGATION_FLOOR, _PROPAGATION_FACTOR * len(direct_texts.get(word, ()))
-        )
+        limited = capped(word)
         for pno, a, b, addressed in hits:
-            if addressed or not capped:
+            if addressed or not limited:
                 out[pno].append((a, b, NER_PROPAGATED_ID))
     return [sorted(spans) for spans in out]
 
@@ -1256,21 +1286,26 @@ def _ner_results(ner: NerFn, jobs: list[str]) -> list[list[tuple[int, int]]]:
         return []
     try:
         results = [[(int(s), int(e)) for s, e in spans] for spans in ner(jobs)]
-    except (TypeError, ValueError) as exc:
-        raise RedactionError("KI-Namenserkennung lieferte ein ungültiges Ergebnis") from exc
+    except Exception as exc:  # Fehler der KI-Funktion selbst: Serverseite
+        raise RedactionNerError("KI-Namenserkennung lieferte ein ungültiges Ergebnis") from exc
     if len(results) != len(jobs):
-        raise RedactionError("KI-Namenserkennung lieferte ein ungültiges Ergebnis")
+        raise RedactionNerError("KI-Namenserkennung lieferte ein ungültiges Ergebnis")
     return results
 
 
 def _has_context(text: str, start: int, end: int) -> bool:
-    """Steht der Treffer im Zusammenhang, also mit weiteren Wörtern in
-    derselben Zelle oder Zeile („Projektleiter: Thomas Berger“)? Eine Zelle
-    nur aus dem Treffer („Summe Netto“) ist kein Zusammenhang."""
+    """Steht der Treffer in einem Satz? Verlangt wird ein kleingeschriebenes
+    Wort in derselben Zelle oder Zeile („Projektleiter ist Thomas Berger“).
+    Eine Kopfzeile aus Großwörtern („Ort Telefon Begünstigter Betrag“) liest
+    MuPDF bei engen Spalten als eine Zeile; sie ist kein Satz."""
     left = text.rfind(_HARD, 0, start) + 1
     right = text.find(_HARD, end)
     right = len(text) if right < 0 else right
-    return bool(_SPAN_PART.search(text, left, start) or _SPAN_PART.search(text, end, right))
+    return any(
+        m.group()[0].islower()
+        for lo, hi in ((left, start), (end, right))
+        for m in _SPAN_PART.finditer(text, lo, hi)
+    )
 
 
 def _merge_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:

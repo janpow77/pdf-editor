@@ -1444,6 +1444,149 @@ def test_ner_cross_cell_header_is_capped():
     assert not [t for t in found if t[1] == R.NER_PROPAGATED_ID], found
 
 
+def _no_frame(ner_fn):
+    """KI-Attrappe ohne Bestätigung im Mustersatz."""
+
+    def run(texts):
+        return [[] if t.startswith("Gestern habe ich") else r for t, r in zip(texts, ner_fn(texts))]
+
+    return run
+
+
+def test_ner_frame_only_where_cap_matters():
+    """Den Mustersatz bekommt die KI nur für Wörter, die sonst an der Grenze
+    scheitern (Laufzeit bei dichten Tabellen)."""
+    framed = []
+    base = _cell_ner("Jan Reiter", "Eva Stahl")
+
+    def ner_fn(texts):
+        framed.extend(t for t in texts if t.startswith("Gestern habe ich"))
+        return base(texts)
+
+    _plan_texts(_lines_pdf(["Jan Reiter"], ["Eva Stahl"], ["Reiter kam."] * 11 + ["Stahl kam."] * 3), ner_fn)
+    assert framed == ["Gestern habe ich Jan Reiter getroffen."]
+
+
+def test_ner_header_row_is_no_sentence_context():
+    """Eine Kopfzeile aus Großwörtern, die MuPDF als eine Zeile liest, ist
+    kein Satz: Ein Fehltreffer darin wird nicht ohne Grenze nachgesucht."""
+    from app.services import redaction as R
+
+    pdf = _lines_pdf(["Ort Telefon Begünstigter Betrag"], *[["Betrag wurde gezahlt."] * 6] * 2)
+    found = _plan_texts(pdf, _no_frame(_fake_ner("Begünstigter Betrag")))
+    assert _count(found, "ki_namen", "Begünstigter Betrag") == 1
+    assert not [t for t in found if t[1] == R.NER_PROPAGATED_ID], found
+
+
+def test_ner_sentence_context_needs_no_frame():
+    """Steht ein kleingeschriebenes Wort daneben, gilt der Treffer als Satz
+    und wird ohne Grenze und ohne Mustersatz nachgesucht."""
+    from app.services import redaction as R
+
+    prose = [["Berger legte die Belege vor."] * 8 for _ in range(4)]
+    found = _plan_texts(_lines_pdf(["Projektleiter ist Thomas Berger."], *prose), _no_frame(_fake_ner("Thomas Berger")))
+    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 32
+
+
+def test_ner_partial_frame_hit_is_no_confirmation():
+    """Bestätigt der Mustersatz nur einen Teil des Zellbelegs, gilt die Grenze."""
+    from app.services import redaction as R
+
+    def ner_fn(texts):
+        return [
+            [(m.start(), m.end())] if (m := re.search("Thomas", t)) and t.startswith("Gestern") else
+            ([(0, len(t))] if t == "Thomas Berger" else [])
+            for t in texts
+        ]
+
+    found = _plan_texts(_lines_pdf(["Thomas Berger"], ["Berger kam."] * 11), ner_fn)
+    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 0
+
+
+@pytest.mark.parametrize("title", ["Herr", "Frau", "Hr.", "Fr.", "Dr.", "Prof.", "Dr. med.", "Dr.-Ing."])
+def test_ner_salutation_kept_above_cap(title):
+    from app.services import redaction as R
+
+    pdf = _lines_pdf(["Jan Reiter"], ["Reiter kam."] * 11 + [f"Laut {title} Reiter fehlt nichts."])
+    assert _count(_plan_texts(pdf, _cell_ner("Jan Reiter")), R.NER_PROPAGATED_ID, "Reiter") == 1
+
+
+def test_ner_cap_grows_with_distinct_direct_hits():
+    """Drei verschiedene direkte Belege heben die Grenze auf 4 × 3 = 12."""
+    from app.services import redaction as R
+
+    heads = [["Jan Reiter"], ["Eva Reiter"], ["Max Reiter"]]
+    ner_fn = _cell_ner("Jan Reiter", "Eva Reiter", "Max Reiter")
+    assert _count(_plan_texts(_lines_pdf(*heads, ["Reiter kam."] * 12), ner_fn), R.NER_PROPAGATED_ID, "Reiter") == 12
+    assert _count(_plan_texts(_lines_pdf(*heads, ["Reiter kam."] * 13), ner_fn), R.NER_PROPAGATED_ID, "Reiter") == 0
+
+
+def _columns_pdf(mentions: int) -> bytes:
+    """Teilnehmerliste mit getrennten Spalten Vorname | Nachname, danach
+    ein Protokoll, das den Nachnamen ohne Anrede nennt."""
+
+    def build(doc, page):
+        page.insert_text((40, 60), "Klaus", fontsize=8)
+        page.insert_text((300, 60), "Wagner", fontsize=8)
+        q = doc.new_page()
+        q.insert_textbox(fitz.Rect(50, 50, 545, 800), "Wagner legte die Belege vor. " * mentions, fontsize=9)
+
+    return _pdf(build)
+
+
+def _columns_ner(confirm: bool):
+    def run(texts):
+        out = []
+        for t in texts:
+            m = re.search(r"Klaus\s+Wagner", t)
+            framed = t.startswith("Gestern habe ich")
+            out.append([m.span()] if m and (confirm or not framed) else [])
+        return out
+
+    return run
+
+
+def test_ner_column_split_name_confirmed_has_higher_floor():
+    """Ein Name aus zwei Spalten, den der Mustersatz bestätigt, wird bis 50
+    Mal nachgesucht; ohne Bestätigung gilt die Grenze von 10; darüber bleibt
+    es bei der Grenze, weil der Mustersatz auch Spaltenköpfe bestätigt."""
+    from app.services import redaction as R
+
+    def hits(n, confirm):
+        return _count(_plan_texts(_columns_pdf(n), _columns_ner(confirm)), R.NER_PROPAGATED_ID, "Wagner")
+
+    assert hits(30, True) == 30
+    assert hits(30, False) == 0
+    assert hits(10, False) == 10
+    assert hits(51, True) == 0
+
+
+def test_ner_contact_words_are_no_name_parts():
+    """„Telefon“ und „Fax“ gelten nie als Namensteil, auch nicht in der Listenform."""
+    from app.services import redaction as R
+
+    pdf = _lines_pdf(["Telefon, Telefax"], ["Telefon und Telefax sind besetzt."] * 4)
+    found = _plan_texts(pdf, _fake_ner("Telefon Telefax", "Telefax Telefon"))
+    assert not [t for t in found if t[1] == R.NER_PROPAGATED_ID], found
+
+
+def test_ner_failure_is_http_502(client, monkeypatch):
+    """Wirft die KI-Funktion, ist das ein Fehler auf der Serverseite (502)."""
+    from app.services import pdf_extras_service as svc
+
+    def broken(texts):
+        raise RuntimeError("Modell nicht geladen")
+
+    monkeypatch.setattr(svc.PdfExtrasService, "ner_function", lambda self: broken, raising=False)
+    r = client.post(
+        "/api/pdf-extras/redact/plan",
+        data={"patterns": json.dumps(["ki_namen"]), "terms": ""},
+        files={"file": ("d.pdf", _lines_pdf(["Antrag der Stadt Ulm"]), "application/pdf")},
+    )
+    assert r.status_code == 502, r.text
+    assert "ungültiges Ergebnis" in r.json()["detail"]
+
+
 def test_ner_double_names_are_propagated():
     from app.services import redaction as R
 
@@ -1469,7 +1612,7 @@ def test_ner_malformed_result(bad):
     pdf = _lines_pdf(["Antrag der Stadt Ulm", "Kosten und Belege"], ["Kosten", "Belege"])
     try:
         found = _plan_texts(pdf, bad)
-    except R.RedactionError as exc:
+    except R.RedactionNerError as exc:
         assert "ungültiges Ergebnis" in str(exc)
     else:
         assert found == []
