@@ -988,11 +988,20 @@ _LIST_NAME = re.compile(rf"(?:{_TITLES.pattern})?(?P<last>{_NAME_PART}),[ \t]*(?
 # Dokument nachgesucht werden sollen.
 # Kontaktangaben in Briefköpfen und Spaltenköpfen; spaCy hält „Telefon X“
 # oft für eine Person, auch im Mustersatz.
-_CONTACT_WORDS = frozenset("Telefon Telefax Fax Tel Mobil".split())
+_CONTACT_WORDS = frozenset("Telefon Telefonnummer Telefax Fax Tel Mobil Handy Durchwahl".split())
+# Häufige Spaltenköpfe in Belegen und Rechnungen: Der Mustersatz bestätigt
+# manche Paare davon als Person („Pos Menge“, „Netto Brutto“). Sie werden
+# nie nachgesucht; was die KI direkt meldet, bleibt Fundstelle.
+_TABLE_WORDS = frozenset(
+    "Pos Position Menge Anzahl Einheit Preis Einzelpreis Gesamtpreis Gesamt Summe Zwischensumme"
+    " Betrag Netto Brutto Steuer Umsatzsteuer Mehrwertsteuer USt MwSt Rabatt Skonto Kostenart"
+    " Bemerkung Datum Nummer Rechnung Beleg".split()
+)
 _NOT_NAMES = frozenset(
     "Herr Herrn Frau Prof Dipl Montag Dienstag Mittwoch Donnerstag Freitag Samstag Sonntag "
     "Januar Februar März April Mai Juni Juli August September Oktober November Dezember".split()
     + list(_CONTACT_WORDS)
+    + list(_TABLE_WORDS)
 )
 # Monatskürzel: „Jan“ ist ein Vorname, „15. Jan. 2026“ aber ein Datum.
 _MONTH_ABBREVIATIONS = frozenset("Jan Feb Mär Apr Jun Jul Aug Sep Sept Okt Nov Dez".split())
@@ -1034,7 +1043,7 @@ _CONFIRM_FRAME = "Gestern habe ich {} getroffen."
 _CONFIRM_START = _CONFIRM_FRAME.index("{}")
 # Anrede oder Titel vor dem Wort: Die Fundstelle bleibt auch über der Grenze.
 _SALUTATION_BEFORE = re.compile(
-    r"(?:^|[^\w])(?:(?:Herrn?|Frau)\s+|(?:Hr|Fr|Dr|Prof)\.(?:\s*-?[A-Za-zäöü]+\.)*\s*)$"
+    r"(?:^|[^\w])(?:(?:Herrn?|Frau)\s+|(?:Hr|Fr|Dr|Prof|Dipl)\.(?:\s*-?[A-Za-zäöü]+\.)*\s*)$"
 )
 _WORD_RUN = re.compile(r"[\w-]+")
 _NAME_EDGE = " \t,;:()[]/"
@@ -1121,7 +1130,7 @@ def _name_tokens(text: str) -> list[str]:
         for t in re.findall(r"[^\W\d_]+(?:-[^\W\d_]+)*", text)
         if len(t) >= 3
         and all(p[:1].isupper() and p[1:].islower() for p in t.split("-"))
-        and t not in _NOT_NAMES
+        and not any(p in _NOT_NAMES for p in [t, *t.split("-")])
     ]
 
 
@@ -1194,7 +1203,11 @@ def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int,
     def from_cell(text: str, into: dict[str, set[str]]) -> None:
         tokens = _name_tokens(text)
         if tokens:
-            words = [w for w in text.replace(_HARD, " ").split() if w.strip(".,;:") not in _CONTACT_WORDS]
+            words = [
+                w
+                for w in text.replace(_HARD, " ").split()
+                if not any(p.strip(".,;:") in _CONTACT_WORDS for p in re.split(r"[/-]", w))
+            ]
             into.setdefault(" ".join(words), set()).update(tokens)
 
     direct_pages: list[list[tuple[int, int]]] = []
@@ -1262,16 +1275,28 @@ def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int,
 
     # Den Mustersatz braucht nur, wer sonst an der Grenze scheitert.
     over = {w for w in found if capped(w) and not all(addressed for *_, addressed in found[w])}
+    # Über Zellgrenzen hilft die Bestätigung nur bis _PROPAGATION_FLOOR_CONFIRMED.
+    loose_limit = {
+        w: max(_PROPAGATION_FLOOR_CONFIRMED, _PROPAGATION_FACTOR * len(direct_texts.get(w, ()))) for w in over
+    }
     probes = sorted(
         (t, k)
         for k, spans in enumerate((cell_spans, cross_spans))
         for t, tokens in spans.items()
-        if tokens & over and len(_SPAN_PART.findall(t)) >= 2
+        if len(_SPAN_PART.findall(t)) >= 2
+        and any(w in over and (not k or len(found[w]) <= loose_limit[w]) for w in tokens)
     )
     frames = [_CONFIRM_FRAME.format(t) for t, _k in probes]
     for (text, k), spans in zip(probes, _ner_results(ner, frames)):
-        if any(a <= _CONFIRM_START and b >= _CONFIRM_START + len(text) for a, b in spans):
-            (loose if k else sure).update((cross_spans if k else cell_spans)[text])
+        # Bestätigt die KI nur einen Teil („Auftragnehmer Thomas Berger“ →
+        # „Thomas Berger“), gelten dessen Wörter, wenn er mindestens zwei
+        # Bestandteile hat.
+        end = _CONFIRM_START + len(text)
+        for a, b in spans:
+            a, b = max(a, _CONFIRM_START), min(b, end)
+            piece = text[a - _CONFIRM_START : b - _CONFIRM_START]
+            if b > a and len(_SPAN_PART.findall(piece)) >= 2:
+                (loose if k else sure).update(set(_name_tokens(piece)) & (cross_spans if k else cell_spans)[text])
     for word, hits in found.items():
         limited = capped(word)
         for pno, a, b, addressed in hits:
@@ -1286,23 +1311,33 @@ def _ner_results(ner: NerFn, jobs: list[str]) -> list[list[tuple[int, int]]]:
         return []
     try:
         results = [[(int(s), int(e)) for s, e in spans] for spans in ner(jobs)]
-    except Exception as exc:  # Fehler der KI-Funktion selbst: Serverseite
+    except (TypeError, ValueError) as exc:
         raise RedactionNerError("KI-Namenserkennung lieferte ein ungültiges Ergebnis") from exc
+    except Exception as exc:  # Fehler der KI-Funktion selbst: Serverseite
+        raise RedactionNerError("KI-Namenserkennung ist fehlgeschlagen") from exc
     if len(results) != len(jobs):
         raise RedactionNerError("KI-Namenserkennung lieferte ein ungültiges Ergebnis")
     return results
+
+
+_NO_CONTEXT = frozenset(
+    "in im je pro bis vom von zum zur zu und oder für mit ohne an am auf aus bei nach per"
+    " inkl zzgl exkl bzw gem lt ca nr".split()
+)
 
 
 def _has_context(text: str, start: int, end: int) -> bool:
     """Steht der Treffer in einem Satz? Verlangt wird ein kleingeschriebenes
     Wort in derselben Zelle oder Zeile („Projektleiter ist Thomas Berger“).
     Eine Kopfzeile aus Großwörtern („Ort Telefon Begünstigter Betrag“) liest
-    MuPDF bei engen Spalten als eine Zeile; sie ist kein Satz."""
+    MuPDF bei engen Spalten als eine Zeile; sie ist kein Satz. Abkürzungen
+    mit Punkt („inkl.“) und Wörter aus ``_NO_CONTEXT`` („in EUR“, „je Stück“)
+    stehen auch in Kopfzeilen und zählen nicht."""
     left = text.rfind(_HARD, 0, start) + 1
     right = text.find(_HARD, end)
     right = len(text) if right < 0 else right
     return any(
-        m.group()[0].islower()
+        m.group()[0].islower() and m.group() not in _NO_CONTEXT and text[m.end() : m.end() + 1] != "."
         for lo, hi in ((left, start), (end, right))
         for m in _SPAN_PART.finditer(text, lo, hi)
     )

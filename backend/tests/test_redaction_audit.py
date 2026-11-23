@@ -1484,8 +1484,55 @@ def test_ner_sentence_context_needs_no_frame():
     from app.services import redaction as R
 
     prose = [["Berger legte die Belege vor."] * 8 for _ in range(4)]
-    found = _plan_texts(_lines_pdf(["Projektleiter ist Thomas Berger."], *prose), _no_frame(_fake_ner("Thomas Berger")))
-    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 32
+    for head in ("Projektleiter ist Thomas Berger.", "Thomas Berger ist Projektleiter."):
+        found = _plan_texts(_lines_pdf([head], *prose), _no_frame(_fake_ner("Thomas Berger")))
+        assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 32, head
+
+
+@pytest.mark.parametrize(
+    "header", ["Vorhaben Träger inkl. Anschrift", "Vorhaben Träger einschl. Anschrift", "Vorhaben Träger in EUR", "Vorhaben Träger je Ort"]
+)
+def test_ner_header_function_words_are_no_sentence(header):
+    """Abkürzungen und Präpositionen stehen auch in Kopfzeilen („inkl. USt“,
+    „in EUR“); sie machen aus der Kopfzeile keinen Satz."""
+    from app.services import redaction as R
+
+    pdf = _lines_pdf([header], *[["Träger wurde benannt."] * 6] * 2)
+    found = _plan_texts(pdf, _no_frame(_fake_ner("Vorhaben Träger")))
+    assert not [t for t in found if t[1] == R.NER_PROPAGATED_ID], found
+
+
+def test_ner_label_before_name_is_confirmed_in_part():
+    """Meldet die KI das Etikett mit („Auftragnehmer Thomas Berger“) und
+    bestätigt der Mustersatz nur den Namen, wird der Name ohne Grenze
+    nachgesucht, das Etikett nicht."""
+    from app.services import redaction as R
+
+    def ner_fn(texts):
+        out = []
+        for t in texts:
+            if t.startswith("Gestern habe ich"):
+                m = re.search("Thomas Berger", t)
+                out.append([m.span()] if m else [])
+            else:
+                out.append([(0, len(t))] if t == "Auftragnehmer Thomas Berger" else [])
+        return out
+
+    pdf = _lines_pdf(["Auftragnehmer Thomas Berger"], ["Berger legte die Belege vor."] * 30, ["Auftragnehmer kam."] * 12)
+    found = _plan_texts(pdf, ner_fn)
+    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 30
+    assert _count(found, R.NER_PROPAGATED_ID, "Auftragnehmer") == 0
+
+
+def test_ner_table_header_words_are_never_propagated():
+    """Bestätigt der Mustersatz einen Spaltenkopf („Pos Menge“), wird er
+    trotzdem nicht nachgesucht."""
+    from app.services import redaction as R
+
+    pdf = _lines_pdf(["Pos Menge"], ["Menge und Preis stimmen."] * 30)
+    found = _plan_texts(pdf, _fake_ner("Pos Menge"))
+    assert _count(found, "ki_namen", "Pos Menge") == 1
+    assert not [t for t in found if t[1] == R.NER_PROPAGATED_ID], found
 
 
 def test_ner_partial_frame_hit_is_no_confirmation():
@@ -1499,11 +1546,14 @@ def test_ner_partial_frame_hit_is_no_confirmation():
             for t in texts
         ]
 
-    found = _plan_texts(_lines_pdf(["Thomas Berger"], ["Berger kam."] * 11), ner_fn)
+    found = _plan_texts(_lines_pdf(["Thomas Berger"], ["Berger kam."] * 11, ["Thomas kam."] * 11), ner_fn)
     assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 0
+    assert _count(found, R.NER_PROPAGATED_ID, "Thomas") == 0
 
 
-@pytest.mark.parametrize("title", ["Herr", "Frau", "Hr.", "Fr.", "Dr.", "Prof.", "Dr. med.", "Dr.-Ing."])
+@pytest.mark.parametrize(
+    "title", ["Herr", "Frau", "Hr.", "Fr.", "Dr.", "Prof.", "Dr. med.", "Dr.-Ing.", "Dipl.-Ing.", "Prof. Dr.-Ing. Dr. h. c.", "Dr. rer. nat. habil."]
+)
 def test_ner_salutation_kept_above_cap(title):
     from app.services import redaction as R
 
@@ -1556,9 +1606,10 @@ def test_ner_column_split_name_confirmed_has_higher_floor():
         return _count(_plan_texts(_columns_pdf(n), _columns_ner(confirm)), R.NER_PROPAGATED_ID, "Wagner")
 
     assert hits(30, True) == 30
+    assert hits(50, True) == 50
+    assert hits(51, True) == 0
     assert hits(30, False) == 0
     assert hits(10, False) == 10
-    assert hits(51, True) == 0
 
 
 def test_ner_contact_words_are_no_name_parts():
@@ -1568,6 +1619,20 @@ def test_ner_contact_words_are_no_name_parts():
     pdf = _lines_pdf(["Telefon, Telefax"], ["Telefon und Telefax sind besetzt."] * 4)
     found = _plan_texts(pdf, _fake_ner("Telefon Telefax", "Telefax Telefon"))
     assert not [t for t in found if t[1] == R.NER_PROPAGATED_ID], found
+    # Zusammengesetzt: Der Mustersatz bekommt nur den Namen.
+    framed = []
+    base = _cell_ner("Telefon-Nr Thomas Berger", "Telefon/Fax Thomas Berger")
+
+    def ner_fn(texts):
+        framed.extend(t for t in texts if t.startswith("Gestern"))
+        return base(texts)
+
+    found = _plan_texts(
+        _lines_pdf(["Telefon-Nr Thomas Berger"], ["Telefon/Fax Thomas Berger"], ["Berger kam."] * 11, ["Telefon-Nr fehlt."] * 3),
+        ner_fn,
+    )
+    assert framed == ["Gestern habe ich Thomas Berger getroffen."]
+    assert _count(found, R.NER_PROPAGATED_ID, "Telefon-Nr") == 0
 
 
 def test_ner_failure_is_http_502(client, monkeypatch):
@@ -1584,7 +1649,20 @@ def test_ner_failure_is_http_502(client, monkeypatch):
         files={"file": ("d.pdf", _lines_pdf(["Antrag der Stadt Ulm"]), "application/pdf")},
     )
     assert r.status_code == 502, r.text
-    assert "ungültiges Ergebnis" in r.json()["detail"]
+    assert "KI-Namenserkennung" in r.json()["detail"]
+
+
+def test_ner_failure_on_apply_is_http_502(client, monkeypatch):
+    """Auch beim Anwenden, das die Suche wiederholt, ergibt ein KI-Fehler 502."""
+    from app.services import pdf_extras_service as svc
+
+    pdf = _lines_pdf(["Antrag der Stadt Ulm"])
+    monkeypatch.setattr(svc.PdfExtrasService, "ner_function", lambda self: _fake_ner("Stadt Ulm"), raising=False)
+    plan = plan_of(client, pdf, ["ki_namen"])
+    monkeypatch.setattr(svc.PdfExtrasService, "ner_function", lambda self: _raise, raising=False)
+    r = apply_with(client, pdf, plan)
+    assert r.status_code == 502, r.text
+    assert "KI-Namenserkennung" in r.json()["detail"]
 
 
 def test_ner_double_names_are_propagated():
@@ -1596,26 +1674,32 @@ def test_ner_double_names_are_propagated():
     assert {s for _p, s, _t in found} == {R.NER_PROPAGATED_ID}
 
 
+def _raise(texts):
+    raise RuntimeError("Modell nicht geladen")
+
+
 @pytest.mark.parametrize(
-    "bad",
+    "bad, error",
     [
-        lambda texts: [[(0, -1)] for _ in texts],
-        lambda texts: [[] for _ in texts[1:]],
-        lambda texts: [None for _ in texts],
+        (lambda texts: [[(0, -1)] for _ in texts], None),  # leerer Span: verworfen
+        (lambda texts: [[] for _ in texts[1:]], "ungültiges Ergebnis"),
+        (lambda texts: [None for _ in texts], "ungültiges Ergebnis"),
+        (lambda texts: None, "ungültiges Ergebnis"),
+        (_raise, "fehlgeschlagen"),
     ],
 )
-def test_ner_malformed_result(bad):
-    """Eine fehlerhafte KI-Funktion belegt nicht die ganze Seite und führt zu
-    einer klaren Fehlermeldung statt zu einem Absturz."""
+def test_ner_malformed_result(bad, error):
+    """Eine fehlerhafte KI-Funktion belegt nicht die ganze Seite. Ein Ergebnis
+    in falscher Form oder ein Absturz bricht ab; still leere Treffer gibt es
+    nicht, sonst blieben alle Namen lesbar."""
     from app.services import redaction as R
 
     pdf = _lines_pdf(["Antrag der Stadt Ulm", "Kosten und Belege"], ["Kosten", "Belege"])
-    try:
-        found = _plan_texts(pdf, bad)
-    except R.RedactionNerError as exc:
-        assert "ungültiges Ergebnis" in str(exc)
+    if error is None:
+        assert _plan_texts(pdf, bad) == []
     else:
-        assert found == []
+        with pytest.raises(R.RedactionNerError, match=error):
+            _plan_texts(pdf, bad)
 
 
 def test_ner_keeps_initials_and_foreign_letters():
