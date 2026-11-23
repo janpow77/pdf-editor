@@ -1502,10 +1502,12 @@ def test_ner_header_function_words_are_no_sentence(header):
     assert not [t for t in found if t[1] == R.NER_PROPAGATED_ID], found
 
 
-def test_ner_label_before_name_is_confirmed_in_part():
+@pytest.mark.parametrize("mentions, expected", [(30, 30), (50, 50), (51, 0)])
+def test_ner_label_before_name_is_confirmed_in_part(mentions, expected):
     """Meldet die KI das Etikett mit („Auftragnehmer Thomas Berger“) und
-    bestätigt der Mustersatz nur den Namen, wird der Name ohne Grenze
-    nachgesucht, das Etikett nicht."""
+    bestätigt der Mustersatz nur den Namen, wird der Name bis zur höheren
+    Untergrenze nachgesucht, das Etikett nicht. Ohne Grenze nicht, weil der
+    Mustersatz so auch Spaltenköpfe bestätigt."""
     from app.services import redaction as R
 
     def ner_fn(texts):
@@ -1518,10 +1520,118 @@ def test_ner_label_before_name_is_confirmed_in_part():
                 out.append([(0, len(t))] if t == "Auftragnehmer Thomas Berger" else [])
         return out
 
-    pdf = _lines_pdf(["Auftragnehmer Thomas Berger"], ["Berger legte die Belege vor."] * 30, ["Auftragnehmer kam."] * 12)
+    prose = [["Berger legte die Belege vor."] * min(40, mentions - i) for i in range(0, mentions, 40)]
+    pdf = _lines_pdf(["Auftragnehmer Thomas Berger"], *prose, ["Auftragnehmer kam."] * 12)
     found = _plan_texts(pdf, ner_fn)
-    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 30
+    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == expected
     assert _count(found, R.NER_PROPAGATED_ID, "Auftragnehmer") == 0
+
+
+def test_ner_whole_cell_confirmed_in_several_parts():
+    """Bestätigt der Mustersatz alle Namen einer Zelle in mehreren Teilen,
+    gilt die Zelle als ganz bestätigt (ohne Grenze)."""
+    from app.services import redaction as R
+
+    def ner_fn(texts):
+        out = []
+        for t in texts:
+            if t.startswith("Gestern habe ich"):
+                out.append([m.span() for m in re.finditer("Thomas Berger|Anna Schmidt", t)])
+            else:
+                out.append([(0, len(t))] if t == "Thomas Berger Anna Schmidt" else [])
+        return out
+
+    pdf = _lines_pdf(["Thomas Berger Anna Schmidt"], ["Schmidt legte die Belege vor."] * 30)
+    assert _count(_plan_texts(pdf, ner_fn), R.NER_PROPAGATED_ID, "Schmidt") == 30
+
+
+def test_ner_frame_span_is_clamped_to_the_cell():
+    """Reicht der Treffer im Mustersatz in den Vorspann („ich Thomas
+    Berger“), zählt nur der Teil in der Zelle."""
+    from app.services import redaction as R
+
+    def ner_fn(texts):
+        out = []
+        for t in texts:
+            if t.startswith("Gestern habe ich"):
+                out.append([(t.index("ich"), t.index(" getroffen") + 4)])
+            else:
+                out.append([(0, len(t))] if t == "Thomas Berger" else [])
+        return out
+
+    pdf = _lines_pdf(["Thomas Berger"], ["Berger legte die Belege vor."] * 30)
+    assert _count(_plan_texts(pdf, ner_fn), R.NER_PROPAGATED_ID, "Berger") == 30
+
+
+@pytest.mark.parametrize(
+    "head, line",
+    [
+        ("Projektleiterin ist Petra Preis.", "Frau Preis legte die Belege vor."),
+        ("Projektleiterin ist Petra Preis.", "Preis legte die Belege vor."),
+        ("Projektleiter ist Wolfgang Menge.", "Herr Menge legte die Belege vor."),
+        ("Projektleiterin ist Anna Schmidt-Mai.", "Frau Schmidt-Mai legte die Belege vor."),
+        ("Projektleiterin ist Anna Schmidt-Mai.", "Schmidt-Mai legte die Belege vor."),
+    ],
+)
+def test_ner_surnames_like_table_or_month_words(head, line):
+    """Nachnamen wie „Preis“, „Menge“ oder „Schmidt-Mai“ aus einem Satz
+    werden wie jeder andere Name nachgesucht."""
+    from app.services import redaction as R
+
+    person = head.split(" ist ")[1].rstrip(".")
+    found = _plan_texts(_lines_pdf([head], [line] * 20), _no_frame(_fake_ner(person)))
+    word = line.split()[1] if line.startswith(("Frau", "Herr")) else line.split()[0]
+    assert _count(found, R.NER_PROPAGATED_ID, word) == 20
+
+
+def test_ner_list_form_with_table_word_surname():
+    """„Preis, Petra“ in der Listenform: Der ganze Eintrag ist Fundstelle."""
+    found = _plan_texts(_lines_pdf(["Preis, Petra"]), _fake_ner("Petra Preis"))
+    assert _count(found, "ki_namen", "Preis, Petra") == 1
+
+
+def test_ner_confirmed_cell_does_not_free_table_words():
+    """Bestätigt der Mustersatz eine Zelle mit Spaltenkopf ganz („Menge
+    Thomas Berger“), wird der Name ohne Grenze nachgesucht, der Spaltenkopf
+    nicht."""
+    from app.services import redaction as R
+
+    pdf = _lines_pdf(["Menge Thomas Berger"], ["Berger kam."] * 12 + ["Menge kam."] * 12)
+    found = _plan_texts(pdf, _fake_ner("Menge Thomas Berger"))
+    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 12
+    assert _count(found, R.NER_PROPAGATED_ID, "Menge") == 0
+
+
+def test_ner_table_word_from_cell_kept_with_salutation():
+    """Ein Spaltenkopf-Wort aus einem Zellbeleg wird nur mit Anrede nachgesucht."""
+    from app.services import redaction as R
+
+    pdf = _lines_pdf(["Wolfgang Menge"], ["Herr Menge kam."] * 3 + ["Menge kam."] * 3)
+    assert _count(_plan_texts(pdf, _cell_ner("Wolfgang Menge")), R.NER_PROPAGATED_ID, "Menge") == 3
+
+
+@pytest.mark.parametrize("head", ["Lukas Fischer unterschreibt.", "Antrag von Lukas Fischer", "Rechnung an Lukas Fischer"])
+def test_ner_short_sentences_are_context(head):
+    """Ein Verb am Satzende und Präpositionen wie „von“, „an“ machen eine
+    Zeile zum Satz."""
+    from app.services import redaction as R
+
+    found = _plan_texts(_lines_pdf([head], ["Fischer legte die Belege vor."] * 30), _no_frame(_fake_ner("Lukas Fischer")))
+    assert _count(found, R.NER_PROPAGATED_ID, "Fischer") == 30
+
+
+def test_ner_sentence_context_only_from_neighbouring_lines():
+    """Ein kleingeschriebenes Wort in der Zeile davor oder danach zählt
+    (umbrochener Satz), eines drei Zeilen tiefer im selben Block nicht."""
+    from app.services import redaction as R
+
+    prose = [["Berger legte die Belege vor."] * 30]
+    wrapped = _lines_pdf(["Projektleiter ist", "Thomas Berger."], *prose)
+    found = _plan_texts(wrapped, _no_frame(_fake_ner("Thomas Berger")))
+    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 30
+    form = _lines_pdf(["Auftragnehmer Thomas Berger", "Kundennummer", "Belegart", "Die Belege liegen vor."], *prose)
+    found = _plan_texts(form, _no_frame(_fake_ner("Thomas Berger")))
+    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 0
 
 
 def test_ner_table_header_words_are_never_propagated():
@@ -1552,7 +1662,7 @@ def test_ner_partial_frame_hit_is_no_confirmation():
 
 
 @pytest.mark.parametrize(
-    "title", ["Herr", "Frau", "Hr.", "Fr.", "Dr.", "Prof.", "Dr. med.", "Dr.-Ing.", "Dipl.-Ing.", "Prof. Dr.-Ing. Dr. h. c.", "Dr. rer. nat. habil."]
+    "title", ["Herr", "Frau", "Hr.", "Fr.", "Dr.", "Prof.", "Dr. med.", "Dr.-Ing.", "Dipl.-Ing.", "Prof. Dr.-Ing. Dr. h. c.", "Dr. rer. nat. habil.", "Dipl.-Ing. (FH)", "Dipl.-Ök."]
 )
 def test_ner_salutation_kept_above_cap(title):
     from app.services import redaction as R
@@ -1612,6 +1722,22 @@ def test_ner_column_split_name_confirmed_has_higher_floor():
     assert hits(10, False) == 10
 
 
+def test_ner_column_split_confirmation_per_word():
+    """Über Zellgrenzen bestätigt, gilt die Untergrenze je Wort: „Klaus“ mit
+    20 Nennungen wird nachgesucht, „Wagner“ mit 200 nicht."""
+    from app.services import redaction as R
+
+    def build(doc, page):
+        page.insert_text((40, 60), "Klaus", fontsize=8)
+        page.insert_text((300, 60), "Wagner", fontsize=8)
+        for text in ["Klaus legte die Belege vor. " * 20] + ["Wagner legte die Belege vor. " * 50] * 4:
+            doc.new_page().insert_textbox(fitz.Rect(50, 50, 545, 800), text, fontsize=9)
+
+    found = _plan_texts(_pdf(build), _columns_ner(True))
+    assert _count(found, R.NER_PROPAGATED_ID, "Klaus") == 20
+    assert _count(found, R.NER_PROPAGATED_ID, "Wagner") == 0
+
+
 def test_ner_contact_words_are_no_name_parts():
     """„Telefon“ und „Fax“ gelten nie als Namensteil, auch nicht in der Listenform."""
     from app.services import redaction as R
@@ -1619,16 +1745,23 @@ def test_ner_contact_words_are_no_name_parts():
     pdf = _lines_pdf(["Telefon, Telefax"], ["Telefon und Telefax sind besetzt."] * 4)
     found = _plan_texts(pdf, _fake_ner("Telefon Telefax", "Telefax Telefon"))
     assert not [t for t in found if t[1] == R.NER_PROPAGATED_ID], found
+    assert _count(found, "ki_namen", "Telefon, Telefax") == 0
     # Zusammengesetzt: Der Mustersatz bekommt nur den Namen.
     framed = []
-    base = _cell_ner("Telefon-Nr Thomas Berger", "Telefon/Fax Thomas Berger")
+    base = _cell_ner("Telefon-Nr Thomas Berger", "Telefon/Fax Thomas Berger", "Telefon: Thomas Berger")
 
     def ner_fn(texts):
         framed.extend(t for t in texts if t.startswith("Gestern"))
         return base(texts)
 
     found = _plan_texts(
-        _lines_pdf(["Telefon-Nr Thomas Berger"], ["Telefon/Fax Thomas Berger"], ["Berger kam."] * 11, ["Telefon-Nr fehlt."] * 3),
+        _lines_pdf(
+            ["Telefon-Nr Thomas Berger"],
+            ["Telefon/Fax Thomas Berger"],
+            ["Telefon: Thomas Berger"],
+            ["Berger kam."] * 13,
+            ["Telefon-Nr fehlt."] * 3,
+        ),
         ner_fn,
     )
     assert framed == ["Gestern habe ich Thomas Berger getroffen."]
@@ -1678,6 +1811,10 @@ def _raise(texts):
     raise RuntimeError("Modell nicht geladen")
 
 
+def _raise_value(texts):
+    raise ValueError("Text zu lang")
+
+
 @pytest.mark.parametrize(
     "bad, error",
     [
@@ -1686,6 +1823,7 @@ def _raise(texts):
         (lambda texts: [None for _ in texts], "ungültiges Ergebnis"),
         (lambda texts: None, "ungültiges Ergebnis"),
         (_raise, "fehlgeschlagen"),
+        (_raise_value, "fehlgeschlagen"),
     ],
 )
 def test_ner_malformed_result(bad, error):
