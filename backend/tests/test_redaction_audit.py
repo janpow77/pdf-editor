@@ -1584,6 +1584,18 @@ def test_ner_surnames_like_table_or_month_words(head, line):
     assert _count(found, R.NER_PROPAGATED_ID, word) == 20
 
 
+@pytest.mark.parametrize("person", ["Dr. Menge", "Frau Menge", "Prof. Dr. Rabatt"])
+def test_ner_table_word_surname_after_title(person):
+    """„Die Prüfung führte Frau Dr. Menge durch.“: Meldet die KI nur Titel
+    und Nachnamen, ist der Spaltenkopf trotzdem ein Nachname."""
+    from app.services import redaction as R
+
+    word = person.split()[-1]
+    pdf = _lines_pdf([f"Die Prüfung führte {person} durch."], [f"Rückfrage bei {word} ist erledigt."] * 30)
+    found = _plan_texts(pdf, _no_frame(_fake_ner(person)))
+    assert _count(found, R.NER_PROPAGATED_ID, word) == 30
+
+
 def test_ner_list_form_with_table_word_surname():
     """„Preis, Petra“ in der Listenform: Der ganze Eintrag ist Fundstelle."""
     found = _plan_texts(_lines_pdf(["Preis, Petra"]), _fake_ner("Petra Preis"))
@@ -1878,6 +1890,14 @@ def _raise_lazy(texts):
     raise RuntimeError("Modell nicht geladen")
 
 
+def _raise_inner(texts):
+    def spans():
+        yield (0, 1)
+        raise RuntimeError("Modell nicht geladen")
+
+    return [spans() for _ in texts]
+
+
 @pytest.mark.parametrize(
     "bad, error",
     [
@@ -1888,6 +1908,8 @@ def _raise_lazy(texts):
         (_raise, "fehlgeschlagen"),
         (_raise_value, "fehlgeschlagen"),
         (_raise_lazy, "fehlgeschlagen"),
+        (_raise_inner, "fehlgeschlagen"),
+        (lambda texts: 5, "ungültiges Ergebnis"),
     ],
 )
 def test_ner_malformed_result(bad, error):

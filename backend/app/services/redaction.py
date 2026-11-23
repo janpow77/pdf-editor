@@ -1149,14 +1149,19 @@ def _name_tokens(text: str) -> list[str]:
     ]
 
 
+_TITLE_IN_SPAN = re.compile(r"(?<![\w-])(?:(?:Herrn?|Frau)(?![\w-])|(?:Hr|Fr|Dr|Prof|Dipl)\.)")
+
+
 def _free_tokens(text: str) -> list[str] | None:
     """Wörter eines Satz- oder Listenbelegs, die ohne Grenze nachgesucht
     werden. Besteht der Beleg nur aus Spaltenköpfen („Summe Netto nach
     Skonto“, „Netto, Brutto“), ist er kein Name: ``None``, er gilt dann wie
-    ein Zellbeleg. Neben einem anderen Wort („Petra Preis“) ist der
-    Spaltenkopf ein Nachname."""
+    ein Zellbeleg. Neben einem anderen Wort („Petra Preis“) oder nach Anrede
+    oder Titel („Dr. Menge“) ist der Spaltenkopf ein Nachname."""
     tokens = _name_tokens(text)
-    return tokens if any(t not in _TABLE_WORDS for t in tokens) else None
+    if any(t not in _TABLE_WORDS for t in tokens) or (tokens and _TITLE_IN_SPAN.search(text)):
+        return tokens
+    return None
 
 
 def _is_name_noun(text: str, start: int, end: int) -> bool:
@@ -1351,16 +1356,24 @@ def _ner_results(ner: NerFn, jobs: list[str]) -> list[list[tuple[int, int]]]:
     """Ergebnis der KI prüfen: je Text eine Liste von (start, ende)."""
     if not jobs:
         return []
+    failed = "KI-Namenserkennung ist fehlgeschlagen"
+    invalid = "KI-Namenserkennung lieferte ein ungültiges Ergebnis"
     try:
         raw = ner(jobs)
-        if raw is not None and not isinstance(raw, (list, tuple)):
-            raw = list(raw)  # Generator: Fehler der KI-Funktion selbst hier
     except Exception as exc:  # Fehler der KI-Funktion selbst: Serverseite
-        raise RedactionNerError("KI-Namenserkennung ist fehlgeschlagen") from exc
+        raise RedactionNerError(failed) from exc
     try:
-        results = [[(int(s), int(e)) for s, e in spans] for spans in raw]
+        items = iter(raw)
+    except TypeError as exc:  # kein Ergebnis in Listenform
+        raise RedactionNerError(invalid) from exc
+    try:
+        # Generatoren (auch innere) laufen erst hier: ihre Fehler sind
+        # Fehler der KI-Funktion, falsche Werte ein ungültiges Ergebnis.
+        results = [[(int(s), int(e)) for s, e in spans] for spans in items]
     except (TypeError, ValueError) as exc:
-        raise RedactionNerError("KI-Namenserkennung lieferte ein ungültiges Ergebnis") from exc
+        raise RedactionNerError(invalid) from exc
+    except Exception as exc:
+        raise RedactionNerError(failed) from exc
     if len(results) != len(jobs):
         raise RedactionNerError("KI-Namenserkennung lieferte ein ungültiges Ergebnis")
     return results
