@@ -407,6 +407,9 @@ class _PageText:
     rects: list[tuple[float, float, float, float] | None]  # Zeichenrechteck oder None
     lines: list[int]  # Zeilennummer je Zeichen, -1 für Trenner
     hyphen_breaks: list[int]  # Index des Trennstrichs vor einem weichen Umbruch
+    # Sichtbare Zeile je Zeilennummer: Fragmente derselben Grundlinie (großer
+    # Wortabstand im Blocksatz oder in Formularen) teilen sich eine.
+    rows: list[int] = field(default_factory=list)
 
 
 def _break_kind(prev: tuple[float, ...], nxt: tuple[float, ...]) -> str | None:
@@ -456,6 +459,7 @@ def _page_text(page: Any) -> _PageText:
     hyphen_breaks: list[int] = []
     prev_bbox: tuple[float, ...] | None = None
     line_no = 0
+    rows: list[int] = []
     raw = page.get_text("rawdict", flags=_text_flags(), clip=fitz.INFINITE_RECT())
     for block in raw.get("blocks", []):
         if block.get("type") != 0:
@@ -471,6 +475,7 @@ def _page_text(page: Any) -> _PageText:
             if not glyphs:
                 continue
             bbox = tuple(line["bbox"])
+            kind = None
             if prev_bbox is not None:
                 kind = _break_kind(prev_bbox, bbox)
                 last = chars[-1] if chars else ""
@@ -516,9 +521,13 @@ def _page_text(page: Any) -> _PageText:
                     chars.append(" " if part.isspace() else part)
                     rects.append(None if part.isspace() else (box[0] + k * step, box[1], box[0] + (k + 1) * step, box[3]))
                     lines.append(line_no)
+            if not rows:
+                rows.append(0)
+            else:
+                rows.append(rows[-1] if kind == "same" else rows[-1] + 1)
             line_no += 1
             prev_bbox = bbox
-    return _PageText("".join(chars), rects, lines, hyphen_breaks)
+    return _PageText("".join(chars), rects, lines, hyphen_breaks, rows)
 
 
 
@@ -993,8 +1002,9 @@ _CONTACT_WORDS = frozenset("Telefon Telefonnummer Telefax Fax Tel Mobil Handy Du
 # manche Paare davon als Person („Pos Menge“, „Netto Brutto“). Aus einer
 # Zelle oder Kopfzeile belegt, werden sie nur mit Anrede davor nachgesucht;
 # was die KI direkt meldet, bleibt Fundstelle. Aus einem Satz oder der
-# Listenform belegt, sind es Nachnamen („Petra Preis“, „Menge, Wolfgang“)
-# und gelten wie jeder andere Name.
+# Listenform neben einem anderen Wort belegt, sind es Nachnamen („Petra
+# Preis“, „Menge, Wolfgang“) und gelten wie jeder andere Name; nur aus
+# Spaltenköpfen („Summe Netto nach Skonto“) gilt der Beleg als Zellbeleg.
 _TABLE_WORDS = frozenset(
     "Pos Position Menge Anzahl Einheit Preis Einzelpreis Gesamtpreis Gesamt Summe Zwischensumme"
     " Betrag Netto Brutto Steuer Umsatzsteuer Mehrwertsteuer USt MwSt Rabatt Skonto Kostenart"
@@ -1139,6 +1149,16 @@ def _name_tokens(text: str) -> list[str]:
     ]
 
 
+def _free_tokens(text: str) -> list[str] | None:
+    """Wörter eines Satz- oder Listenbelegs, die ohne Grenze nachgesucht
+    werden. Besteht der Beleg nur aus Spaltenköpfen („Summe Netto nach
+    Skonto“, „Netto, Brutto“), ist er kein Name: ``None``, er gilt dann wie
+    ein Zellbeleg. Neben einem anderen Wort („Petra Preis“) ist der
+    Spaltenkopf ein Nachname."""
+    tokens = _name_tokens(text)
+    return tokens if any(t not in _TABLE_WORDS for t in tokens) else None
+
+
 def _is_name_noun(text: str, start: int, end: int) -> bool:
     """Steht das nachgesuchte Wort hier als Substantiv oder Datum statt als Name?"""
     before = text[max(0, start - 30) : start]
@@ -1228,8 +1248,8 @@ def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int,
             direct.update(parts)
             for a, b in parts:
                 if len(_SPAN_PART.findall(pt.text[a:b])) >= 2:
-                    if _has_context(pt, a, b):
-                        sure.update(_name_tokens(pt.text[a:b]))
+                    if _has_context(pt, a, b) and (free := _free_tokens(pt.text[a:b])) is not None:
+                        sure.update(free)
                     else:
                         from_cell(pt.text[a:b], cell_spans)
             # Über Zellgrenzen erkannt („Klaus / Wagner“ in getrennten
@@ -1247,7 +1267,11 @@ def _ner_document(pts: list[_PageText], ner: NerFn) -> list[list[tuple[int, int,
         for s, e, k in listed:
             if any(a == 0 and b == len(jobs[k]) for a, b in results[k]):
                 direct.add((s, e))
-                sure.update(_name_tokens(pt.text[s:e]))
+                free = _free_tokens(pt.text[s:e])
+                if free is None:
+                    from_cell(pt.text[s:e], cell_spans)
+                else:
+                    sure.update(free)
         direct_pages.append(sorted(direct))
 
     out = [[(a, b, NER_PATTERN_ID) for a, b in direct] for direct in direct_pages]
@@ -1329,6 +1353,8 @@ def _ner_results(ner: NerFn, jobs: list[str]) -> list[list[tuple[int, int]]]:
         return []
     try:
         raw = ner(jobs)
+        if raw is not None and not isinstance(raw, (list, tuple)):
+            raw = list(raw)  # Generator: Fehler der KI-Funktion selbst hier
     except Exception as exc:  # Fehler der KI-Funktion selbst: Serverseite
         raise RedactionNerError("KI-Namenserkennung ist fehlgeschlagen") from exc
     try:
@@ -1363,12 +1389,13 @@ def _has_context(pt: _PageText, start: int, end: int) -> bool:
     left = text.rfind(_HARD, 0, start) + 1
     right = text.find(_HARD, end)
     right = len(text) if right < 0 else right
-    hit_lines = [n for n in pt.lines[start:end] if n >= 0]
+    row = (lambda n: pt.rows[n]) if pt.rows else (lambda n: n)
+    hit_lines = [row(n) for n in pt.lines[start:end] if n >= 0]
     first, last = (min(hit_lines) - 1, max(hit_lines) + 1) if hit_lines else (-1, -1)
     return any(
         m.group()[0].islower()
         and m.group() not in _NO_CONTEXT
-        and (not hit_lines or first <= pt.lines[m.start()] <= last)
+        and (not hit_lines or (pt.lines[m.start()] >= 0 and first <= row(pt.lines[m.start()]) <= last))
         for lo, hi in ((left, start), (end, right))
         for m in _SPAN_PART.finditer(text, lo, hi)
     )

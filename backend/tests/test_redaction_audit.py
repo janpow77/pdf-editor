@@ -1629,9 +1629,67 @@ def test_ner_sentence_context_only_from_neighbouring_lines():
     wrapped = _lines_pdf(["Projektleiter ist", "Thomas Berger."], *prose)
     found = _plan_texts(wrapped, _no_frame(_fake_ner("Thomas Berger")))
     assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 30
-    form = _lines_pdf(["Auftragnehmer Thomas Berger", "Kundennummer", "Belegart", "Die Belege liegen vor."], *prose)
-    found = _plan_texts(form, _no_frame(_fake_ner("Thomas Berger")))
-    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 0
+    after = _lines_pdf(["Thomas Berger", "hat die Belege geprüft."], *prose)
+    found = _plan_texts(after, _no_frame(_fake_ner("Thomas Berger")))
+    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 30
+    for form in (
+        ["Auftragnehmer Thomas Berger", "Kundennummer", "Belegart", "Die Belege liegen vor."],
+        ["Auftragnehmer Thomas Berger", "Kundennummer", "die Belege liegen vor."],
+        ["die Belege liegen vor.", "Kundennummer", "Auftragnehmer Thomas Berger"],
+    ):
+        found = _plan_texts(_lines_pdf(form, *prose), _no_frame(_fake_ner("Thomas Berger")))
+        assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 0, form
+
+
+def test_ner_sentence_context_across_wide_word_gaps():
+    """Zerlegt MuPDF eine Zeile wegen großer Wortabstände (Blocksatz), zählt
+    sie trotzdem als eine Zeile."""
+    from app.services import redaction as R
+
+    def build(doc, page):
+        x = 72
+        for w in "Thomas Berger Referat Recht prüfte die Unterlagen".split():
+            page.insert_text((x, 72), w, fontsize=9)
+            x += fitz.get_text_length(w, fontsize=9) + 14
+        doc.new_page().insert_textbox(fitz.Rect(50, 50, 545, 800), "Berger legte die Belege vor. " * 30, fontsize=9)
+
+    pt = R._page_text(fitz.open(stream=_pdf(build), filetype="pdf")[0])
+    assert len(set(n for n in pt.lines if n >= 0)) > 1  # mehrere Fragmente
+    found = _plan_texts(_pdf(build), _no_frame(_fake_ner("Thomas Berger")))
+    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 30
+
+
+@pytest.mark.parametrize("head", ["Summe Netto nach Skonto", "Rabatt Skonto bei Zahlung", "Netto, Brutto"])
+def test_ner_header_of_table_words_is_no_name(head):
+    """Besteht ein Satz- oder Listenbeleg nur aus Spaltenköpfen, gilt er als
+    Zellbeleg: kein Nachsuche-Treffer ohne Anrede."""
+    from app.services import redaction as R
+
+    words = head.replace(",", "").split()
+    pdf = _lines_pdf([head], *[[f"{w} wurde geprüft." for w in words] * 10] * 3)
+    found = _plan_texts(pdf, _fake_ner(" ".join(words[:2]), " ".join(reversed(words[:2]))))
+    assert not [t for t in found if t[1] == R.NER_PROPAGATED_ID], found
+
+
+def test_ner_table_word_as_label_is_partial_confirmation():
+    """„Summe Thomas Berger“: Bestätigt der Mustersatz nur „Thomas Berger“,
+    gilt die Untergrenze 50 wie bei jedem Etikett (Entscheidung 23.11.2026)."""
+    from app.services import redaction as R
+
+    def ner_fn(texts):
+        out = []
+        for t in texts:
+            if t.startswith("Gestern habe ich"):
+                m = re.search("Thomas Berger", t)
+                out.append([m.span()] if m else [])
+            else:
+                out.append([(0, len(t))] if t == "Summe Thomas Berger" else [])
+        return out
+
+    for n, expected in ((40, 40), (60, 0)):
+        prose = [["Berger legte die Belege vor."] * min(40, n - i) for i in range(0, n, 40)]
+        found = _plan_texts(_lines_pdf(["Summe Thomas Berger"], *prose), ner_fn)
+        assert _count(found, R.NER_PROPAGATED_ID, "Berger") == expected, n
 
 
 def test_ner_table_header_words_are_never_propagated():
@@ -1815,6 +1873,11 @@ def _raise_value(texts):
     raise ValueError("Text zu lang")
 
 
+def _raise_lazy(texts):
+    yield []
+    raise RuntimeError("Modell nicht geladen")
+
+
 @pytest.mark.parametrize(
     "bad, error",
     [
@@ -1824,6 +1887,7 @@ def _raise_value(texts):
         (lambda texts: None, "ungültiges Ergebnis"),
         (_raise, "fehlgeschlagen"),
         (_raise_value, "fehlgeschlagen"),
+        (_raise_lazy, "fehlgeschlagen"),
     ],
 )
 def test_ner_malformed_result(bad, error):
