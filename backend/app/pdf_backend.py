@@ -116,7 +116,10 @@ try:
     import spacy
 
     SPACY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except Exception:  # pragma: no cover - ImportError oder defekte Binärpakete
+    # Nicht nur ImportError: Passen numpy und thinc binär nicht zusammen,
+    # wirft der Import einen ValueError ("numpy.dtype size changed"). Die
+    # KI-Namenserkennung ist optional und darf den Start nie verhindern.
     spacy = None  # type: ignore[assignment]
     SPACY_AVAILABLE = False
 

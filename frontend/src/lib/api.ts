@@ -32,10 +32,28 @@ function detailMessage(detail: unknown, fallback: string): string {
   return fallback
 }
 
+/** Fehler einer Serverantwort; bleibt ein normales Error für bestehende Aufrufer. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    /** Sekunden aus dem Retry-After-Header (bei 429), sonst null. */
+    readonly retryAfter: number | null,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 async function throwFromResponse(response: Response): Promise<never> {
   if (response.status === 401 && isAuthenticated.value) logout()
   const payload = await response.json().catch(() => ({ detail: response.statusText })) as { detail?: unknown }
-  throw new Error(detailMessage(payload.detail, `Serverfehler ${response.status}`))
+  const retry = Number(response.headers.get('Retry-After'))
+  throw new ApiError(
+    detailMessage(payload.detail, `Serverfehler ${response.status}`),
+    response.status,
+    Number.isFinite(retry) && retry > 0 ? retry : null,
+  )
 }
 
 function timeoutReason(): Error {
