@@ -41,6 +41,7 @@ Umsetzung nach dem Prüfplan, so geschnitten, dass sie später ohne Umbau in die
 - Oberfläche nach dem vorhandenen Muster: Ansichtsmodell in `@auditcore/ui-core`, Komponente in `@auditcore/ui` (Vue, für pdf-editor) und `@auditcore/ui-react` (für Regulierung). Seitenbilder kommen aus `render_page`, kein pdf.js nötig.
 - Herkunftsnachweis und Verhaltensänderungen nach den auditcore-Regeln (Characterization vor Extraktion, `provenance.json`, `docs/behavior-changes.md`), Lizenz MIT, PyMuPDF bleibt optionales Extra.
 - pdf-editor wechselt auf die Bibliothek; seine bisherigen Tests laufen als Nutzertests weiter.
+  Stand 24.11.2026: umgesetzt. auditcore_pdf 0.2.0 (PR #341) und die Oberfläche „PDF schwärzen“ (PR #344) sind gemergt; pdf-editor bindet 0.2.0 aus Release v0.17.0. Die fünf Tests, die private Hilfsfunktionen der Engine aufriefen, laufen wortgleich in der Bibliothek (`test_redaction_hidden.py`, `test_redaction_ner.py`) und sind hier entfernt.
 - Arbeit in einem eigenen auditcore-Worktree; der lokale Hauptcheckout steht auf `feat/regulierung-apt-deployment` und ist hinter `origin/main`.
 
 ## Schritt 3: KPAnG / Regulierung (zuletzt prüfen)

@@ -1,6 +1,6 @@
 /**
- * Datenformat der Schwärzung mit Pflicht-Vorschau (Backend:
- * app/services/redaction.py). Der Plan enthält Klartext der Fundstellen und
+ * Datenformat der Schwärzung mit Pflicht-Vorschau (Backend: Bibliothek
+ * auditcore_pdf.redaction). Der Plan enthält Klartext der Fundstellen und
  * bleibt deshalb nur im Arbeitsspeicher — kein Web Storage, kein Protokoll.
  */
 

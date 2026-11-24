@@ -4,13 +4,13 @@ import io
 import json
 import math
 
+from auditcore_pdf import redaction as redaction_engine
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import current_limits
 from app.config import settings
 from app.offload import run_cpu
-from app.services import redaction as redaction_engine
 from app.services.pdf_extras_service import NER_PATTERN_ID, REDACTION_PATTERNS, get_pdf_extras
 
 router = APIRouter(prefix="/pdf-extras", tags=["PDF Extras"])
