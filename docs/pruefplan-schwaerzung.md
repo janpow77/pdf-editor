@@ -268,7 +268,7 @@ Offen ist nur noch, ob das Bereinigen versteckter Inhalte automatisch mitlaufen 
 
 ## 11. Umsetzungsstand (20.11.2026)
 
-Schritt 1 aus dem [Plan für auditcore](plan-schwaerzung-auditcore.md) ist umgesetzt. Kern ist das neue Modul `backend/app/services/redaction.py`. Seit dem 24.11.2026 liegt dieser Kern in der Bibliothek `auditcore_pdf.redaction` (Release v0.17.0, Paket 0.2.0, in `backend/requirements.txt` per Prüfsumme gebunden); das Modul im pdf-editor ist entfernt. Ablauf und Datenformat stehen in [schwaerzung-plan-format.md](schwaerzung-plan-format.md). Die Tests liegen in `backend/tests/test_redaction_audit.py` (Korpus `redaction_corpus.py`); die früheren `xfail`-Markierungen sind entfernt.
+Schritt 1 aus dem [Plan für auditcore](plan-schwaerzung-auditcore.md) ist umgesetzt. Kern war zunächst das Modul `backend/app/services/redaction.py`. Seit dem 24.11.2026 liegt dieser Kern in der Bibliothek `auditcore_pdf.redaction` (Release v0.17.0, Paket 0.2.0, in `backend/requirements.txt` per Prüfsumme gebunden); das Modul im pdf-editor ist entfernt. Ablauf und Datenformat stehen in [schwaerzung-plan-format.md](schwaerzung-plan-format.md). Die Tests liegen in `backend/tests/test_redaction_audit.py` (Korpus `redaction_corpus.py`); die früheren `xfail`-Markierungen sind entfernt.
 
 | Nr. | Stand | Umsetzung, Nachweis |
 |---|---|---|

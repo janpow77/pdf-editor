@@ -1615,6 +1615,22 @@ def test_ner_sentence_context_only_from_neighbouring_lines():
         assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 0, form
 
 
+def test_ner_sentence_context_across_wide_word_gaps():
+    """Zerlegt MuPDF eine Zeile wegen großer Wortabstände (Blocksatz), zählt
+    sie trotzdem als eine Zeile: der Name wird auf der Folgeseite nachgesucht."""
+    from auditcore_pdf import redaction as R
+
+    def build(doc, page):
+        x = 72
+        for w in "Thomas Berger Referat Recht prüfte die Unterlagen".split():
+            page.insert_text((x, 72), w, fontsize=9)
+            x += fitz.get_text_length(w, fontsize=9) + 14
+        doc.new_page().insert_textbox(fitz.Rect(50, 50, 545, 800), "Berger legte die Belege vor. " * 30, fontsize=9)
+
+    found = _plan_texts(_pdf(build), _no_frame(_fake_ner("Thomas Berger")))
+    assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 30
+
+
 @pytest.mark.parametrize("head", ["Summe Netto nach Skonto", "Rabatt Skonto bei Zahlung", "Netto, Brutto"])
 def test_ner_header_of_table_words_is_no_name(head):
     """Besteht ein Satz- oder Listenbeleg nur aus Spaltenköpfen, gilt er als

@@ -15,6 +15,9 @@ Die Abhängigkeit wird deshalb nicht vermieden, sondern **eingefasst**:
 1. **Ein Importpunkt.** Kein Service importiert `fitz` oder `pikepdf` mehr
    selbst; alle beziehen sie von hier. Ein Versionswechsel, ein Austausch
    oder eine Notabschaltung trifft eine Datei statt sieben.
+   Ausnahme: Die Schwärzung kommt aus der Bibliothek `auditcore_pdf`, die
+   PyMuPDF selbst importiert (`auditcore_pdf.engine`). Sie steht deshalb
+   als eigene Komponente im Register.
 2. **Eine Verfügbarkeitserkennung.** Vorher hatte jeder Service eigene
    `try/except ImportError`-Blöcke mit eigenen Flags — sechs Stellen, die
    auseinanderlaufen konnten. Jetzt steht die Erkennung einmal hier, inklusive
@@ -103,6 +106,13 @@ except ImportError:  # pragma: no cover
     validate_pdf_signature = None  # type: ignore[assignment]
     KeyUsageConstraints = None  # type: ignore[assignment]
     PYHANKO_VALIDATION_AVAILABLE = False
+
+try:
+    import auditcore_pdf  # noqa: F401
+
+    AUDITCORE_PDF_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    AUDITCORE_PDF_AVAILABLE = False
 
 try:
     import ocrmypdf  # noqa: F401
@@ -209,6 +219,19 @@ DEPENDENCIES: tuple[Dependency, ...] = (
         ),
         copyleft_network=True,
         available=PYMUPDF_AVAILABLE,
+    ),
+    Dependency(
+        key="auditcore_pdf",
+        name="auditcore_pdf (mit auditcore_common)",
+        kind="bibliothek",
+        purpose=(
+            "Schwärzung: Suche, Plan, Anwendung, Bereinigung versteckter "
+            "Inhalte und Nachprüfung (nutzt PyMuPDF)"
+        ),
+        license="MIT",
+        url="https://github.com/janpow77/auditcore",
+        alternative="PyMuPDF direkt (frühere eigene Umsetzung im pdf-editor)",
+        available=AUDITCORE_PDF_AVAILABLE,
     ),
     Dependency(
         key="pikepdf",
