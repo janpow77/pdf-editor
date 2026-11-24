@@ -162,8 +162,8 @@ def select_font_file(font_name: str, text: str) -> str | None:
 
 
 # ── Musterbasierte Schwärzung ─────────────────────────────────
-# Suche, Plan, Anwendung und Nachprüfung liegen in app.services.redaction.
-from app.services import redaction as _redaction  # noqa: E402
+# Suche, Plan, Anwendung und Nachprüfung liegen in der Bibliothek auditcore_pdf.redaction.
+from auditcore_pdf import redaction as _redaction  # noqa: E402
 
 RedactionPattern = _redaction.PatternSpec
 NER_PATTERN_ID = _redaction.NER_PATTERN_ID
@@ -425,7 +425,7 @@ class PdfExtrasService:
         return SPACY_AVAILABLE and load_de_ner_model() is not None
 
     def ner_function(self):
-        """NER-Funktion für app.services.redaction oder None."""
+        """NER-Funktion für auditcore_pdf.redaction oder None."""
         nlp = load_de_ner_model() if SPACY_AVAILABLE else None
         return _redaction.spacy_ner(nlp) if nlp is not None else None
 

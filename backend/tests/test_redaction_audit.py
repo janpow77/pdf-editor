@@ -755,7 +755,7 @@ def test_a_h3_area_limits(client):
     ids=["ligatur", "nfd", "nullbreite", "eszett"],
 )
 def test_a_h4_normalisation(text, term):
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     font = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     if not font.exists():
@@ -769,7 +769,7 @@ def test_a_h4_normalisation(text, term):
 
 
 def test_a_h4_double_name_and_same_baseline():
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     wrapped = kc.wrapped_paragraph_pdf("Es erschien Frau Erika Müller-Lüdenscheidt und erklärte sich.", width=150)
     found = R.build_plan(wrapped, R.Criteria.from_input([], ["Müller-Lüdenscheidt"])).candidates
@@ -909,7 +909,7 @@ def test_a_f1_area_over_selected_finding_counts_once(client):
 
 
 def _engine():
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     return R
 
@@ -1071,31 +1071,6 @@ def test_a_mn7_malicious_plan_is_400(client, plan_text):
     assert r.status_code == 400, r.text
 
 
-def test_a_mn5_raw_scanner_matches_flat_alternation():
-    """M-N5: Die Vorauswahl über Präfixe findet dasselbe wie eine flache
-    Alternative mit Wortgrenzen."""
-    import random
-    import re
-
-    R = _engine()
-    rnd = random.Random(7)
-    forms = sorted({"".join(rnd.choice("abc.@") for _ in range(rnd.randint(1, 6))).encode() for _ in range(300)})
-    flat = re.compile(
-        rb"(?<![A-Za-z0-9/])(" + b"|".join(re.escape(f) for f in sorted(forms, key=len, reverse=True)) + rb")(?![A-Za-z0-9])",
-        re.IGNORECASE,
-    )
-    scanner = R._RawScanner({f: f.decode() for f in forms}, True)
-    for _ in range(2000):
-        blob = "".join(rnd.choice("abcABC.@ x/") for _ in range(40)).encode()
-        hits: set[str] = set()
-        scanner.scan(blob.lower(), hits)
-        expected = {m.group(1).lower().decode() for m in flat.finditer(blob)}
-        assert expected <= hits
-        # Mehr Treffer nur durch überlappende Fundorte, die finditer überspringt.
-        for h in hits - expected:
-            assert re.search(rb"(?<![A-Za-z0-9/])" + re.escape(h.encode()) + rb"(?![A-Za-z0-9])", blob, re.IGNORECASE)
-
-
 def test_a_mn5_short_term_still_replaced_in_alt_text():
     """Der Begriffsindex darf kurze Begriffe (unter drei Zeichen) nicht verlieren."""
 
@@ -1195,19 +1170,6 @@ def test_a_n3_5_short_key_leaves_foreign_alt_text():
     out, _ = _engine_apply(pdf, _engine_plan(pdf, ["AB"]), sanitize=False)
     assert b"Abbildung: Lageplan" in _raw(out)
     assert "AB" not in page_text(out)
-
-
-def test_a_n3_4_scanner_short_form_does_not_slow_long_forms():
-    R = _engine()
-    table = {f"+49 6{i:07d}".encode(): f"n{i}" for i in range(5000)}
-    table[b"anna"] = "Anna"
-    scanner = R._RawScanner(table, True)
-    blob = (b"+49 " * 20000) + b" +49 60000042 anna "
-    t = time.time()
-    hits: set[str] = set()
-    scanner.scan(blob.lower(), hits)
-    assert hits == {"n42", "Anna"}
-    assert time.time() - t < 2
 
 
 @pytest.mark.parametrize("ocmd", ["<< /Type /OCMD /OCGs [{g} 0 R] /P /AllOff >>", "<< /Type /OCMD /VE [/Not {g} 0 R] >>"])
@@ -1320,7 +1282,7 @@ def test_ner_name_found_once_is_searched_everywhere():
     in längeren Wörtern und beim Monatskürzel im Datum („15. Jan.“)."""
     import re
 
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     def fake_ner(texts):
         # erkennt „Jan Reiter“ nur im Satzzusammenhang
@@ -1349,7 +1311,7 @@ def _fake_ner(*persons):
 
 
 def _plan_texts(pdf, ner_fn):
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     plan = R.build_plan(pdf, R.Criteria(("ki_namen",), (), False, True), ner_fn)
     return sorted((c.page, c.source, c.text) for c in plan.candidates)
@@ -1382,7 +1344,7 @@ def test_ner_cell_false_positive_is_not_multiplied():
     """Meldet die KI eine Zelle „Summe Netto“ als Person und bestätigt sie im
     Mustersatz nicht, wird „Summe“ nicht im ganzen Dokument geschwärzt –
     auch nicht, wenn der Spaltenkopf auf jeder Seite wiederkehrt."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     pages = [["Summe Netto"]] * 6 + [["Summe und Belege stimmen."] * 3] * 6
     found = _plan_texts(_lines_pdf(*pages), _cell_ner("Summe Netto"))
@@ -1393,7 +1355,7 @@ def test_ner_cell_false_positive_is_not_multiplied():
 def test_ner_cap_boundary():
     """Grenze bei unbestätigtem Zellbeleg: bis max(10, 4 × direkt) wird
     nachgesucht, darüber nur mit Anrede."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     def pdf(n, addressed=0):
         return _lines_pdf(["Jan Reiter"], ["Reiter kam."] * n + ["Herr Reiter kam."] * addressed)
@@ -1407,7 +1369,7 @@ def test_ner_frequent_name_from_sentence_or_list_has_no_cap():
     """Ein Name aus dem Satzzusammenhang, der Listenform oder einer im
     Mustersatz bestätigten Zelle wird ohne Grenze nachgesucht: spaCy erkennt
     einen allein stehenden Nachnamen fast nie."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     prose = [["Berger legte die Belege vor."] * 8 for _ in range(4)]
     cases = [
@@ -1423,7 +1385,7 @@ def test_ner_frequent_name_from_sentence_or_list_has_no_cap():
 def test_ner_cross_cell_header_is_capped():
     """Zieht die KI zwei Spaltenköpfe über die Zellgrenze zu einer Person
     zusammen, gilt die Grenze, auch wenn der Mustersatz das Paar bestätigt."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     def build(doc, page):
         page.insert_text((40, 60), "Telefon", fontsize=8)
@@ -1470,7 +1432,7 @@ def test_ner_frame_only_where_cap_matters():
 def test_ner_header_row_is_no_sentence_context():
     """Eine Kopfzeile aus Großwörtern, die MuPDF als eine Zeile liest, ist
     kein Satz: Ein Fehltreffer darin wird nicht ohne Grenze nachgesucht."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     pdf = _lines_pdf(["Ort Telefon Begünstigter Betrag"], *[["Betrag wurde gezahlt."] * 6] * 2)
     found = _plan_texts(pdf, _no_frame(_fake_ner("Begünstigter Betrag")))
@@ -1481,7 +1443,7 @@ def test_ner_header_row_is_no_sentence_context():
 def test_ner_sentence_context_needs_no_frame():
     """Steht ein kleingeschriebenes Wort daneben, gilt der Treffer als Satz
     und wird ohne Grenze und ohne Mustersatz nachgesucht."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     prose = [["Berger legte die Belege vor."] * 8 for _ in range(4)]
     for head in ("Projektleiter ist Thomas Berger.", "Thomas Berger ist Projektleiter."):
@@ -1495,7 +1457,7 @@ def test_ner_sentence_context_needs_no_frame():
 def test_ner_header_function_words_are_no_sentence(header):
     """Abkürzungen und Präpositionen stehen auch in Kopfzeilen („inkl. USt“,
     „in EUR“); sie machen aus der Kopfzeile keinen Satz."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     pdf = _lines_pdf([header], *[["Träger wurde benannt."] * 6] * 2)
     found = _plan_texts(pdf, _no_frame(_fake_ner("Vorhaben Träger")))
@@ -1508,7 +1470,7 @@ def test_ner_label_before_name_is_confirmed_in_part(mentions, expected):
     bestätigt der Mustersatz nur den Namen, wird der Name bis zur höheren
     Untergrenze nachgesucht, das Etikett nicht. Ohne Grenze nicht, weil der
     Mustersatz so auch Spaltenköpfe bestätigt."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     def ner_fn(texts):
         out = []
@@ -1530,7 +1492,7 @@ def test_ner_label_before_name_is_confirmed_in_part(mentions, expected):
 def test_ner_whole_cell_confirmed_in_several_parts():
     """Bestätigt der Mustersatz alle Namen einer Zelle in mehreren Teilen,
     gilt die Zelle als ganz bestätigt (ohne Grenze)."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     def ner_fn(texts):
         out = []
@@ -1548,7 +1510,7 @@ def test_ner_whole_cell_confirmed_in_several_parts():
 def test_ner_frame_span_is_clamped_to_the_cell():
     """Reicht der Treffer im Mustersatz in den Vorspann („ich Thomas
     Berger“), zählt nur der Teil in der Zelle."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     def ner_fn(texts):
         out = []
@@ -1576,7 +1538,7 @@ def test_ner_frame_span_is_clamped_to_the_cell():
 def test_ner_surnames_like_table_or_month_words(head, line):
     """Nachnamen wie „Preis“, „Menge“ oder „Schmidt-Mai“ aus einem Satz
     werden wie jeder andere Name nachgesucht."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     person = head.split(" ist ")[1].rstrip(".")
     found = _plan_texts(_lines_pdf([head], [line] * 20), _no_frame(_fake_ner(person)))
@@ -1588,7 +1550,7 @@ def test_ner_surnames_like_table_or_month_words(head, line):
 def test_ner_table_word_surname_after_title(person):
     """„Die Prüfung führte Frau Dr. Menge durch.“: Meldet die KI nur Titel
     und Nachnamen, ist der Spaltenkopf trotzdem ein Nachname."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     word = person.split()[-1]
     pdf = _lines_pdf([f"Die Prüfung führte {person} durch."], [f"Rückfrage bei {word} ist erledigt."] * 30)
@@ -1606,7 +1568,7 @@ def test_ner_confirmed_cell_does_not_free_table_words():
     """Bestätigt der Mustersatz eine Zelle mit Spaltenkopf ganz („Menge
     Thomas Berger“), wird der Name ohne Grenze nachgesucht, der Spaltenkopf
     nicht."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     pdf = _lines_pdf(["Menge Thomas Berger"], ["Berger kam."] * 12 + ["Menge kam."] * 12)
     found = _plan_texts(pdf, _fake_ner("Menge Thomas Berger"))
@@ -1616,7 +1578,7 @@ def test_ner_confirmed_cell_does_not_free_table_words():
 
 def test_ner_table_word_from_cell_kept_with_salutation():
     """Ein Spaltenkopf-Wort aus einem Zellbeleg wird nur mit Anrede nachgesucht."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     pdf = _lines_pdf(["Wolfgang Menge"], ["Herr Menge kam."] * 3 + ["Menge kam."] * 3)
     assert _count(_plan_texts(pdf, _cell_ner("Wolfgang Menge")), R.NER_PROPAGATED_ID, "Menge") == 3
@@ -1626,7 +1588,7 @@ def test_ner_table_word_from_cell_kept_with_salutation():
 def test_ner_short_sentences_are_context(head):
     """Ein Verb am Satzende und Präpositionen wie „von“, „an“ machen eine
     Zeile zum Satz."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     found = _plan_texts(_lines_pdf([head], ["Fischer legte die Belege vor."] * 30), _no_frame(_fake_ner("Lukas Fischer")))
     assert _count(found, R.NER_PROPAGATED_ID, "Fischer") == 30
@@ -1635,7 +1597,7 @@ def test_ner_short_sentences_are_context(head):
 def test_ner_sentence_context_only_from_neighbouring_lines():
     """Ein kleingeschriebenes Wort in der Zeile davor oder danach zählt
     (umbrochener Satz), eines drei Zeilen tiefer im selben Block nicht."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     prose = [["Berger legte die Belege vor."] * 30]
     wrapped = _lines_pdf(["Projektleiter ist", "Thomas Berger."], *prose)
@@ -1655,8 +1617,8 @@ def test_ner_sentence_context_only_from_neighbouring_lines():
 
 def test_ner_sentence_context_across_wide_word_gaps():
     """Zerlegt MuPDF eine Zeile wegen großer Wortabstände (Blocksatz), zählt
-    sie trotzdem als eine Zeile."""
-    from app.services import redaction as R
+    sie trotzdem als eine Zeile: der Name wird auf der Folgeseite nachgesucht."""
+    from auditcore_pdf import redaction as R
 
     def build(doc, page):
         x = 72
@@ -1665,8 +1627,6 @@ def test_ner_sentence_context_across_wide_word_gaps():
             x += fitz.get_text_length(w, fontsize=9) + 14
         doc.new_page().insert_textbox(fitz.Rect(50, 50, 545, 800), "Berger legte die Belege vor. " * 30, fontsize=9)
 
-    pt = R._page_text(fitz.open(stream=_pdf(build), filetype="pdf")[0])
-    assert len(set(n for n in pt.lines if n >= 0)) > 1  # mehrere Fragmente
     found = _plan_texts(_pdf(build), _no_frame(_fake_ner("Thomas Berger")))
     assert _count(found, R.NER_PROPAGATED_ID, "Berger") == 30
 
@@ -1675,7 +1635,7 @@ def test_ner_sentence_context_across_wide_word_gaps():
 def test_ner_header_of_table_words_is_no_name(head):
     """Besteht ein Satz- oder Listenbeleg nur aus Spaltenköpfen, gilt er als
     Zellbeleg: kein Nachsuche-Treffer ohne Anrede."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     words = head.replace(",", "").split()
     pdf = _lines_pdf([head], *[[f"{w} wurde geprüft." for w in words] * 10] * 3)
@@ -1686,7 +1646,7 @@ def test_ner_header_of_table_words_is_no_name(head):
 def test_ner_table_word_as_label_is_partial_confirmation():
     """„Summe Thomas Berger“: Bestätigt der Mustersatz nur „Thomas Berger“,
     gilt die Untergrenze 50 wie bei jedem Etikett (Entscheidung 23.11.2026)."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     def ner_fn(texts):
         out = []
@@ -1707,7 +1667,7 @@ def test_ner_table_word_as_label_is_partial_confirmation():
 def test_ner_table_header_words_are_never_propagated():
     """Bestätigt der Mustersatz einen Spaltenkopf („Pos Menge“), wird er
     trotzdem nicht nachgesucht."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     pdf = _lines_pdf(["Pos Menge"], ["Menge und Preis stimmen."] * 30)
     found = _plan_texts(pdf, _fake_ner("Pos Menge"))
@@ -1717,7 +1677,7 @@ def test_ner_table_header_words_are_never_propagated():
 
 def test_ner_partial_frame_hit_is_no_confirmation():
     """Bestätigt der Mustersatz nur einen Teil des Zellbelegs, gilt die Grenze."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     def ner_fn(texts):
         return [
@@ -1735,7 +1695,7 @@ def test_ner_partial_frame_hit_is_no_confirmation():
     "title", ["Herr", "Frau", "Hr.", "Fr.", "Dr.", "Prof.", "Dr. med.", "Dr.-Ing.", "Dipl.-Ing.", "Prof. Dr.-Ing. Dr. h. c.", "Dr. rer. nat. habil.", "Dipl.-Ing. (FH)", "Dipl.-Ök."]
 )
 def test_ner_salutation_kept_above_cap(title):
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     pdf = _lines_pdf(["Jan Reiter"], ["Reiter kam."] * 11 + [f"Laut {title} Reiter fehlt nichts."])
     assert _count(_plan_texts(pdf, _cell_ner("Jan Reiter")), R.NER_PROPAGATED_ID, "Reiter") == 1
@@ -1743,7 +1703,7 @@ def test_ner_salutation_kept_above_cap(title):
 
 def test_ner_cap_grows_with_distinct_direct_hits():
     """Drei verschiedene direkte Belege heben die Grenze auf 4 × 3 = 12."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     heads = [["Jan Reiter"], ["Eva Reiter"], ["Max Reiter"]]
     ner_fn = _cell_ner("Jan Reiter", "Eva Reiter", "Max Reiter")
@@ -1780,7 +1740,7 @@ def test_ner_column_split_name_confirmed_has_higher_floor():
     """Ein Name aus zwei Spalten, den der Mustersatz bestätigt, wird bis 50
     Mal nachgesucht; ohne Bestätigung gilt die Grenze von 10; darüber bleibt
     es bei der Grenze, weil der Mustersatz auch Spaltenköpfe bestätigt."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     def hits(n, confirm):
         return _count(_plan_texts(_columns_pdf(n), _columns_ner(confirm)), R.NER_PROPAGATED_ID, "Wagner")
@@ -1795,7 +1755,7 @@ def test_ner_column_split_name_confirmed_has_higher_floor():
 def test_ner_column_split_confirmation_per_word():
     """Über Zellgrenzen bestätigt, gilt die Untergrenze je Wort: „Klaus“ mit
     20 Nennungen wird nachgesucht, „Wagner“ mit 200 nicht."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     def build(doc, page):
         page.insert_text((40, 60), "Klaus", fontsize=8)
@@ -1810,7 +1770,7 @@ def test_ner_column_split_confirmation_per_word():
 
 def test_ner_contact_words_are_no_name_parts():
     """„Telefon“ und „Fax“ gelten nie als Namensteil, auch nicht in der Listenform."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     pdf = _lines_pdf(["Telefon, Telefax"], ["Telefon und Telefax sind besetzt."] * 4)
     found = _plan_texts(pdf, _fake_ner("Telefon Telefax", "Telefax Telefon"))
@@ -1869,7 +1829,7 @@ def test_ner_failure_on_apply_is_http_502(client, monkeypatch):
 
 
 def test_ner_double_names_are_propagated():
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     pdf = _lines_pdf(["Anna Meyer-Lüdenscheidt", "Hans-Peter Schulze"], ["Meyer-Lüdenscheidt", "Hans-Peter"])
     found = [t for t in _plan_texts(pdf, _fake_ner("Anna Meyer-Lüdenscheidt", "Hans-Peter Schulze")) if t[0] == 2]
@@ -1916,7 +1876,7 @@ def test_ner_malformed_result(bad, error):
     """Eine fehlerhafte KI-Funktion belegt nicht die ganze Seite. Ein Ergebnis
     in falscher Form oder ein Absturz bricht ab; still leere Treffer gibt es
     nicht, sonst blieben alle Namen lesbar."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     pdf = _lines_pdf(["Antrag der Stadt Ulm", "Kosten und Belege"], ["Kosten", "Belege"])
     if error is None:
@@ -1949,7 +1909,7 @@ def test_ner_propagation_exceptions():
 def test_ner_spans_beyond_segment_are_clamped():
     """Eine fehlerhafte KI-Funktion mit zu langen oder negativen Spans darf
     nicht in Nachbarzellen überlaufen und nicht abstürzen."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     def bad_ner(texts):
         return [[(-3, len(t) + 50)] if t == "Reiter" else [] for t in texts]
@@ -1962,18 +1922,10 @@ def test_ner_spans_beyond_segment_are_clamped():
     assert [c.text for c in plan.candidates] == ["Reiter"]
 
 
-def test_ner_span_split_at_cell_borders():
-    from app.services import redaction as R
-
-    text = "Jan\x00Reiter\x00Stahl, Armin"
-    parts = [text[a:b] for a, b in R._hard_parts(text, 0, len(text))]
-    assert parts == ["Jan", "Reiter", "Stahl, Armin"]
-
-
 def test_ner_keeps_cropbox_for_page_geometry():
     """Die KI-Erkennung legt die CropBox nur vorübergehend auf die MediaBox;
     Seitengröße und Koordinaten des Plans bleiben dieselben wie ohne KI."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     doc = fitz.open()
     page = doc.new_page(width=595, height=842)
@@ -1995,7 +1947,7 @@ def test_ner_keeps_cropbox_for_page_geometry():
 def test_cropbox_beyond_mediabox_plan_and_apply(box, patterns):
     """Eine CropBox darf über die MediaBox hinausragen. Vorschau und
     Anwendung laufen dann durch, und die CropBox bleibt unverändert."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     doc = fitz.open()
     page = doc.new_page()
@@ -2016,22 +1968,11 @@ def test_cropbox_beyond_mediabox_plan_and_apply(box, patterns):
         assert "Reiter" not in res[0].get_text(clip=fitz.INFINITE_RECT())
 
 
-def test_short_segments_edges():
-    from app.services import redaction as R
-
-    assert R._short_segments("") == []
-    assert R._short_segments("\x00") == []
-    text = "Prof. Dr. Rainer Zufall\x00 \x00Heide, Erika\x00"
-    assert [text[a:b] for a, b in R._short_segments(text)] == ["Rainer Zufall", "Heide, Erika"]
-    assert R._short_segments("eins zwei drei vier fünf sechs sieben") == []
-    assert R._hard_parts("Jan", -5, 99) == [(0, 3)]
-
-
 @ner
 def test_ner_table_apply_roundtrip(client):
     """Vorschau → alles auswählen → Anwenden mit echter KI auf der Tabelle:
     gleiche Kandidaten, Nachprüfung ohne Befund, kein Name mehr lesbar."""
-    from app.services import redaction as R
+    from auditcore_pdf import redaction as R
 
     pdf = _table_pdf()
     ner_fn = get_pdf_extras().ner_function()
