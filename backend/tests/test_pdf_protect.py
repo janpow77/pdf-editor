@@ -61,7 +61,7 @@ def test_protect_already_protected_400(client):
     original = make_pdf(1, "x")
     protected = client.post(
         "/api/pdf-tools/protect",
-        data={"password": "pw-123456789"},
+        data={"password": "Beispiel"},
         files={"file": ("doc.pdf", original, "application/pdf")},
     ).content
 

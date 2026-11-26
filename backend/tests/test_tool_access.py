@@ -190,8 +190,8 @@ def test_multi_path_tool_blocked_on_all_paths(client):
     restrict(client, ["protect", "aiAssistant"])
     pdf = make_pdf(1, "A")
     for path, data in (
-        ("/api/pdf-tools/protect", {"password": "Geheim-123456"}),
-        ("/api/pdf-tools/unlock", {"password": "Geheim-123456"}),
+        ("/api/pdf-tools/protect", {"password": "Beispiel"}),
+        ("/api/pdf-tools/unlock", {"password": "Beispiel"}),
         ("/api/pdf-more/ai/summarize", {}),
         ("/api/pdf-more/ai/keywords", {}),
     ):
